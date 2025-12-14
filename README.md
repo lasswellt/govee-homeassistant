@@ -257,6 +257,7 @@ Refresh the scene list from Govee cloud (for Select entities).
 **Devices not appearing**
 - Only cloud-enabled devices appear in the API
 - Bluetooth-only devices are not supported
+- Govee Home app groups (SameModeGroup, BaseGroup, DreamViewScenic) are automatically skipped - they don't support API control
 - Try refreshing the integration
 
 **State not updating**
