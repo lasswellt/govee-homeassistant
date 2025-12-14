@@ -1,8 +1,8 @@
 # Govee Integration for Home Assistant
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
-[![GitHub Release](https://img.shields.io/github/release/LaggAt/hacs-govee.svg)](https://github.com/LaggAt/hacs-govee/releases)
-[![GitHub License](https://img.shields.io/github/license/LaggAt/hacs-govee.svg)](https://github.com/LaggAt/hacs-govee/blob/master/LICENSE)
+[![GitHub Release](https://img.shields.io/github/release/lasswellt/hacs-govee.svg)](https://github.com/lasswellt/hacs-govee/releases)
+[![GitHub License](https://img.shields.io/github/license/lasswellt/hacs-govee.svg)](https://github.com/lasswellt/hacs-govee/blob/master/LICENSE)
 
 Control your Govee lights, LED strips, and smart plugs through Home Assistant using the official Govee API v2.0.
 
@@ -54,7 +54,7 @@ This is a custom HACS repository. Follow these steps to install:
    - Click the **three dots menu** (⋮) in the top right corner
    - Select **Custom repositories**
    - In the dialog that appears:
-     - **Repository:** `https://github.com/LaggAt/hacs-govee`
+     - **Repository:** `https://github.com/lasswellt/hacs-govee`
      - **Category:** `Integration`
    - Click **Add**
 
@@ -75,7 +75,7 @@ This is a custom HACS repository. Follow these steps to install:
 
 ### Manual Installation
 
-1. Download the latest release from [GitHub Releases](https://github.com/LaggAt/hacs-govee/releases)
+1. Download the latest release from [GitHub Releases](https://github.com/lasswellt/hacs-govee/releases)
 2. Extract and copy the `custom_components/govee` folder to your Home Assistant `custom_components` directory
 3. Restart Home Assistant
 4. Add the integration via **Settings** > **Devices & Services**
@@ -286,9 +286,8 @@ If API returns incorrect state for specific attributes, you can disable them:
 
 ## Support
 
-- **Community Forum:** [Home Assistant Community - Govee Integration](https://community.home-assistant.io/t/govee-led-strips-integration/228516)
-- **Issue Tracker:** [GitHub Issues](https://github.com/LaggAt/hacs-govee/issues)
-- **Source Code:** [GitHub Repository](https://github.com/LaggAt/hacs-govee)
+- **Issue Tracker:** [GitHub Issues](https://github.com/lasswellt/hacs-govee/issues)
+- **Source Code:** [GitHub Repository](https://github.com/lasswellt/hacs-govee)
 
 ### Reporting Bugs
 
@@ -310,5 +309,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Acknowledgments
 
 - Original integration by [@LaggAt](https://github.com/LaggAt)
-- Govee API v2.0 migration and enhancements
+- Govee API v2.0 migration by [@lasswellt](https://github.com/lasswellt)
 - All contributors and community members
