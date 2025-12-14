@@ -219,7 +219,13 @@ class GoveeLightEntity(LightEntity):
     async def async_turn_off(self, **kwargs):
         """Turn device off."""
         _LOGGER.debug("async_turn_off for Govee light %s", self._device.device)
-        await self._hub.turn_off(self._device)
+        _, err = await self._hub.turn_off(self._device)
+        if err:
+            _LOGGER.warning(
+                "async_turn_off failed with '%s' for %s",
+                err,
+                self._device.device,
+            )
 
     @property
     def unique_id(self):
@@ -299,13 +305,13 @@ class GoveeLightEntity(LightEntity):
 
     @property
     def min_color_temp_kelvin(self):
-        """Return the coldest color_temp that this light supports."""
-        return COLOR_TEMP_KELVIN_MAX
+        """Return the minimum (warmest) color_temp that this light supports."""
+        return COLOR_TEMP_KELVIN_MIN
 
     @property
     def max_color_temp_kelvin(self):
-        """Return the warmest color_temp that this light supports."""
-        return COLOR_TEMP_KELVIN_MIN
+        """Return the maximum (coldest) color_temp that this light supports."""
+        return COLOR_TEMP_KELVIN_MAX
 
     @property
     def extra_state_attributes(self):
