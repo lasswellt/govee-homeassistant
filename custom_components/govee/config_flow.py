@@ -13,6 +13,8 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from collections.abc import Mapping
+
 from .api import GoveeApiClient, GoveeApiError, GoveeAuthError
 from .const import (
     CONFIG_ENTRY_VERSION,
@@ -81,6 +83,51 @@ class GoveeFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 {
                     vol.Required(CONF_API_KEY): cv.string,
                     vol.Optional(CONF_DELAY, default=DEFAULT_POLL_INTERVAL): cv.positive_int,
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_reauth(
+        self, entry_data: Mapping[str, Any]
+    ) -> FlowResult:
+        """Handle re-authentication when API key becomes invalid."""
+        self._reauth_entry = self.hass.config_entries.async_get_entry(
+            self.context["entry_id"]
+        )
+        return await self.async_step_reauth_confirm()
+
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Confirm re-authentication with new API key."""
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            try:
+                user_input = await validate_api_key(self.hass, user_input)
+
+            except CannotConnect as conn_ex:
+                _LOGGER.exception("Cannot connect during reauth: %s", conn_ex)
+                errors[CONF_API_KEY] = "cannot_connect"
+            except Exception as ex:  # pylint: disable=broad-except
+                _LOGGER.exception("Unexpected exception during reauth: %s", ex)
+                errors["base"] = "unknown"
+
+            if not errors:
+                # Update config entry with new API key
+                self.hass.config_entries.async_update_entry(
+                    self._reauth_entry,
+                    data={**self._reauth_entry.data, CONF_API_KEY: user_input[CONF_API_KEY]}
+                )
+                await self.hass.config_entries.async_reload(self._reauth_entry.entry_id)
+                return self.async_abort(reason="reauth_successful")
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_API_KEY): cv.string,
                 }
             ),
             errors=errors,

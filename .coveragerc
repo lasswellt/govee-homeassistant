@@ -1,0 +1,55 @@
+[run]
+# Coverage configuration for Govee integration
+
+source = custom_components.govee
+omit =
+    */tests/*
+    */test_*.py
+    */__pycache__/*
+    */venv/*
+    */.venv/*
+    */dist/*
+    */build/*
+
+[report]
+# Report configuration
+precision = 2
+show_missing = True
+skip_covered = False
+sort = Cover
+
+# Fail if coverage is below threshold
+fail_under = 95
+
+exclude_lines =
+    # Standard pragma
+    pragma: no cover
+
+    # Debug-only code
+    def __repr__
+
+    # Type checking blocks
+    if TYPE_CHECKING:
+    if typing.TYPE_CHECKING:
+
+    # Abstract methods
+    raise NotImplementedError
+
+    # Defensive programming
+    raise AssertionError
+
+    # Non-runnable code
+    if __name__ == .__main__.:
+    if 0:
+    if False:
+
+    # Protocols and abstract base classes
+    @(abc\.)?abstractmethod
+    class .*\bProtocol\):
+    @(typing\.)?overload
+
+[html]
+directory = htmlcov
+
+[xml]
+output = coverage.xml

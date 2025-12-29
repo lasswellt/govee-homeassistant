@@ -1,6 +1,8 @@
 """Base entity for Govee integration."""
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -67,7 +69,7 @@ class GoveeEntity(CoordinatorEntity[GoveeDataUpdateCoordinator]):
         return state.online
 
     @property
-    def extra_state_attributes(self) -> dict[str, any]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return extra state attributes."""
         attrs = {
             "device_id": self._device_id,

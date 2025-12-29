@@ -29,8 +29,12 @@ DEVICE_TYPE_THERMOMETER = "devices.types.thermometer"
 DEVICE_TYPE_SENSOR = "devices.types.sensor"
 DEVICE_TYPE_AROMA_DIFFUSER = "devices.types.aroma_diffuser"
 
-# Unsupported device SKUs (Govee Home app groups/shortcuts - API returns "devices not exist")
-# These are virtual pseudo-devices that cannot be controlled through the API
+# Group device SKUs (Govee Home app groups/shortcuts)
+# API Behavior (tested 2025-12-29):
+#   ✅ Discovery: Groups appear in device list
+#   ✅ Control: Commands succeed (on/off works)
+#   ❌ State: Queries return "devices not exist" error
+# Result: Groups can be controlled but will show as "unavailable" in UI
 UNSUPPORTED_DEVICE_SKUS = {
     "SameModeGroup",  # Same Model device group
     "BaseGroup",  # Base device group

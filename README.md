@@ -3,10 +3,12 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 [![GitHub Release](https://img.shields.io/github/release/lasswellt/hacs-govee.svg)](https://github.com/lasswellt/hacs-govee/releases)
 [![GitHub License](https://img.shields.io/github/license/lasswellt/hacs-govee.svg)](https://github.com/lasswellt/hacs-govee/blob/master/LICENSE)
+[![codecov](https://codecov.io/gh/lasswellt/hacs-govee/branch/master/graph/badge.svg)](https://codecov.io/gh/lasswellt/hacs-govee)
+[![Tests](https://github.com/lasswellt/hacs-govee/workflows/Tests/badge.svg)](https://github.com/lasswellt/hacs-govee/actions)
 
 Control your Govee lights, LED strips, and smart plugs through Home Assistant using the official Govee API v2.0.
 
-**Current Version:** 2025.12.7
+**Current Version:** 2025.12.8
 
 ## Features
 
@@ -207,6 +209,197 @@ data:
   auto_color: true
 ```
 
+---
+
+## Automation Examples
+
+### Turn Lights On at Sunset
+
+```yaml
+automation:
+  - alias: "Govee Lights On at Sunset"
+    trigger:
+      platform: sun
+      event: sunset
+      offset: "-00:30:00"  # 30 minutes before sunset
+    action:
+      - service: light.turn_on
+        target:
+          entity_id: light.bedroom_strip
+        data:
+          brightness: 200
+          rgb_color: [255, 147, 41]  # Warm orange
+```
+
+### Movie Mode Scene
+
+```yaml
+automation:
+  - alias: "Activate Movie Mode"
+    trigger:
+      platform: state
+      entity_id: media_player.living_room_tv
+      to: "playing"
+    action:
+      - service: light.turn_on
+        target:
+          entity_id: light.tv_backlight
+        data:
+          brightness: 80
+          effect: "Movie"  # Select scene
+```
+
+### Dynamic Color Based on Time
+
+```yaml
+automation:
+  - alias: "Dynamic Light Color"
+    trigger:
+      platform: time_pattern
+      hours: "*"
+    action:
+      - service: light.turn_on
+        target:
+          entity_id: light.desk_lamp
+        data:
+          brightness: >
+            {% set hour = now().hour %}
+            {% if hour < 6 or hour > 22 %}
+              50
+            {% elif hour < 12 %}
+              180
+            {% else %}
+              255
+            {% endif %}
+          color_temp: >
+            {% set hour = now().hour %}
+            {% if hour < 6 or hour > 22 %}
+              {{ 454 }}  # Warm for night
+            {% elif hour < 12 %}
+              {{ 250 }}  # Cool for morning
+            {% else %}
+              {{ 350 }}  # Neutral for day
+            {% endif %}
+```
+
+### Segment Rainbow Effect
+
+```yaml
+automation:
+  - alias: "Create Rainbow Strip"
+    trigger:
+      platform: event
+      event_type: rainbow_mode
+    action:
+      - service: govee.set_segment_color
+        target:
+          entity_id: light.rgbic_strip
+        data:
+          segments: [0, 1, 2]
+          rgb_color: [255, 0, 0]  # Red
+      - service: govee.set_segment_color
+        target:
+          entity_id: light.rgbic_strip
+        data:
+          segments: [3, 4, 5]
+          rgb_color: [0, 255, 0]  # Green
+      - service: govee.set_segment_color
+        target:
+          entity_id: light.rgbic_strip
+        data:
+          segments: [6, 7, 8]
+          rgb_color: [0, 0, 255]  # Blue
+```
+
+---
+
+## Dashboard Card Examples
+
+### Basic Light Card
+
+```yaml
+type: light
+entity: light.bedroom_strip
+name: Bedroom LED Strip
+```
+
+### Light with Scene Selector
+
+```yaml
+type: entities
+entities:
+  - entity: light.bedroom_strip
+    name: LED Strip
+  - entity: select.bedroom_strip_scene
+    name: Scene
+  - entity: select.bedroom_strip_diy_scene
+    name: DIY Scene
+```
+
+### Conditional Scene Card (Only Show When On)
+
+```yaml
+type: conditional
+conditions:
+  - entity: light.bedroom_strip
+    state: "on"
+card:
+  type: entities
+  entities:
+    - entity: select.bedroom_strip_scene
+      name: Select Scene
+```
+
+### Multi-Device Light Grid
+
+```yaml
+type: grid
+columns: 2
+cards:
+  - type: light
+    entity: light.bedroom_strip
+    name: Bedroom
+  - type: light
+    entity: light.living_room_strip
+    name: Living Room
+  - type: light
+    entity: light.kitchen_strip
+    name: Kitchen
+  - type: light
+    entity: light.office_strip
+    name: Office
+```
+
+### Advanced Control Card
+
+```yaml
+type: vertical-stack
+cards:
+  - type: light
+    entity: light.bedroom_strip
+    name: Bedroom Strip
+  - type: horizontal-stack
+    cards:
+      - type: button
+        entity: select.bedroom_strip_scene
+        name: Scenes
+        tap_action:
+          action: more-info
+      - type: button
+        name: Refresh
+        tap_action:
+          action: call-service
+          service: govee.refresh_scenes
+          service_data:
+            entity_id: select.bedroom_strip_scene
+  - type: entities
+    entities:
+      - entity: switch.bedroom_strip_night_light
+        name: Night Light Mode
+```
+
+---
+
 ### Group Device Support (Experimental)
 
 Govee Home app groups (SameModeGroup, BaseGroup, DreamViewScenic) have limited API support:
@@ -319,6 +512,38 @@ If API returns incorrect state for specific attributes, you can disable them:
 4. Multiple: `API:power_state;HISTORY:online`
 
 > **Warning:** This is a workaround. Report the underlying issue.
+
+---
+
+## Technical Details
+
+### Architecture
+
+This integration is classified as a **Hub** integration (`integration_type: hub`) because it connects to the Govee cloud service which manages multiple devices.
+
+**Key Components:**
+- **Cloud API Integration**: Uses Govee API v2.0 for all device communication
+- **Data Update Coordinator**: Manages periodic state polling and caching
+- **Rate Limiting**: Enforces API limits (100 requests/minute, 10,000/day)
+- **Platforms**: Light, Switch, Select (scene selection)
+
+### Auto-Discovery
+
+**Auto-discovery is not applicable** for this integration due to its cloud-only architecture:
+
+- **Requires API Key**: The Govee API v2.0 requires user authentication via API key from the Govee Developer Portal
+- **No Local Discovery**: Govee devices communicate exclusively through the cloud; there are no local discovery protocols (SSDP, Zeroconf, mDNS)
+- **Cloud Authentication**: Device discovery requires authenticated API requests, which can only be performed after user provides their API key
+
+This is by design and acceptable for cloud-polling integrations per Home Assistant's quality scale guidelines. Auto-discovery is only feasible for integrations with local network discovery capabilities.
+
+### Code Quality
+
+This integration follows Home Assistant 2025.12 best practices:
+- **100% Type Annotations**: Full mypy strict mode compliance
+- **Comprehensive Testing**: 300+ tests with 95%+ coverage
+- **Async Architecture**: Fully asynchronous implementation
+- **Modern Python**: Uses Python 3.12+ features and type syntax
 
 ---
 

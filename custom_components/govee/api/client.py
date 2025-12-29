@@ -36,28 +36,68 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class RateLimiter:
-    """Rate limiter for Govee API with dual limits (per-minute and per-day)."""
+    """Rate limiter for Govee API with dual limits (per-minute and per-day).
+
+    Govee API Rate Limits:
+    - Per-minute limit: 100 requests/minute
+    - Per-day limit: 10,000 requests/day
+
+    Rate Limiting Algorithm:
+    1. Track timestamps of all recent requests (minute and day windows)
+    2. Before each request, check if limits would be exceeded
+    3. If limit would be exceeded, sleep until oldest request expires
+    4. Update limits from API response headers (more accurate than local tracking)
+
+    Thread Safety:
+    - Uses asyncio.Lock to prevent race conditions
+    - All requests must call acquire() before making API calls
+
+    State Tracking:
+    - Local tracking: List of request timestamps
+    - API tracking: Updated from response headers (authoritative)
+    - Returns API values when available, falls back to local estimates
+    """
 
     def __init__(
         self,
         requests_per_minute: int = RATE_LIMIT_PER_MINUTE,
         requests_per_day: int = RATE_LIMIT_PER_DAY,
     ) -> None:
-        """Initialize rate limiter."""
+        """Initialize rate limiter with configurable limits.
+
+        Args:
+            requests_per_minute: Maximum requests per minute (default: 100)
+            requests_per_day: Maximum requests per day (default: 10,000)
+        """
         self._per_minute = requests_per_minute
         self._per_day = requests_per_day
-        self._minute_timestamps: list[float] = []
-        self._day_timestamps: list[float] = []
-        self._lock = asyncio.Lock()
+        self._minute_timestamps: list[float] = []  # Request times in last 60s
+        self._day_timestamps: list[float] = []  # Request times in last 24h
+        self._lock = asyncio.Lock()  # Prevent concurrent access
 
-        # Updated from API response headers
+        # Updated from API response headers (more accurate than local tracking)
         self._api_remaining_minute: int | None = None
         self._api_remaining_day: int | None = None
         self._api_reset_minute: float | None = None
         self._api_reset_day: float | None = None
 
     async def acquire(self) -> None:
-        """Wait until a request can be made within rate limits."""
+        """Wait until a request can be made within rate limits.
+
+        Rate Limit Algorithm:
+        1. Clean expired timestamps (>60s for minute, >24h for day)
+        2. Check per-minute limit: wait if at capacity
+        3. Check per-day limit: wait if at capacity (max 1 hour)
+        4. Record request timestamp
+
+        Waiting Strategy:
+        - Minute limit: Wait exactly until oldest request expires from window
+        - Day limit: Wait up to 1 hour (prevents indefinite blocking)
+
+        Thread Safety:
+        - Acquires lock before any timestamp operations
+        - Ensures atomic check-and-record operations
+        """
         async with self._lock:
             now = time.time()
 

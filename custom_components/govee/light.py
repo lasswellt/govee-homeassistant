@@ -49,28 +49,63 @@ async def async_setup_entry(
     entry: GoveeConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Govee lights from a config entry."""
+    """Set up Govee lights from a config entry.
+
+    Platform Setup:
+    1. Retrieve coordinator and devices from runtime data
+    2. Create light entities for devices that support lighting
+    3. Register Govee-specific services (segment control, music mode)
+
+    Entity Creation:
+    - Light entities created for devices with DEVICE_TYPE_LIGHT
+    - Also created for any device with on/off capability (smart plugs with lights)
+    - Each entity gets full capability detection and color mode setup
+    """
     coordinator = entry.runtime_data.coordinator
     devices = entry.runtime_data.devices
 
     entities: list[GoveeLightEntity] = []
     for device in devices.values():
         # Only create light entities for light devices
+        # Some smart plugs also have light control capabilities
         if device.device_type == DEVICE_TYPE_LIGHT or device.supports_on_off:
             entities.append(GoveeLightEntity(coordinator, device, entry))
 
     _LOGGER.debug("Adding %d light entities", len(entities))
     async_add_entities(entities)
 
-    # Register light platform services
+    # Register light platform services (segment control, music mode, etc.)
     from .services import async_setup_services
     await async_setup_services(hass)
 
 
 class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
-    """Govee light entity with v2.0 API features and state restoration."""
+    """Govee light entity with v2.0 API features and state restoration.
 
-    _attr_name = None  # Use device name
+    Entity Features:
+    - Full color control (RGB, color temperature, brightness)
+    - Dynamic scenes and DIY scenes via effect list
+    - Segment control for RGBIC strips (via services)
+    - Music mode activation (via service)
+    - State restoration for group devices (optimistic updates)
+
+    Color Mode Detection:
+    - Automatically detects supported color modes from device capabilities
+    - Supports RGB, color temperature, brightness-only, and on/off-only modes
+    - Color temperature ranges vary by device (detected from capabilities)
+
+    Brightness Conversion:
+    - Home Assistant uses 0-255 range
+    - Govee devices use varying ranges (0-100 or 0-254)
+    - Automatic conversion based on device capability ranges
+
+    State Restoration (RestoreEntity):
+    - Used for group devices where state cannot be queried
+    - Restores last known state on Home Assistant restart
+    - Provides continuity across restarts for optimistic state devices
+    """
+
+    _attr_name = None  # Use device name from DeviceInfo
 
     def __init__(
         self,
@@ -78,23 +113,39 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
         device: GoveeDevice,
         entry: GoveeConfigEntry,
     ) -> None:
-        """Initialize the light entity."""
+        """Initialize the light entity.
+
+        Initialization Steps:
+        1. Call parent constructors (GoveeEntity, LightEntity, RestoreEntity)
+        2. Set unique ID for entity registry
+        3. Detect supported color modes from device capabilities
+        4. Detect supported features (effects, transitions)
+        5. Build effect list from available scenes
+        6. Configure color temperature range
+
+        Args:
+            coordinator: Data update coordinator for state management
+            device: Govee device model with capabilities
+            entry: Config entry for accessing options
+        """
         super().__init__(coordinator, device)
 
         self._entry = entry
         self._attr_unique_id = f"govee_{entry.title}_{device.device_id}"
 
-        # Build supported color modes from capabilities
+        # Build supported color modes from device capabilities
+        # Determines what controls appear in UI (RGB, temp, brightness)
         self._attr_supported_color_modes = self._determine_color_modes()
 
-        # Build supported features
+        # Build supported features (effects/scenes, transitions, etc.)
         self._attr_supported_features = self._determine_features()
 
         # Build effect list from scene capabilities
+        # Maps scene names to API parameters for activation
         self._effect_map: dict[str, dict[str, Any]] = {}
         self._build_effect_list()
 
-        # Color temp range from device capabilities
+        # Color temp range from device capabilities (varies by model)
         temp_range = device.get_color_temp_range()
         self._attr_min_color_temp_kelvin = temp_range[0]
         self._attr_max_color_temp_kelvin = temp_range[1]

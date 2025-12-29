@@ -2,7 +2,8 @@
   "title": "Govee",
   "config": {
     "abort": {
-      "already_configured": "Already configured. Only a single configuration possible."
+      "already_configured": "Already configured. Only a single configuration possible.",
+      "reauth_successful": "Re-authentication successful"
     },
     "error": {
       "cannot_connect": "Cannot connect. Is the API-Key correct and the internet connection working?",
@@ -16,6 +17,13 @@
         },
         "title": "",
         "description": "Get your API Key from the Govee Home App. For Details see https://github.com/LaggAt/hacs-govee/blob/master/README.md"
+      },
+      "reauth_confirm": {
+        "data": {
+          "api_key": "API Key"
+        },
+        "title": "Re-authenticate Govee",
+        "description": "Your API key is no longer valid. Please enter a new API key."
       }
     }
   },
@@ -32,7 +40,7 @@
           "delay": "Poll Interval (requires restart)",
           "use_assumed_state": "Use 'assumed state' (two buttons). Default: True",
           "offline_is_off": "When a led is offline, show it as off (default doesn't change state). Default: False",
-          "enable_group_devices": "Enable Group Devices (Experimental - may not work). Default: False",
+          "enable_group_devices": "Enable Group Devices (Control works, state unavailable). Default: False",
           "disable_attribute_updates": "DISABLE state updates. Space to disable. Read the README above!"
         },
         "title": "Options",

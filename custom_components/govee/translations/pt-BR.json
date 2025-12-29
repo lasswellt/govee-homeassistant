@@ -2,7 +2,8 @@
   "title": "Govee",
   "config": {
     "abort": {
-      "already_configured": "Já configurado. Apenas uma única configuração é possível."
+      "already_configured": "Já configurado. Apenas uma única configuração é possível.",
+      "reauth_successful": "Reautenticação bem-sucedida"
     },
     "error": {
       "cannot_connect": "Não pode conectar. A API-Key está correta e a conexão com a Internet está funcionando?",
@@ -15,6 +16,13 @@
           "delay": "Intervalo de escaneamento"
         },
         "description": "Obtenha sua chave de API do aplicativo Govee Home. Para detalhes consulte https://github.com/LaggAt/hacs-govee/blob/master/README.md"
+      },
+      "reauth_confirm": {
+        "data": {
+          "api_key": "Chave de API"
+        },
+        "title": "Reautenticar Govee",
+        "description": "Sua chave de API não é mais válida. Por favor, insira uma nova chave de API."
       }
     }
   },
