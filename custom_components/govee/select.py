@@ -136,12 +136,20 @@ class GoveeSceneSelect(GoveeEntity, SelectEntity):
     def current_option(self) -> str | None:
         """Return the current selected scene."""
         state = self.device_state
-        if state is None:
+        if state is None or not state.current_scene:
             return None
 
-        # Check if current scene matches this scene type
-        if state.current_scene_name and state.current_scene_name in self._options_map:
-            return state.current_scene_name
+        for name, scene in self._options_map.items():
+            if self._scene_type == "diy":
+                if f"diy_{scene.value}" == state.current_scene:
+                    return name
+            else:
+                if isinstance(scene.value, dict):
+                    scene_id = scene.value.get("id") or scene.value.get("paramId")
+                    if str(scene_id) == state.current_scene:
+                        return name
+                elif str(scene.value) == state.current_scene:
+                    return name
 
         return None
 

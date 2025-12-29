@@ -321,14 +321,15 @@ class GoveeDeviceState:
             self.current_scene = None
             self.current_scene_name = None
         elif instance == INSTANCE_LIGHT_SCENE:
-            # Track scene optimistically
             if isinstance(value, dict):
-                self.current_scene = str(value.get("value"))
-                self.current_scene_name = value.get("name")
+                scene_id = value.get("id") or value.get("paramId") or str(value)
+                self.current_scene = str(scene_id)
+            else:
+                self.current_scene = str(value)
+            self.current_scene_name = None
         elif instance == INSTANCE_DIY_SCENE:
-            if isinstance(value, dict):
-                self.current_scene = f"diy_{value.get('value')}"
-                self.current_scene_name = value.get("name")
+            self.current_scene = f"diy_{value}"
+            self.current_scene_name = None
         elif instance == INSTANCE_NIGHTLIGHT_TOGGLE:
             self.nightlight_on = value == 1
 
@@ -367,6 +368,6 @@ class SceneOption:
             category=data.get("category"),
         )
 
-    def to_command_value(self) -> dict[str, Any]:
+    def to_command_value(self) -> Any:
         """Get the value format for sending commands."""
-        return {"value": self.value, "name": self.name}
+        return self.value
