@@ -69,7 +69,8 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
                     else:
                         _LOGGER.warning(
                             "EXPERIMENTAL: Including group device: %s (%s) - "
-                            "API support not guaranteed. Errors may occur.",
+                            "Control commands work but state queries fail. "
+                            "Device will use optimistic state tracking (assumed state).",
                             device.device_name,
                             device.sku,
                         )
@@ -140,21 +141,37 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
                 is_group_device = device.sku in UNSUPPORTED_DEVICE_SKUS
                 log_level = _LOGGER.info if is_group_device else _LOGGER.warning
 
-                log_level(
-                    "Failed to get state for %s (%s)%s: %s",
-                    device.device_name,
-                    device_id,
-                    " [GROUP DEVICE - expected]" if is_group_device else "",
-                    err,
-                )
+                if is_group_device:
+                    log_level(
+                        "State query failed for group device %s (%s) [EXPECTED]: %s. "
+                        "Using optimistic state tracking - device will show as available with assumed state.",
+                        device.device_name,
+                        device_id,
+                        err,
+                    )
+                else:
+                    log_level(
+                        "Failed to get state for %s (%s): %s",
+                        device.device_name,
+                        device_id,
+                        err,
+                    )
                 # Keep previous state if available
                 if self.data and device_id in self.data:
                     states[device_id] = self.data[device_id]
                 else:
-                    # Create offline state
-                    states[device_id] = GoveeDeviceState(
-                        device_id=device_id, online=False
-                    )
+                    # For group devices, initialize with structure suitable for optimistic updates
+                    if is_group_device:
+                        states[device_id] = GoveeDeviceState(
+                            device_id=device_id,
+                            online=False,  # Can't query state
+                            power_state=None,  # Unknown until first command or restoration
+                        )
+                    else:
+                        # Regular offline device
+                        states[device_id] = GoveeDeviceState(
+                            device_id=device_id, online=False
+                        )
 
         return states
 

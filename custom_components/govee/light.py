@@ -15,6 +15,7 @@ from homeassistant.components.light import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from . import GoveeConfigEntry
 from .api.const import (
@@ -66,8 +67,8 @@ async def async_setup_entry(
     await async_setup_services(hass)
 
 
-class GoveeLightEntity(GoveeEntity, LightEntity):
-    """Govee light entity with v2.0 API features."""
+class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
+    """Govee light entity with v2.0 API features and state restoration."""
 
     _attr_name = None  # Use device name
 
@@ -97,6 +98,64 @@ class GoveeLightEntity(GoveeEntity, LightEntity):
         temp_range = device.get_color_temp_range()
         self._attr_min_color_temp_kelvin = temp_range[0]
         self._attr_max_color_temp_kelvin = temp_range[1]
+
+    async def async_added_to_hass(self) -> None:
+        """Run when entity is added to Home Assistant.
+
+        Restore previous state for group devices that can't be queried.
+        """
+        await super().async_added_to_hass()
+
+        # Only restore state for group devices
+        if not self._is_group_device:
+            return
+
+        # Check if we already have state from coordinator
+        state = self.device_state
+        if state and state.power_state is not None:
+            return  # Already have state, don't overwrite
+
+        # Restore from previous state
+        last_state = await self.async_get_last_state()
+        if last_state is None:
+            _LOGGER.debug(
+                "No previous state to restore for group device %s",
+                self._device.device_name,
+            )
+            return
+
+        # Restore power state
+        if last_state.state in ("on", "off"):
+            restored_power = last_state.state == "on"
+
+            # Apply to coordinator state
+            if state:
+                state.power_state = restored_power
+                state.online = False  # Still can't query
+
+                # Restore brightness if available
+                if last_state.attributes.get(ATTR_BRIGHTNESS):
+                    # Convert HA range (0-255) to API range (0-100)
+                    brightness = last_state.attributes[ATTR_BRIGHTNESS]
+                    state.brightness = round(brightness * 100 / 255)
+
+                # Restore color if available
+                if last_state.attributes.get(ATTR_RGB_COLOR):
+                    state.color_rgb = tuple(last_state.attributes[ATTR_RGB_COLOR])
+
+                # Restore color temp if available
+                if last_state.attributes.get(ATTR_COLOR_TEMP_KELVIN):
+                    state.color_temp_kelvin = last_state.attributes[ATTR_COLOR_TEMP_KELVIN]
+
+                _LOGGER.info(
+                    "Restored state for group device %s: power=%s, brightness=%s",
+                    self._device.device_name,
+                    restored_power,
+                    state.brightness,
+                )
+
+                # Trigger update
+                self.async_write_ha_state()
 
     def _determine_color_modes(self) -> set[ColorMode]:
         """Determine supported color modes from device capabilities."""

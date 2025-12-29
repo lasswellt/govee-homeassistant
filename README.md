@@ -6,7 +6,7 @@
 
 Control your Govee lights, LED strips, and smart plugs through Home Assistant using the official Govee API v2.0.
 
-**Current Version:** 2025.12.5
+**Current Version:** 2025.12.7
 
 ## Features
 
@@ -128,7 +128,7 @@ After setup, you can configure additional options via **Settings** > **Devices &
 | **Poll Interval** | State polling frequency in seconds (requires restart) | 30 |
 | **Use Assumed State** | Shows two buttons (on/off) instead of toggle | True |
 | **Offline is Off** | Show offline devices as "off" instead of "unavailable" | False |
-| **Enable Group Devices** | Experimental: Allow Govee Home app groups (may not work) | False |
+| **Enable Group Devices** | Experimental: Allow Govee Home app groups (control works, state queries don't) | False |
 | **Disable Attribute Updates** | Advanced: disable specific state updates | Empty |
 
 ---
@@ -207,6 +207,28 @@ data:
   auto_color: true
 ```
 
+### Group Device Support (Experimental)
+
+Govee Home app groups (SameModeGroup, BaseGroup, DreamViewScenic) have limited API support:
+- ✅ **Discovery**: Groups appear in device list
+- ✅ **Control**: On/off commands work perfectly
+- ❌ **State queries**: API returns "devices not exist" error
+
+**How It Works:**
+- Groups use **assumed state** (showing separate On/Off buttons instead of toggle)
+- State is tracked optimistically based on commands you send via Home Assistant
+- State persists across Home Assistant restarts using RestoreEntity
+- Groups remain "available" and controllable even though state cannot be queried
+- Actual device state may differ if controlled outside Home Assistant (Govee app, voice assistants, etc.)
+
+**To Enable:**
+1. Go to **Settings** → **Devices & Services** → **Govee**
+2. Click **Configure**
+3. Enable **"Enable Group Devices"**
+4. Restart Home Assistant
+
+**Recommendation:** For the most reliable state tracking, control individual devices directly rather than using Govee Home app groups. Groups are best used when you need to control multiple similar devices simultaneously and don't mind potential state drift.
+
 ---
 
 ## Services
@@ -260,7 +282,9 @@ Refresh the scene list from Govee cloud (for Select entities).
 - Bluetooth-only devices are not supported
 - Govee Home app groups (SameModeGroup, BaseGroup, DreamViewScenic) are skipped by default
   - **Experimental:** Enable in **Settings** > **Devices & Services** > **Govee** > **Configure**
-  - ⚠️ **Warning:** Group devices historically don't support API control. May not respond to commands. Use at your own risk.
+  - ✅ **Control commands work** (on/off supported)
+  - ❌ **State queries fail** ("devices not exist" - uses assumed state instead)
+  - Groups will show as "unavailable" in UI but commands will still work
 - Try refreshing the integration
 
 **State not updating**
