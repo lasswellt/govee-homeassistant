@@ -7,6 +7,7 @@ DOMAIN = "govee"
 
 # Config entry options
 CONF_DISABLE_ATTRIBUTE_UPDATES = "disable_attribute_updates"
+CONF_ENABLE_GROUP_DEVICES = "enable_group_devices"
 CONF_OFFLINE_IS_OFF = "offline_is_off"
 CONF_USE_ASSUMED_STATE = "use_assumed_state"
 

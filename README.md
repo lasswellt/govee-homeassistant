@@ -6,7 +6,7 @@
 
 Control your Govee lights, LED strips, and smart plugs through Home Assistant using the official Govee API v2.0.
 
-**Current Version:** 2025.12.3
+**Current Version:** 2025.12.4
 
 ## Features
 
@@ -128,6 +128,7 @@ After setup, you can configure additional options via **Settings** > **Devices &
 | **Poll Interval** | State polling frequency in seconds (requires restart) | 30 |
 | **Use Assumed State** | Shows two buttons (on/off) instead of toggle | True |
 | **Offline is Off** | Show offline devices as "off" instead of "unavailable" | False |
+| **Enable Group Devices** | Experimental: Allow Govee Home app groups (may not work) | False |
 | **Disable Attribute Updates** | Advanced: disable specific state updates | Empty |
 
 ---
@@ -257,7 +258,9 @@ Refresh the scene list from Govee cloud (for Select entities).
 **Devices not appearing**
 - Only cloud-enabled devices appear in the API
 - Bluetooth-only devices are not supported
-- Govee Home app groups (SameModeGroup, BaseGroup, DreamViewScenic) are automatically skipped - they don't support API control
+- Govee Home app groups (SameModeGroup, BaseGroup, DreamViewScenic) are skipped by default
+  - **Experimental:** Enable in **Settings** > **Devices & Services** > **Govee** > **Configure**
+  - ⚠️ **Warning:** Group devices historically don't support API control. May not respond to commands. Use at your own risk.
 - Try refreshing the integration
 
 **State not updating**

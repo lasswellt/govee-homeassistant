@@ -10,7 +10,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.exceptions import ConfigEntryAuthFailed
 
 from .api import GoveeApiClient, GoveeApiError, GoveeAuthError, GoveeRateLimitError
-from .const import UNSUPPORTED_DEVICE_SKUS
+from .const import CONF_ENABLE_GROUP_DEVICES, UNSUPPORTED_DEVICE_SKUS
 from .models import GoveeDevice, GoveeDeviceState, SceneOption
 
 if TYPE_CHECKING:
@@ -54,16 +54,25 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
             for raw_device in raw_devices:
                 device = GoveeDevice.from_api(raw_device)
 
-                # Skip unsupported device types (Govee Home app groups)
+                # Skip unsupported device types (Govee Home app groups) unless enabled
                 if device.sku in UNSUPPORTED_DEVICE_SKUS:
-                    _LOGGER.debug(
-                        "Skipping unsupported device group: %s (%s) - "
-                        "Govee Home app groups do not support API control",
-                        device.device_name,
-                        device.sku,
-                    )
-                    skipped_count += 1
-                    continue
+                    if not self.config_entry.options.get(CONF_ENABLE_GROUP_DEVICES, False):
+                        _LOGGER.debug(
+                            "Skipping unsupported device group: %s (%s) - "
+                            "Govee Home app groups do not support API control. "
+                            "Enable 'Enable Group Devices' in options to test.",
+                            device.device_name,
+                            device.sku,
+                        )
+                        skipped_count += 1
+                        continue
+                    else:
+                        _LOGGER.warning(
+                            "EXPERIMENTAL: Including group device: %s (%s) - "
+                            "API support not guaranteed. Errors may occur.",
+                            device.device_name,
+                            device.sku,
+                        )
 
                 self.devices[device.device_id] = device
                 _LOGGER.debug(
@@ -73,11 +82,25 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
                     device.device_type,
                 )
 
-            _LOGGER.info(
-                "Discovered %d Govee devices (%d unsupported groups skipped)",
-                len(self.devices),
-                skipped_count,
+            # Count experimental group devices that were included
+            group_device_count = sum(
+                1 for device in self.devices.values()
+                if device.sku in UNSUPPORTED_DEVICE_SKUS
             )
+
+            if group_device_count > 0:
+                _LOGGER.warning(
+                    "Discovered %d Govee devices (%d skipped, %d EXPERIMENTAL groups included)",
+                    len(self.devices),
+                    skipped_count,
+                    group_device_count,
+                )
+            else:
+                _LOGGER.info(
+                    "Discovered %d Govee devices (%d unsupported groups skipped)",
+                    len(self.devices),
+                    skipped_count,
+                )
 
         except GoveeAuthError as err:
             raise ConfigEntryAuthFailed("Invalid API key") from err
@@ -109,10 +132,14 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
                 if self.data and device_id in self.data:
                     states[device_id] = self.data[device_id]
             except GoveeApiError as err:
-                _LOGGER.warning(
-                    "Failed to get state for %s (%s): %s",
+                is_group_device = device.sku in UNSUPPORTED_DEVICE_SKUS
+                log_level = _LOGGER.info if is_group_device else _LOGGER.warning
+
+                log_level(
+                    "Failed to get state for %s (%s)%s: %s",
                     device.device_name,
                     device_id,
+                    " [GROUP DEVICE - expected]" if is_group_device else "",
                     err,
                 )
                 # Keep previous state if available
@@ -164,14 +191,27 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
                 self.async_set_updated_data(self.data)
 
         except GoveeApiError as err:
-            _LOGGER.error(
-                "Failed to control device %s (%s.%s = %s): %s",
-                device_id,
-                capability_type,
-                instance,
-                value,
-                err,
-            )
+            is_group_device = device.sku in UNSUPPORTED_DEVICE_SKUS
+
+            if is_group_device:
+                _LOGGER.warning(
+                    "Failed to control group device %s (%s.%s = %s): %s - "
+                    "Group devices may not support API control.",
+                    device_id,
+                    capability_type,
+                    instance,
+                    value,
+                    err,
+                )
+            else:
+                _LOGGER.error(
+                    "Failed to control device %s (%s.%s = %s): %s",
+                    device_id,
+                    capability_type,
+                    instance,
+                    value,
+                    err,
+                )
             raise
 
     async def async_get_dynamic_scenes(
