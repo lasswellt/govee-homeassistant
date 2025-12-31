@@ -57,8 +57,10 @@ DEVICE_TYPE_PLATFORMS: dict[str, list[Platform]] = {
 
 # All supported platforms
 PLATFORMS: list[Platform] = [
+    Platform.BUTTON,
     Platform.LIGHT,
     Platform.SELECT,
+    Platform.SENSOR,
     Platform.SWITCH,
 ]
 

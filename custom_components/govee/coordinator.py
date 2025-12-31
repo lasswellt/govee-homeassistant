@@ -612,3 +612,49 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
     def rate_limit_remaining_minute(self) -> int:
         """Get remaining per-minute rate limit."""
         return self.client.rate_limiter.remaining_minute
+
+    @property
+    def rate_limit_remaining_day(self) -> int:
+        """Get remaining daily rate limit."""
+        return self.client.rate_limiter.remaining_day
+
+    async def async_refresh_device_scenes(self, device_id: str) -> None:
+        """Refresh scene lists for a device.
+
+        Clears cached scenes and fetches fresh lists from the API.
+        Used by the refresh scenes button.
+        """
+        # Clear caches for this device
+        self._scene_cache.pop(device_id, None)
+        self._diy_scene_cache.pop(device_id, None)
+
+        # Fetch fresh scenes
+        await self.async_get_dynamic_scenes(device_id)
+        await self.async_get_diy_scenes(device_id)
+
+        _LOGGER.debug("Refreshed scenes for device %s", device_id)
+
+    async def async_identify_device(self, device_id: str) -> None:
+        """Identify a device by flashing it briefly.
+
+        Turns the device off and back on to help users identify
+        which physical device corresponds to this entity.
+        """
+        from .api.const import CAPABILITY_ON_OFF, INSTANCE_POWER_SWITCH
+
+        # Quick flash: off then on
+        await self.async_control_device(
+            device_id,
+            CAPABILITY_ON_OFF,
+            INSTANCE_POWER_SWITCH,
+            0,
+        )
+        import asyncio
+        await asyncio.sleep(0.5)
+        await self.async_control_device(
+            device_id,
+            CAPABILITY_ON_OFF,
+            INSTANCE_POWER_SWITCH,
+            1,
+        )
+        _LOGGER.debug("Identified device %s", device_id)

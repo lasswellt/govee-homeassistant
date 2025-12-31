@@ -69,6 +69,22 @@
       "outlet": {
         "name": "Outlet"
       }
+    },
+    "sensor": {
+      "rate_limit_remaining_minute": {
+        "name": "API Rate Limit (Minute)"
+      },
+      "rate_limit_remaining_day": {
+        "name": "API Rate Limit (Day)"
+      }
+    },
+    "button": {
+      "refresh_scenes": {
+        "name": "Refresh Scenes"
+      },
+      "identify": {
+        "name": "Identify"
+      }
     }
   },
   "services": {
@@ -162,6 +178,10 @@
     "rate_limit_day_warning": {
       "title": "Approaching Daily Rate Limit",
       "description": "Your Govee integration is approaching the daily API rate limit.\n\n**Current status:** {remaining} requests remaining today (limit: 10,000/day)\n\n**What this means:**\n- If the daily limit is exceeded, API requests may fail\n- The integration may stop updating device states\n\n**Recommended actions:**\n- **Immediately increase** the poll interval in integration options (recommended: 60+ seconds)\n- Consider reducing the number of devices\n- The daily limit resets at midnight UTC\n\nThis warning will clear automatically when the rate limit resets."
+    },
+    "auth_failed": {
+      "title": "Govee Authentication Failed",
+      "description": "The Govee API key is no longer valid.\n\n**What this means:**\n- The integration cannot communicate with Govee servers\n- Device control and state updates will not work\n\n**How to fix:**\n1. Go to Settings → Devices & Services → Govee\n2. Click 'Configure' or 'Reconfigure'\n3. Enter a new valid API key\n\n**Getting a new API key:**\n1. Open the Govee Home app\n2. Go to Profile → Settings → About Us → Apply for API Key"
     }
   }
 }
