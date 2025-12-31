@@ -8,7 +8,7 @@
 
 Control your Govee lights, LED strips, and smart plugs through Home Assistant using the official Govee API v2.0.
 
-**Current Version:** 2025.12.8
+**Current Version:** 2025.12.9
 
 ## Features
 
@@ -19,6 +19,9 @@ Control your Govee lights, LED strips, and smart plugs through Home Assistant us
 - **Music Mode** - Activate music-reactive lighting modes
 - **Smart Plugs** - On/off control for Govee smart outlets
 - **Rate Limiting** - Built-in protection against API limits (100/min, 10,000/day)
+- **Diagnostics** - Built-in diagnostics for troubleshooting
+- **Repair Issues** - Proactive warnings for API limits and group device limitations
+- **Full Translations** - Available in English, German, French, and Portuguese (BR)
 
 ---
 
@@ -40,6 +43,7 @@ Control your Govee lights, LED strips, and smart plugs through Home Assistant us
   - [Music Mode](#music-mode)
 - [Services](#services)
 - [Troubleshooting](#troubleshooting)
+- [Diagnostics & Repairs](#diagnostics--repairs)
 - [Support](#support)
 
 ---
@@ -172,6 +176,12 @@ To enable DIY scenes:
 1. Go to **Settings** > **Devices & Services** > **Govee**
 2. Click on your device
 3. Find the "DIY Scene" entity and enable it
+
+**Scene State Tracking:**
+- Scenes use optimistic state tracking (the API doesn't report current scene)
+- When you select a scene, the selection is remembered locally
+- If you manually change brightness, color, or color temperature, the scene selection clears (indicating manual control)
+- Scene state persists across Home Assistant restarts
 
 ### Segment Control
 
@@ -544,6 +554,42 @@ This integration follows Home Assistant 2025.12 best practices:
 - **Comprehensive Testing**: 300+ tests with 95%+ coverage
 - **Async Architecture**: Fully asynchronous implementation
 - **Modern Python**: Uses Python 3.12+ features and type syntax
+
+---
+
+## Diagnostics & Repairs
+
+### Downloading Diagnostics
+
+The integration includes a built-in diagnostics feature for troubleshooting:
+
+1. Go to **Settings** > **Devices & Services** > **Govee**
+2. Click the three-dot menu (⋮) on your Govee integration
+3. Select **Download diagnostics**
+
+The diagnostics file includes (with sensitive data redacted):
+- Integration configuration
+- Device information and capabilities
+- Rate limit status
+- Recent API errors
+
+Share this file when reporting issues for faster resolution.
+
+### Repair Issues
+
+The integration creates repair issues in Home Assistant to proactively warn you about potential problems:
+
+| Issue | Severity | Description |
+|-------|----------|-------------|
+| **Group Device Limitation** | Warning | Appears when group devices are enabled. Explains that control works but state queries fail due to Govee API limitations. |
+| **Per-Minute Rate Limit** | Warning | Appears when approaching the 100 requests/minute limit. Suggests increasing poll interval. |
+| **Daily Rate Limit** | Warning | Appears when approaching the 10,000 requests/day limit. More urgent - recommends immediate action. |
+
+To view repair issues:
+1. Go to **Settings** > **System** > **Repairs**
+2. Click on any Govee-related issues for detailed information and recommendations
+
+These warnings auto-clear when the underlying condition resolves (e.g., rate limit resets).
 
 ---
 

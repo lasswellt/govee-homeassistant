@@ -15,7 +15,8 @@ from homeassistant.components.light import (
 from homeassistant.helpers.restore_state import State
 from homeassistant.const import STATE_ON, STATE_OFF
 
-from custom_components.govee.light import async_setup_entry, GoveeLightEntity
+from custom_components.govee.light import async_setup_entry
+from custom_components.govee.entities import GoveeLightEntity
 from custom_components.govee.api.const import (
     CAPABILITY_COLOR_SETTING,
     CAPABILITY_DYNAMIC_SCENE,
@@ -69,7 +70,7 @@ class TestAsyncSetupEntry:
         async_add_entities = MagicMock()
 
         with patch(
-            "custom_components.govee.light.async_setup_services",
+            "custom_components.govee.services.async_setup_services",
             new_callable=AsyncMock,
         ):
             await async_setup_entry(hass, mock_config_entry, async_add_entities)
@@ -96,7 +97,7 @@ class TestAsyncSetupEntry:
         }
 
         with patch(
-            "custom_components.govee.light.async_setup_services",
+            "custom_components.govee.services.async_setup_services",
             new_callable=AsyncMock,
         ) as mock_setup_services:
             await async_setup_entry(hass, mock_config_entry, MagicMock())
@@ -123,7 +124,7 @@ class TestGoveeLightEntityInitialization:
         entity = GoveeLightEntity(mock_coordinator, mock_device_light, mock_config_entry)
 
         assert entity._device == mock_device_light
-        assert entity._coordinator == mock_coordinator
+        assert entity.coordinator == mock_coordinator
         assert entity._entry == mock_config_entry
         assert (
             entity._attr_unique_id
@@ -285,22 +286,28 @@ class TestStateRestoration:
         """Test group device restores power state."""
         # Set up state
         mock_coordinator.get_state.return_value = GoveeDeviceState(
+            device_id=mock_device_group.device_id,
             online=False, power_state=None, brightness=None
         )
 
         # Create mock last state
         last_state = State("light.test", STATE_ON)
 
-        entity = GoveeLightEntity(mock_coordinator, mock_device_group, mock_config_entry)
-        entity.hass = hass
-        entity.async_write_ha_state = MagicMock()
+        # Patch UNSUPPORTED_DEVICE_SKUS to include the group device SKU
+        with patch(
+            "custom_components.govee.const.UNSUPPORTED_DEVICE_SKUS",
+            {mock_device_group.sku},
+        ):
+            entity = GoveeLightEntity(mock_coordinator, mock_device_group, mock_config_entry)
+            entity.hass = hass
+            entity.async_write_ha_state = MagicMock()
 
-        with patch.object(entity, "async_get_last_state", return_value=last_state):
-            await entity.async_added_to_hass()
+            with patch.object(entity, "async_get_last_state", return_value=last_state):
+                await entity.async_added_to_hass()
 
-            # Should restore power state
-            state = mock_coordinator.get_state.return_value
-            assert state.power_state is True
+                # Should restore power state
+                state = mock_coordinator.get_state.return_value
+                assert state.power_state is True
 
     @pytest.mark.asyncio
     async def test_async_added_to_hass_group_device_restores_brightness(
@@ -313,6 +320,7 @@ class TestStateRestoration:
         """Test group device restores brightness."""
         # Set up state
         mock_coordinator.get_state.return_value = GoveeDeviceState(
+            device_id=mock_device_group.device_id,
             online=False, power_state=None, brightness=None
         )
 
@@ -321,17 +329,22 @@ class TestStateRestoration:
             "light.test", STATE_ON, attributes={ATTR_BRIGHTNESS: 128}
         )
 
-        entity = GoveeLightEntity(mock_coordinator, mock_device_group, mock_config_entry)
-        entity.hass = hass
-        entity.async_write_ha_state = MagicMock()
+        # Patch UNSUPPORTED_DEVICE_SKUS to include the group device SKU
+        with patch(
+            "custom_components.govee.const.UNSUPPORTED_DEVICE_SKUS",
+            {mock_device_group.sku},
+        ):
+            entity = GoveeLightEntity(mock_coordinator, mock_device_group, mock_config_entry)
+            entity.hass = hass
+            entity.async_write_ha_state = MagicMock()
 
-        with patch.object(entity, "async_get_last_state", return_value=last_state):
-            await entity.async_added_to_hass()
+            with patch.object(entity, "async_get_last_state", return_value=last_state):
+                await entity.async_added_to_hass()
 
-            # Should restore brightness (converted from HA 0-255 to API 0-100)
-            state = mock_coordinator.get_state.return_value
-            expected_brightness = round(128 * 100 / 255)
-            assert state.brightness == expected_brightness
+                # Should restore brightness (converted from HA 0-255 to API 0-100)
+                state = mock_coordinator.get_state.return_value
+                expected_brightness = round(128 * 100 / 255)
+                assert state.brightness == expected_brightness
 
     @pytest.mark.asyncio
     async def test_async_added_to_hass_group_device_no_last_state(
@@ -344,17 +357,23 @@ class TestStateRestoration:
     ):
         """Test group device handles no previous state."""
         mock_coordinator.get_state.return_value = GoveeDeviceState(
+            device_id=mock_device_group.device_id,
             online=False, power_state=None, brightness=None
         )
 
-        entity = GoveeLightEntity(mock_coordinator, mock_device_group, mock_config_entry)
-        entity.hass = hass
+        # Patch UNSUPPORTED_DEVICE_SKUS to include the group device SKU
+        with patch(
+            "custom_components.govee.const.UNSUPPORTED_DEVICE_SKUS",
+            {mock_device_group.sku},
+        ):
+            entity = GoveeLightEntity(mock_coordinator, mock_device_group, mock_config_entry)
+            entity.hass = hass
 
-        with patch.object(entity, "async_get_last_state", return_value=None):
-            await entity.async_added_to_hass()
+            with patch.object(entity, "async_get_last_state", return_value=None):
+                await entity.async_added_to_hass()
 
-            # Should log about no state to restore
-            assert "No previous state to restore" in caplog.text
+                # Should log about no state to restore
+                assert "No previous state to restore" in caplog.text
 
 
 # ==============================================================================
@@ -407,13 +426,13 @@ class TestStateProperties:
         self,
         mock_coordinator,
         mock_device_light,
-        mock_config_entry,
+        mock_config_entry_with_options,
         mock_state_offline,
     ):
         """Test is_on returns False for offline device when offline_is_off=True."""
-        mock_config_entry.options = {CONF_OFFLINE_IS_OFF: True}
+        # mock_config_entry_with_options has CONF_OFFLINE_IS_OFF: True
         mock_coordinator.get_state.return_value = mock_state_offline
-        entity = GoveeLightEntity(mock_coordinator, mock_device_light, mock_config_entry)
+        entity = GoveeLightEntity(mock_coordinator, mock_device_light, mock_config_entry_with_options)
 
         assert entity.is_on is False
 
@@ -425,7 +444,7 @@ class TestStateProperties:
         mock_state_offline,
     ):
         """Test is_on returns None for offline device when offline_is_off=False."""
-        mock_config_entry.options = {CONF_OFFLINE_IS_OFF: False}
+        # mock_config_entry has CONF_OFFLINE_IS_OFF: False
         mock_coordinator.get_state.return_value = mock_state_offline
         entity = GoveeLightEntity(mock_coordinator, mock_device_light, mock_config_entry)
 
@@ -439,6 +458,7 @@ class TestStateProperties:
     ):
         """Test brightness conversion from API range (0-100) to HA range (0-255)."""
         state = GoveeDeviceState(
+            device_id=mock_device_light.device_id,
             online=True, power_state=True, brightness=50  # API: 50/100
         )
         mock_coordinator.get_state.return_value = state
@@ -468,6 +488,7 @@ class TestStateProperties:
     ):
         """Test rgb_color returns RGB tuple."""
         state = GoveeDeviceState(
+            device_id=mock_device_light.device_id,
             online=True,
             power_state=True,
             brightness=100,
@@ -486,6 +507,7 @@ class TestStateProperties:
     ):
         """Test color_temp_kelvin returns Kelvin value."""
         state = GoveeDeviceState(
+            device_id=mock_device_light.device_id,
             online=True,
             power_state=True,
             brightness=100,
@@ -504,6 +526,7 @@ class TestStateProperties:
     ):
         """Test color_mode returns COLOR_TEMP when color temp is set."""
         state = GoveeDeviceState(
+            device_id=mock_device_light.device_id,
             online=True,
             power_state=True,
             brightness=100,
@@ -522,6 +545,7 @@ class TestStateProperties:
     ):
         """Test color_mode returns RGB when RGB is set."""
         state = GoveeDeviceState(
+            device_id=mock_device_light.device_id,
             online=True,
             power_state=True,
             brightness=100,
@@ -540,6 +564,7 @@ class TestStateProperties:
     ):
         """Test effect returns current scene name."""
         state = GoveeDeviceState(
+            device_id=mock_device_light_with_scenes.device_id,
             online=True,
             power_state=True,
             brightness=100,
@@ -556,11 +581,11 @@ class TestStateProperties:
         self,
         mock_coordinator,
         mock_device_light,
-        mock_config_entry,
+        mock_config_entry_with_options,
     ):
         """Test assumed_state returns True when configured."""
-        mock_config_entry.options = {CONF_USE_ASSUMED_STATE: True}
-        entity = GoveeLightEntity(mock_coordinator, mock_device_light, mock_config_entry)
+        # mock_config_entry_with_options has CONF_USE_ASSUMED_STATE: True
+        entity = GoveeLightEntity(mock_coordinator, mock_device_light, mock_config_entry_with_options)
 
         assert entity.assumed_state is True
 
@@ -571,7 +596,7 @@ class TestStateProperties:
         mock_config_entry,
     ):
         """Test assumed_state returns False when disabled."""
-        mock_config_entry.options = {CONF_USE_ASSUMED_STATE: False}
+        # mock_config_entry has CONF_USE_ASSUMED_STATE: False
         entity = GoveeLightEntity(mock_coordinator, mock_device_light, mock_config_entry)
 
         assert entity.assumed_state is False

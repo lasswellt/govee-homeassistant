@@ -1,10 +1,8 @@
 """The Govee integration."""
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import timedelta
 import logging
-from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_KEY, CONF_DELAY
@@ -15,21 +13,9 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api import GoveeApiClient, GoveeApiError, GoveeAuthError
 from .const import CONFIG_ENTRY_VERSION, DEFAULT_POLL_INTERVAL, DOMAIN, PLATFORMS
 from .coordinator import GoveeDataUpdateCoordinator
-from .models import GoveeDevice
+from .models import GoveeConfigEntry, GoveeRuntimeData
 
 _LOGGER = logging.getLogger(__name__)
-
-
-@dataclass
-class GoveeRuntimeData:
-    """Runtime data for Govee integration."""
-
-    client: GoveeApiClient
-    coordinator: GoveeDataUpdateCoordinator
-    devices: dict[str, GoveeDevice]
-
-
-type GoveeConfigEntry = ConfigEntry[GoveeRuntimeData]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: GoveeConfigEntry) -> bool:

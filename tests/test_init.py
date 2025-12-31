@@ -57,7 +57,12 @@ class TestAsyncSetupEntry:
         mock_device_switch,
     ):
         """Test successful setup."""
+        mock_session = MagicMock()
+
         with patch(
+            "custom_components.govee.async_get_clientsession",
+            return_value=mock_session,
+        ), patch(
             "custom_components.govee.GoveeApiClient",
             return_value=mock_api_client_with_devices,
         ), patch(
@@ -93,7 +98,12 @@ class TestAsyncSetupEntry:
         mock_auth_error,
     ):
         """Test setup with authentication error."""
+        mock_session = MagicMock()
+
         with patch(
+            "custom_components.govee.async_get_clientsession",
+            return_value=mock_session,
+        ), patch(
             "custom_components.govee.GoveeApiClient",
             return_value=mock_api_client,
         ), patch(
@@ -123,7 +133,12 @@ class TestAsyncSetupEntry:
         """Test setup with API error."""
         from custom_components.govee.api.exceptions import GoveeApiError
 
+        mock_session = MagicMock()
+
         with patch(
+            "custom_components.govee.async_get_clientsession",
+            return_value=mock_session,
+        ), patch(
             "custom_components.govee.GoveeApiClient",
             return_value=mock_api_client,
         ), patch(
@@ -147,14 +162,24 @@ class TestAsyncSetupEntry:
     async def test_setup_entry_uses_api_key_from_options(
         self,
         hass: HomeAssistant,
-        mock_config_entry_with_options,
         mock_api_client,
     ):
         """Test setup uses API key from options if available."""
-        mock_config_entry_with_options.data = {CONF_API_KEY: "old_key"}
-        mock_config_entry_with_options.options = {CONF_API_KEY: "new_key"}
+        from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+        # Create entry with API key in both data and options
+        entry_with_options = MockConfigEntry(
+            domain=DOMAIN,
+            data={CONF_API_KEY: "old_key"},
+            options={CONF_API_KEY: "new_key"},
+        )
+
+        mock_session = MagicMock()
 
         with patch(
+            "custom_components.govee.async_get_clientsession",
+            return_value=mock_session,
+        ), patch(
             "custom_components.govee.GoveeApiClient",
         ) as mock_client_class, patch(
             "custom_components.govee.GoveeDataUpdateCoordinator",
@@ -170,7 +195,7 @@ class TestAsyncSetupEntry:
             mock_coordinator.devices = {}
             mock_coord_class.return_value = mock_coordinator
 
-            await async_setup_entry(hass, mock_config_entry_with_options)
+            await async_setup_entry(hass, entry_with_options)
 
             # Should use API key from options
             mock_client_class.assert_called_once()
@@ -181,13 +206,24 @@ class TestAsyncSetupEntry:
     async def test_setup_entry_uses_custom_poll_interval(
         self,
         hass: HomeAssistant,
-        mock_config_entry_with_options,
         mock_api_client,
     ):
         """Test setup uses custom poll interval from options."""
-        mock_config_entry_with_options.options = {"delay": 30}
+        from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+        # Create entry with custom poll interval
+        entry_with_custom_poll = MockConfigEntry(
+            domain=DOMAIN,
+            data={CONF_API_KEY: "test_key"},
+            options={"delay": 30},
+        )
+
+        mock_session = MagicMock()
 
         with patch(
+            "custom_components.govee.async_get_clientsession",
+            return_value=mock_session,
+        ), patch(
             "custom_components.govee.GoveeApiClient",
             return_value=mock_api_client,
         ), patch(
@@ -200,7 +236,7 @@ class TestAsyncSetupEntry:
             mock_coordinator.devices = {}
             mock_coord_class.return_value = mock_coordinator
 
-            await async_setup_entry(hass, mock_config_entry_with_options)
+            await async_setup_entry(hass, entry_with_custom_poll)
 
             # Should create coordinator with custom interval
             mock_coord_class.assert_called_once()
@@ -215,7 +251,12 @@ class TestAsyncSetupEntry:
         mock_api_client_with_devices,
     ):
         """Test setup registers options update listener."""
+        mock_session = MagicMock()
+
         with patch(
+            "custom_components.govee.async_get_clientsession",
+            return_value=mock_session,
+        ), patch(
             "custom_components.govee.GoveeApiClient",
             return_value=mock_api_client_with_devices,
         ), patch(
@@ -337,6 +378,8 @@ class TestAsyncMigrateEntry:
             data={CONF_API_KEY: "test_key"},
             options={"delay": 60},
         )
+        # Entry must be added to hass for async_update_entry to work
+        old_entry.add_to_hass(hass)
 
         result = await async_migrate_entry(hass, old_entry)
 
@@ -351,18 +394,29 @@ class TestAsyncMigrateEntry:
     async def test_migrate_entry_already_current_version(
         self,
         hass: HomeAssistant,
-        mock_config_entry,
     ):
         """Test migration when already at current version."""
-        original_version = mock_config_entry.version
-        original_data = dict(mock_config_entry.data)
+        from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-        result = await async_migrate_entry(hass, mock_config_entry)
+        # Create entry that's already at current version
+        current_entry = MockConfigEntry(
+            domain=DOMAIN,
+            version=CONFIG_ENTRY_VERSION,  # Already at version 2
+            data={CONF_API_KEY: "test_key"},
+            options={"delay": 60},
+        )
+        # Entry must be added to hass for async_update_entry to work
+        current_entry.add_to_hass(hass)
+
+        original_version = current_entry.version
+        original_data = dict(current_entry.data)
+
+        result = await async_migrate_entry(hass, current_entry)
 
         assert result is True
         # Should not modify version or data
-        assert mock_config_entry.version == original_version
-        assert mock_config_entry.data == original_data
+        assert current_entry.version == original_version
+        assert current_entry.data == original_data
 
     @pytest.mark.asyncio
     async def test_migrate_entry_preserves_all_data(
@@ -385,6 +439,8 @@ class TestAsyncMigrateEntry:
                 "offline_is_off": False,
             },
         )
+        # Entry must be added to hass for async_update_entry to work
+        old_entry.add_to_hass(hass)
 
         await async_migrate_entry(hass, old_entry)
 
@@ -406,8 +462,13 @@ class TestIntegrationLifecycle:
         mock_device_light,
     ):
         """Test complete lifecycle: setup -> use -> unload."""
+        mock_session = MagicMock()
+
         # Setup
         with patch(
+            "custom_components.govee.async_get_clientsession",
+            return_value=mock_session,
+        ), patch(
             "custom_components.govee.GoveeApiClient",
             return_value=mock_api_client_with_devices,
         ), patch(

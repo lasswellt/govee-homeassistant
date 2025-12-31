@@ -106,9 +106,10 @@ class TestDeviceDiscovery:
         mock_api_client,
     ):
         """Test setup skips group devices when not enabled."""
-        mock_config_entry.options = {}  # Group devices NOT enabled
+        # Group devices NOT enabled (mock_config_entry defaults to False)
 
         # Mock API with one regular and one group device
+        # Group device SKUs are: SameModeGroup, BaseGroup, DreamViewScenic
         mock_api_client.get_devices = AsyncMock(
             return_value=[
                 {
@@ -119,8 +120,8 @@ class TestDeviceDiscovery:
                     "capabilities": [],
                 },
                 {
-                    "device": "AA:BB:CC:DD:EE:FF:33:44",
-                    "sku": "H70B1",  # Group device
+                    "device": "GROUP_123456789",
+                    "sku": "SameModeGroup",  # Actual group device SKU
                     "deviceName": "Living Room Group",
                     "type": "devices.types.light",
                     "capabilities": [],
@@ -140,25 +141,25 @@ class TestDeviceDiscovery:
         # Should only discover regular device (group device skipped)
         assert len(coordinator.devices) == 1
         assert "AA:BB:CC:DD:EE:FF:11:22" in coordinator.devices
-        assert "AA:BB:CC:DD:EE:FF:33:44" not in coordinator.devices
+        assert "GROUP_123456789" not in coordinator.devices
 
     @pytest.mark.asyncio
     async def test_async_setup_includes_group_devices_when_enabled(
         self,
         hass: HomeAssistant,
-        mock_config_entry,
+        mock_config_entry_with_options,
         mock_api_client,
         caplog,
     ):
         """Test setup includes group devices when enabled."""
-        mock_config_entry.options = {CONF_ENABLE_GROUP_DEVICES: True}
+        # mock_config_entry_with_options has CONF_ENABLE_GROUP_DEVICES: True
 
-        # Mock API with group device
+        # Mock API with group device (use actual group SKU)
         mock_api_client.get_devices = AsyncMock(
             return_value=[
                 {
-                    "device": "AA:BB:CC:DD:EE:FF:33:44",
-                    "sku": "H70B1",  # Group device
+                    "device": "GROUP_123456789",
+                    "sku": "SameModeGroup",  # Actual group device SKU
                     "deviceName": "Living Room Group",
                     "type": "devices.types.light",
                     "capabilities": [],
@@ -168,7 +169,7 @@ class TestDeviceDiscovery:
 
         coordinator = GoveeDataUpdateCoordinator(
             hass,
-            mock_config_entry,
+            mock_config_entry_with_options,
             mock_api_client,
             update_interval=timedelta(seconds=60),
         )
@@ -177,7 +178,7 @@ class TestDeviceDiscovery:
 
         # Should include group device with warning
         assert len(coordinator.devices) == 1
-        assert "AA:BB:CC:DD:EE:FF:33:44" in coordinator.devices
+        assert "GROUP_123456789" in coordinator.devices
         assert "EXPERIMENTAL" in caplog.text
 
     @pytest.mark.asyncio
@@ -256,17 +257,21 @@ class TestStateUpdates:
             mock_device_switch.device_id: mock_device_switch,
         }
 
-        # Mock API state responses
+        # Mock API state responses in proper capabilities format
         mock_api_client.get_device_state = AsyncMock(
             side_effect=[
                 {
-                    "online": True,
-                    "powerState": "on",
-                    "brightness": 100,
+                    "capabilities": [
+                        {"instance": "online", "state": {"value": True}},
+                        {"instance": "powerSwitch", "state": {"value": 1}},
+                        {"instance": "brightness", "state": {"value": 100}},
+                    ]
                 },
                 {
-                    "online": True,
-                    "powerState": "off",
+                    "capabilities": [
+                        {"instance": "online", "state": {"value": True}},
+                        {"instance": "powerSwitch", "state": {"value": 0}},
+                    ]
                 },
             ]
         )
@@ -309,12 +314,14 @@ class TestStateUpdates:
             )
         }
 
-        # Mock API response (doesn't include scene)
+        # Mock API response in capabilities format (doesn't include scene)
         mock_api_client.get_device_state = AsyncMock(
             return_value={
-                "online": True,
-                "powerState": "on",
-                "brightness": 50,  # Changed
+                "capabilities": [
+                    {"instance": "online", "state": {"value": True}},
+                    {"instance": "powerSwitch", "state": {"value": 1}},
+                    {"instance": "brightness", "state": {"value": 50}},  # Changed
+                ]
             }
         )
 

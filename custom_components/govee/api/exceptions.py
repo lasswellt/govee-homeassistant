@@ -1,9 +1,19 @@
-"""Exceptions for Govee API v2.0 client."""
+"""Exceptions for Govee API v2.0 client.
+
+These exceptions are used at the API layer and are intentionally
+kept lightweight without Home Assistant dependencies. The coordinator
+layer wraps these in translatable exceptions from govee.exceptions.
+"""
 from __future__ import annotations
 
 
 class GoveeApiError(Exception):
-    """Base exception for Govee API errors."""
+    """Base exception for Govee API errors.
+
+    All API-level exceptions inherit from this class.
+    These are wrapped by the coordinator in translatable
+    GoveeException subclasses for user-facing messages.
+    """
 
     def __init__(self, message: str, code: int | None = None) -> None:
         """Initialize the exception."""

@@ -23,15 +23,13 @@ class TestCapabilityParameter:
         """Test creating an INTEGER parameter."""
         param = CapabilityParameter(
             data_type="INTEGER",
-            min_value=0,
-            max_value=100,
-            precision=1,
+            range={"min": 0, "max": 100, "precision": 1},
         )
 
         assert param.data_type == "INTEGER"
-        assert param.min_value == 0
-        assert param.max_value == 100
-        assert param.precision == 1
+        assert param.range["min"] == 0
+        assert param.range["max"] == 100
+        assert param.range["precision"] == 1
 
     def test_create_enum_parameter(self):
         """Test creating an ENUM parameter."""
@@ -89,20 +87,23 @@ class TestDeviceCapability:
         """Test creating a capability with parameters."""
         param = CapabilityParameter(
             data_type="INTEGER",
-            min_value=0,
-            max_value=100,
+            range={"min": 0, "max": 100},
         )
         cap = DeviceCapability(
             type="devices.capabilities.range",
             instance="brightness",
             parameters=param,
+            min_value=0,
+            max_value=100,
         )
 
         assert cap.type == "devices.capabilities.range"
         assert cap.instance == "brightness"
         assert cap.parameters is not None
-        assert cap.parameters.min_value == 0
-        assert cap.parameters.max_value == 100
+        assert cap.parameters.range["min"] == 0
+        assert cap.parameters.range["max"] == 100
+        assert cap.min_value == 0
+        assert cap.max_value == 100
 
     def test_from_api_simple_capability(self):
         """Test creating capability from API response without parameters."""
@@ -134,9 +135,12 @@ class TestDeviceCapability:
         assert cap.instance == "brightness"
         assert cap.parameters is not None
         assert cap.parameters.data_type == "INTEGER"
-        assert cap.parameters.min_value == 0
-        assert cap.parameters.max_value == 100
-        assert cap.parameters.precision == 1
+        assert cap.parameters.range["min"] == 0
+        assert cap.parameters.range["max"] == 100
+        assert cap.parameters.range["precision"] == 1
+        # Also check extracted values on capability
+        assert cap.min_value == 0
+        assert cap.max_value == 100
 
     def test_from_api_capability_with_options(self):
         """Test creating capability from API response with options."""
@@ -158,20 +162,6 @@ class TestDeviceCapability:
         assert cap.parameters is not None
         assert cap.parameters.data_type == "ENUM"
         assert len(cap.parameters.options) == 2
-
-    @property
-    def min_value(self) -> int | None:
-        """Get minimum value for range capabilities."""
-        if self.parameters and self.parameters.min_value is not None:
-            return self.parameters.min_value
-        return None
-
-    @property
-    def max_value(self) -> int | None:
-        """Get maximum value for range capabilities."""
-        if self.parameters and self.parameters.max_value is not None:
-            return self.parameters.max_value
-        return None
 
 
 # ==============================================================================
@@ -401,20 +391,23 @@ class TestGoveeDeviceState:
     def test_create_basic_state(self):
         """Test creating a basic device state."""
         state = GoveeDeviceState(
+            device_id="AA:BB:CC:DD:EE:FF:11:22",
             online=True,
             power_state=True,
             brightness=100,
         )
 
+        assert state.device_id == "AA:BB:CC:DD:EE:FF:11:22"
         assert state.online is True
         assert state.power_state is True
         assert state.brightness == 100
         assert state.color_rgb is None
-        assert state.color_temp is None
+        assert state.color_temp_kelvin is None
 
     def test_create_state_with_color(self):
         """Test creating state with RGB color."""
         state = GoveeDeviceState(
+            device_id="AA:BB:CC:DD:EE:FF:11:22",
             online=True,
             power_state=True,
             brightness=75,
@@ -422,23 +415,25 @@ class TestGoveeDeviceState:
         )
 
         assert state.color_rgb == (255, 128, 64)
-        assert state.color_temp is None
+        assert state.color_temp_kelvin is None
 
     def test_create_state_with_color_temp(self):
         """Test creating state with color temperature."""
         state = GoveeDeviceState(
+            device_id="AA:BB:CC:DD:EE:FF:11:22",
             online=True,
             power_state=True,
             brightness=50,
-            color_temp=4000,
+            color_temp_kelvin=4000,
         )
 
-        assert state.color_temp == 4000
+        assert state.color_temp_kelvin == 4000
         assert state.color_rgb is None
 
     def test_create_offline_state(self):
         """Test creating offline device state."""
         state = GoveeDeviceState(
+            device_id="AA:BB:CC:DD:EE:FF:11:22",
             online=False,
             power_state=False,
             brightness=0,
@@ -448,40 +443,47 @@ class TestGoveeDeviceState:
         assert state.power_state is False
 
     def test_state_with_scene(self):
-        """Test state with scene code."""
+        """Test state with scene identifier."""
         state = GoveeDeviceState(
+            device_id="AA:BB:CC:DD:EE:FF:11:22",
             online=True,
             power_state=True,
             brightness=100,
-            scene_code=5,
+            current_scene="5",
+            current_scene_name="Sunset",
         )
 
-        assert state.scene_code == 5
+        assert state.current_scene == "5"
+        assert state.current_scene_name == "Sunset"
 
     def test_from_api_response_power_on(self):
         """Test creating state from API response (power on)."""
         api_data = {
-            "online": True,
-            "powerState": "on",
-            "brightness": 100,
-            "color": {"r": 255, "g": 128, "b": 64},
+            "capabilities": [
+                {"instance": "powerSwitch", "state": {"value": 1}},
+                {"instance": "brightness", "state": {"value": 100}},
+                {"instance": "colorRgb", "state": {"value": 16744512}},  # RGB as int
+            ]
         }
 
-        state = GoveeDeviceState.from_api(api_data)
+        state = GoveeDeviceState.from_api("AA:BB:CC:DD:EE:FF:11:22", api_data)
 
+        assert state.device_id == "AA:BB:CC:DD:EE:FF:11:22"
         assert state.online is True
         assert state.power_state is True
         assert state.brightness == 100
+        # 16744512 = 0xFF8040 = (255, 128, 64)
         assert state.color_rgb == (255, 128, 64)
 
     def test_from_api_response_power_off(self):
         """Test creating state from API response (power off)."""
         api_data = {
-            "online": True,
-            "powerState": "off",
+            "capabilities": [
+                {"instance": "powerSwitch", "state": {"value": 0}},
+            ]
         }
 
-        state = GoveeDeviceState.from_api(api_data)
+        state = GoveeDeviceState.from_api("AA:BB:CC:DD:EE:FF:11:22", api_data)
 
         assert state.online is True
         assert state.power_state is False
@@ -489,35 +491,38 @@ class TestGoveeDeviceState:
     def test_from_api_response_offline(self):
         """Test creating state from API response (offline)."""
         api_data = {
-            "online": False,
+            "capabilities": [
+                {"instance": "online", "state": {"value": False}},
+            ]
         }
 
-        state = GoveeDeviceState.from_api(api_data)
+        state = GoveeDeviceState.from_api("AA:BB:CC:DD:EE:FF:11:22", api_data)
 
         assert state.online is False
-        assert state.power_state is False
 
     def test_from_api_response_color_temp(self):
         """Test creating state from API with color temperature."""
         api_data = {
-            "online": True,
-            "powerState": "on",
-            "brightness": 75,
-            "colorTemperatureK": 4000,
+            "capabilities": [
+                {"instance": "powerSwitch", "state": {"value": 1}},
+                {"instance": "brightness", "state": {"value": 75}},
+                {"instance": "colorTemperatureK", "state": {"value": 4000}},
+            ]
         }
 
-        state = GoveeDeviceState.from_api(api_data)
+        state = GoveeDeviceState.from_api("AA:BB:CC:DD:EE:FF:11:22", api_data)
 
-        assert state.color_temp == 4000
+        assert state.color_temp_kelvin == 4000
         assert state.color_rgb is None
 
     def test_from_api_missing_fields(self):
         """Test creating state from minimal API response."""
-        api_data = {"online": True}
+        api_data = {"capabilities": []}
 
-        state = GoveeDeviceState.from_api(api_data)
+        state = GoveeDeviceState.from_api("AA:BB:CC:DD:EE:FF:11:22", api_data)
 
-        assert state.online is True
-        assert state.power_state is False  # Default when missing
+        assert state.device_id == "AA:BB:CC:DD:EE:FF:11:22"
+        assert state.online is True  # Default
+        assert state.power_state is None  # Default when not in capabilities
         assert state.brightness is None
         assert state.color_rgb is None

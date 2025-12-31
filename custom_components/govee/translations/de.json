@@ -39,11 +39,128 @@
           "delay": "Abfrage-Intervall (benötigt Neustart)",
           "use_assumed_state": "Verwende 'angenommenen Zustand' (zwei Buttons). Standard: True",
           "offline_is_off": "Wenn eine LED offline ist, zeige sie als Aus (Standard ändert den Status nicht). Standard: False",
+          "enable_group_devices": "Gruppengeräte aktivieren (Steuerung funktioniert, Status nicht verfügbar). Standard: False",
           "disable_attribute_updates": "Status updates verhindern. Leertaste zum ausschalten. Bitte das README oben dazu lesen."
         },
         "title": "Einstellungen",
         "description": "Einstellen der Govee Integration. Details dazu hier: https://github.com/LaggAt/hacs-govee/blob/master/README.md"
       }
+    }
+  },
+  "entity": {
+    "light": {
+      "segment": {
+        "name": "Segment {segment_number}"
+      }
+    },
+    "select": {
+      "scene": {
+        "name": "Szene"
+      },
+      "diy_scene": {
+        "name": "DIY Szene"
+      }
+    },
+    "switch": {
+      "nightlight": {
+        "name": "Nachtlicht"
+      },
+      "outlet": {
+        "name": "Steckdose"
+      }
+    }
+  },
+  "exceptions": {
+    "unknown_error": {
+      "message": "Ein unerwarteter Fehler ist in der Govee-Integration aufgetreten."
+    },
+    "authentication_failed": {
+      "message": "Authentifizierung fehlgeschlagen. Bitte überprüfen Sie Ihren Govee API-Schlüssel."
+    },
+    "connection_failed": {
+      "message": "Verbindung zur Govee API fehlgeschlagen. Bitte überprüfen Sie Ihre Internetverbindung."
+    },
+    "rate_limit_exceeded": {
+      "message": "Govee API-Ratenlimit überschritten. Erneuter Versuch in {retry_after} Sekunden."
+    },
+    "device_error": {
+      "message": "Fehler bei Gerät {device_name} ({device_id})."
+    },
+    "capability_not_supported": {
+      "message": "Gerät {device_id} unterstützt die Fähigkeit nicht: {capability}."
+    },
+    "scene_error": {
+      "message": "Szenenoperation fehlgeschlagen für Szene: {scene_name}."
+    }
+  },
+  "issues": {
+    "group_device_limitation": {
+      "title": "Gruppengerät hat eingeschränkte API-Unterstützung",
+      "description": "Das Gerät **{device_name}** ist ein Govee Home App Gruppengerät (SameModeGroup, BaseGroup oder DreamViewScenic).\n\nDiese Gruppengeräte haben **experimentelle Unterstützung** in dieser Integration:\n- Steuerungsbefehle funktionieren (Ein/Aus, Helligkeit, Farbe, Szenen)\n- Statusabfragen schlagen fehl - Gerät verwendet optimistische Statusverfolgung\n- Gerät wird als verfügbar angezeigt, auch wenn der Status nicht abgefragt werden kann\n\nDies ist eine Einschränkung der Govee Cloud API. Gruppengeräte, die in der Govee Home App erstellt wurden, unterstützen keine Statusabfragen über die API.\n\n**Empfehlung:** Wenn Sie genaues Statusfeedback benötigen, steuern Sie einzelne Geräte anstelle von Gruppen."
+    },
+    "rate_limit_minute_warning": {
+      "title": "Annäherung an das Ratenlimit pro Minute",
+      "description": "Ihre Govee-Integration nähert sich dem API-Ratenlimit.\n\n**Aktueller Status:** {remaining} Anfragen verbleibend diese Minute (Limit: 100/Minute)\n\n**Was das bedeutet:**\n- Wenn das Limit überschritten wird, werden API-Anfragen automatisch verzögert\n- Sie können langsamere Reaktionszeiten erleben\n\n**Empfohlene Maßnahmen:**\n- Erhöhen Sie das Abfrageintervall in den Integrationsoptionen\n- Reduzieren Sie die Anzahl der abgefragten Geräte\n- Vermeiden Sie übermäßige manuelle Aktualisierungsoperationen\n\nDiese Warnung wird automatisch gelöscht, wenn das Ratenlimit zurückgesetzt wird."
+    },
+    "rate_limit_day_warning": {
+      "title": "Annäherung an das tägliche Ratenlimit",
+      "description": "Ihre Govee-Integration nähert sich dem täglichen API-Ratenlimit.\n\n**Aktueller Status:** {remaining} Anfragen verbleibend heute (Limit: 10.000/Tag)\n\n**Was das bedeutet:**\n- Wenn das tägliche Limit überschritten wird, können API-Anfragen fehlschlagen\n- Die Integration kann aufhören, Gerätestatus zu aktualisieren\n\n**Empfohlene Maßnahmen:**\n- **Erhöhen Sie sofort** das Abfrageintervall in den Integrationsoptionen (empfohlen: 60+ Sekunden)\n- Erwägen Sie, die Anzahl der Geräte zu reduzieren\n- Das tägliche Limit wird um Mitternacht UTC zurückgesetzt\n\nDiese Warnung wird automatisch gelöscht, wenn das Ratenlimit zurückgesetzt wird."
+    }
+  },
+  "services": {
+    "set_segment_color": {
+      "name": "Segmentfarbe setzen",
+      "description": "Farbe für bestimmte Segmente eines Govee RGBIC-Lichtstreifens setzen.",
+      "fields": {
+        "segments": {
+          "name": "Segmente",
+          "description": "Liste der Segmentindizes (0-basiert)."
+        },
+        "rgb_color": {
+          "name": "RGB Farbe",
+          "description": "RGB-Farbe als [r, g, b] mit Werten 0-255."
+        }
+      }
+    },
+    "set_segment_brightness": {
+      "name": "Segmenthelligkeit setzen",
+      "description": "Helligkeit für bestimmte Segmente eines Govee RGBIC-Lichtstreifens setzen.",
+      "fields": {
+        "segments": {
+          "name": "Segmente",
+          "description": "Liste der Segmentindizes (0-basiert)."
+        },
+        "brightness": {
+          "name": "Helligkeit",
+          "description": "Helligkeit in Prozent (0-100)."
+        }
+      }
+    },
+    "set_music_mode": {
+      "name": "Musikmodus setzen",
+      "description": "Musikreaktiven Modus auf einem Govee-Licht aktivieren.",
+      "fields": {
+        "mode": {
+          "name": "Modus",
+          "description": "Name des Musikmodus."
+        },
+        "sensitivity": {
+          "name": "Empfindlichkeit",
+          "description": "Mikrofonempfindlichkeit (0-100)."
+        },
+        "auto_color": {
+          "name": "Automatische Farbe",
+          "description": "Automatische Farbwechsel aktivieren."
+        },
+        "rgb_color": {
+          "name": "Feste Farbe",
+          "description": "Feste Farbe, wenn automatische Farbe deaktiviert ist."
+        }
+      }
+    },
+    "refresh_scenes": {
+      "name": "Szenen aktualisieren",
+      "description": "Szenenliste von der Govee Cloud aktualisieren."
     }
   }
 }

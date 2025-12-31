@@ -9,6 +9,7 @@ DOMAIN = "govee"
 CONF_DISABLE_ATTRIBUTE_UPDATES = "disable_attribute_updates"
 CONF_ENABLE_GROUP_DEVICES = "enable_group_devices"
 CONF_OFFLINE_IS_OFF = "offline_is_off"
+CONF_POLL_INTERVAL = "delay"  # Poll interval in seconds
 CONF_USE_ASSUMED_STATE = "use_assumed_state"
 
 # Color temperature range (Kelvin)

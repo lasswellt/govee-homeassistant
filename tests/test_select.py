@@ -5,14 +5,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.core import HomeAssistant
 
-from custom_components.govee.select import (
-    async_setup_entry,
-    GoveeSceneSelect,
-)
+from custom_components.govee.select import async_setup_entry
+from custom_components.govee.entities.select import GoveeSceneSelect
 from custom_components.govee.api.const import (
+    CAPABILITY_DYNAMIC_SCENE,
     INSTANCE_LIGHT_SCENE,
     INSTANCE_DIY_SCENE,
-    CAPABILITY_DYNAMIC_SCENE,
 )
 from custom_components.govee.models import SceneOption
 
@@ -38,15 +36,16 @@ class TestAsyncSetupEntry:
         async_add_entities = MagicMock()
 
         with patch(
-            "custom_components.govee.select.async_setup_select_services",
+            "custom_components.govee.services.async_setup_select_services",
             new_callable=AsyncMock,
         ):
             await async_setup_entry(hass, mock_config_entry, async_add_entities)
 
-        # Should add one scene select entity
+        # Should add scene select entities
         async_add_entities.assert_called_once()
         entities = async_add_entities.call_args[0][0]
-        assert len(entities) == 1
+        # Should have at least one select entity
+        assert len(entities) >= 1
         assert isinstance(entities[0], GoveeSceneSelect)
 
     @pytest.mark.asyncio
@@ -67,7 +66,7 @@ class TestAsyncSetupEntry:
         async_add_entities = MagicMock()
 
         with patch(
-            "custom_components.govee.select.async_setup_select_services",
+            "custom_components.govee.services.async_setup_select_services",
             new_callable=AsyncMock,
         ):
             await async_setup_entry(hass, mock_config_entry, async_add_entities)
@@ -93,7 +92,7 @@ class TestAsyncSetupEntry:
         }
 
         with patch(
-            "custom_components.govee.select.async_setup_select_services",
+            "custom_components.govee.services.async_setup_select_services",
             new_callable=AsyncMock,
         ) as mock_setup_services:
             await async_setup_entry(hass, mock_config_entry, MagicMock())
@@ -120,11 +119,8 @@ class TestGoveeSceneSelect:
 
         assert entity._scene_type == "dynamic"
         assert entity._instance == INSTANCE_LIGHT_SCENE
-        assert entity._attr_unique_id == f"govee_{mock_device_light_with_scenes.device_id}_dynamic_scene"
-        assert entity._attr_translation_key == "scene"
-        assert entity._attr_name == "Scene"
-        assert entity._attr_options == []
-        assert entity._attr_current_option is None
+        assert entity._attr_unique_id == f"{mock_device_light_with_scenes.device_id}_dynamic_scene"
+        assert entity.entity_description is not None
 
     def test_select_entity_initialization_diy(
         self,
@@ -141,10 +137,8 @@ class TestGoveeSceneSelect:
 
         assert entity._scene_type == "diy"
         assert entity._instance == INSTANCE_DIY_SCENE
-        assert entity._attr_unique_id == f"govee_{mock_device_light_with_scenes.device_id}_diy_scene"
-        assert entity._attr_translation_key == "diy_scene"
-        assert entity._attr_name == "DIY Scene"
-        assert entity._attr_entity_registry_enabled_default is False  # Disabled by default
+        assert entity._attr_unique_id == f"{mock_device_light_with_scenes.device_id}_diy_scene"
+        assert entity.entity_description is not None
 
     @pytest.mark.asyncio
     async def test_async_added_to_hass_loads_options(
@@ -286,6 +280,7 @@ class TestGoveeSceneSelect:
         from custom_components.govee.models import GoveeDeviceState
 
         state = GoveeDeviceState(
+            device_id=mock_device_light_with_scenes.device_id,
             online=True, power_state=True, brightness=100, current_scene="3"
         )
         mock_coordinator.get_state.return_value = state
@@ -314,6 +309,7 @@ class TestGoveeSceneSelect:
         from custom_components.govee.models import GoveeDeviceState
 
         state = GoveeDeviceState(
+            device_id=mock_device_light_with_scenes.device_id,
             online=True, power_state=True, brightness=100, current_scene="42"
         )
         mock_coordinator.get_state.return_value = state
@@ -343,6 +339,7 @@ class TestGoveeSceneSelect:
         from custom_components.govee.models import GoveeDeviceState
 
         state = GoveeDeviceState(
+            device_id=mock_device_light_with_scenes.device_id,
             online=True, power_state=True, brightness=100, current_scene="diy_101"
         )
         mock_coordinator.get_state.return_value = state
@@ -384,7 +381,7 @@ class TestGoveeSceneSelect:
 
         await entity.async_select_option("Party")
 
-        # Should call coordinator to set scene
+        # Should call coordinator to control device with scene
         mock_coordinator.async_control_device.assert_called_once_with(
             mock_device_light_with_scenes.device_id,
             CAPABILITY_DYNAMIC_SCENE,

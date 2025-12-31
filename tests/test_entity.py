@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from homeassistant.core import HomeAssistant
 
-from custom_components.govee.entity import GoveeEntity
+from custom_components.govee.entities.base import GoveeEntity
 from custom_components.govee.const import DOMAIN
 
 
@@ -96,8 +96,8 @@ class TestGoveeEntity:
     ):
         """Test _is_group_device returns True for group device."""
         with patch(
-            "custom_components.govee.entity.UNSUPPORTED_DEVICE_SKUS",
-            [mock_device_group.sku],
+            "custom_components.govee.const.UNSUPPORTED_DEVICE_SKUS",
+            {mock_device_group.sku},
         ):
             entity = GoveeEntity(mock_coordinator, mock_device_group)
 
@@ -160,8 +160,8 @@ class TestGoveeEntity:
     ):
         """Test group device always available even if offline."""
         with patch(
-            "custom_components.govee.entity.UNSUPPORTED_DEVICE_SKUS",
-            [mock_device_group.sku],
+            "custom_components.govee.const.UNSUPPORTED_DEVICE_SKUS",
+            {mock_device_group.sku},
         ):
             entity = GoveeEntity(mock_coordinator, mock_device_group)
 
@@ -195,8 +195,8 @@ class TestGoveeEntity:
         mock_coordinator.rate_limit_remaining_minute = 99
 
         with patch(
-            "custom_components.govee.entity.UNSUPPORTED_DEVICE_SKUS",
-            [mock_device_group.sku],
+            "custom_components.govee.const.UNSUPPORTED_DEVICE_SKUS",
+            {mock_device_group.sku},
         ):
             entity = GoveeEntity(mock_coordinator, mock_device_group)
 

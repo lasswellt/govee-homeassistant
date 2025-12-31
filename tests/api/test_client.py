@@ -251,34 +251,48 @@ class TestGoveeApiClientInit:
 
         assert client._session is None
 
-        async with client as entered_client:
-            assert entered_client is client
-            assert client._session is not None
-            assert isinstance(client._session, aiohttp.ClientSession)
+        # Mock the ClientSession to avoid creating real aiohttp threads
+        mock_session = MagicMock(spec=aiohttp.ClientSession)
+        mock_session.close = AsyncMock()
+
+        with patch("aiohttp.ClientSession", return_value=mock_session):
+            async with client as entered_client:
+                assert entered_client is client
+                assert client._session is not None
+                assert client._session is mock_session
 
     @pytest.mark.asyncio
     async def test_context_manager_exit_closes_owned_session(self):
         """Test context manager exit closes owned session."""
         client = GoveeApiClient("test_key")
 
-        async with client:
-            session = client._session
-            assert session is not None
+        # Mock the ClientSession to avoid creating real aiohttp threads
+        mock_session = MagicMock(spec=aiohttp.ClientSession)
+        mock_session.close = AsyncMock()
+
+        with patch("aiohttp.ClientSession", return_value=mock_session):
+            async with client:
+                session = client._session
+                assert session is not None
+                assert session is mock_session
 
         # Session should be closed after exit
         assert client._session is None
+        mock_session.close.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_close_method_closes_owned_session(self):
         """Test close() method closes owned session."""
         client = GoveeApiClient("test_key")
-        client._session = MagicMock(spec=aiohttp.ClientSession)
-        client._session.close = AsyncMock()
+        mock_session = MagicMock(spec=aiohttp.ClientSession)
+        mock_session.close = AsyncMock()
+        client._session = mock_session
         client._owns_session = True
 
         await client.close()
 
-        client._session.close.assert_called_once()
+        # Session is set to None after close, so check the mock we captured
+        mock_session.close.assert_called_once()
         assert client._session is None
 
     @pytest.mark.asyncio
@@ -1083,7 +1097,10 @@ class TestSceneQueries:
             assert scenes[0]["name"] == "Sunrise"
             assert scenes[1]["name"] == "Sunset"
             # Verify request was made
-            mock_request.assert_called_once_with("POST", ENDPOINT_DYNAMIC_SCENES, payload=mock_request.call_args[1]["payload"])
+            mock_request.assert_called_once()
+            call_args = mock_request.call_args[0]
+            assert call_args[0] == "POST"
+            assert call_args[1] == ENDPOINT_DYNAMIC_SCENES
 
     @pytest.mark.asyncio
     async def test_get_dynamic_scenes_empty(self):

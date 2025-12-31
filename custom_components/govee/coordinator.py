@@ -8,14 +8,12 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.exceptions import ConfigEntryAuthFailed
 
 from .api import GoveeApiClient, GoveeApiError, GoveeAuthError, GoveeRateLimitError
-from .const import CONF_ENABLE_GROUP_DEVICES, UNSUPPORTED_DEVICE_SKUS
-from .models import GoveeDevice, GoveeDeviceState, SceneOption
-
-if TYPE_CHECKING:
-    from homeassistant.config_entries import ConfigEntry
+from .const import CONF_ENABLE_GROUP_DEVICES, DOMAIN, UNSUPPORTED_DEVICE_SKUS
+from .models import GoveeConfigEntry, GoveeDevice, GoveeDeviceState, SceneOption
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,12 +39,12 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
     - Caches scenes to minimize API calls
     """
 
-    config_entry: ConfigEntry
+    config_entry: GoveeConfigEntry
 
     def __init__(
         self,
         hass: HomeAssistant,
-        config_entry: ConfigEntry,
+        config_entry: GoveeConfigEntry,
         client: GoveeApiClient,
         update_interval: timedelta,
     ) -> None:
@@ -70,6 +68,82 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
             name="Govee",
             update_interval=update_interval,
         )
+
+    def _create_group_device_issue(self, device: GoveeDevice) -> None:
+        """Create informational issue for group device limitations.
+
+        Group devices from the Govee Home app have limited API support:
+        - Control commands work (on/off, brightness, color, scenes)
+        - State queries fail (API limitation)
+        - Integration uses optimistic state tracking
+
+        This creates a persistent warning to inform users about these limitations.
+
+        Args:
+            device: The group device that triggered this issue
+        """
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            f"group_device_{self.config_entry.entry_id}",
+            is_fixable=False,
+            is_persistent=True,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key="group_device_limitation",
+            translation_placeholders={
+                "device_name": device.device_name,
+            },
+            learn_more_url="https://developer.govee.com/reference/get-devices",
+        )
+
+    def _check_rate_limits(self) -> None:
+        """Check rate limits and create/clear warnings as needed.
+
+        Monitors API rate limits and creates non-persistent warnings when
+        approaching limits:
+        - Per-minute: Warning at < 20 remaining (of 100)
+        - Per-day: Warning at < 2000 remaining (of 10,000)
+
+        Warnings automatically clear when limits recover.
+        """
+        minute_issue_id = f"rate_limit_minute_{self.config_entry.entry_id}"
+        day_issue_id = f"rate_limit_day_{self.config_entry.entry_id}"
+
+        # Per-minute limit warning (< 20 remaining)
+        if self.rate_limit_remaining_minute < 20:
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                minute_issue_id,
+                is_fixable=False,
+                is_persistent=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key="rate_limit_minute_warning",
+                translation_placeholders={
+                    "remaining": str(self.rate_limit_remaining_minute),
+                },
+            )
+        else:
+            # Clear issue if limit is no longer approached
+            ir.async_delete_issue(self.hass, DOMAIN, minute_issue_id)
+
+        # Per-day limit warning (< 2000 remaining)
+        if self.rate_limit_remaining < 2000:
+            ir.async_create_issue(
+                self.hass,
+                DOMAIN,
+                day_issue_id,
+                is_fixable=False,
+                is_persistent=False,
+                severity=ir.IssueSeverity.WARNING,
+                translation_key="rate_limit_day_warning",
+                translation_placeholders={
+                    "remaining": str(self.rate_limit_remaining),
+                },
+            )
+        else:
+            # Clear issue if limit is no longer approached
+            ir.async_delete_issue(self.hass, DOMAIN, day_issue_id)
 
     async def _async_setup(self) -> None:
         """Set up the coordinator - fetch devices on first load.
@@ -141,6 +215,12 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
                     skipped_count,
                     group_device_count,
                 )
+                # Create informational issue for group device limitations
+                # Find first group device for issue creation
+                for device in self.devices.values():
+                    if device.sku in UNSUPPORTED_DEVICE_SKUS:
+                        self._create_group_device_issue(device)
+                        break
             else:
                 _LOGGER.info(
                     "Discovered %d Govee devices (%d unsupported groups skipped)",
@@ -293,6 +373,9 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
                 # Success: result is GoveeDeviceState
                 states[device_id] = result
 
+        # Check rate limits and create/clear warnings as needed
+        self._check_rate_limits()
+
         return states
 
     def get_device(self, device_id: str) -> GoveeDevice | None:
@@ -376,6 +459,80 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
                     value,
                     err,
                 )
+            raise
+
+    async def async_set_segment_color(
+        self,
+        device_id: str,
+        sku: str,
+        segment_index: int,
+        rgb: tuple[int, int, int],
+    ) -> None:
+        """Set color for a specific segment on an RGBIC device.
+
+        Args:
+            device_id: Device identifier
+            sku: Device SKU/model
+            segment_index: Zero-based segment index
+            rgb: RGB color tuple (0-255 per channel)
+
+        Raises:
+            GoveeApiError: If segment control command fails
+        """
+        try:
+            await self.client.set_segment_color(device_id, sku, segment_index, rgb)
+
+            # Apply optimistic state update
+            if self.data and device_id in self.data:
+                self.data[device_id].apply_segment_update(segment_index, rgb)
+                self.async_set_updated_data(self.data)
+
+        except GoveeApiError as err:
+            _LOGGER.error(
+                "Failed to set segment %d color on device %s: %s",
+                segment_index,
+                device_id,
+                err,
+            )
+            raise
+
+    async def async_set_segment_brightness(
+        self,
+        device_id: str,
+        sku: str,
+        segment_index: int,
+        brightness: int,
+    ) -> None:
+        """Set brightness for a specific segment on an RGBIC device.
+
+        Args:
+            device_id: Device identifier
+            sku: Device SKU/model
+            segment_index: Zero-based segment index
+            brightness: Brightness level (0-100)
+
+        Raises:
+            GoveeApiError: If segment control command fails
+        """
+        try:
+            await self.client.set_segment_brightness(
+                device_id, sku, segment_index, brightness
+            )
+
+            # Apply optimistic state update
+            if self.data and device_id in self.data:
+                self.data[device_id].apply_segment_brightness_update(
+                    segment_index, brightness
+                )
+                self.async_set_updated_data(self.data)
+
+        except GoveeApiError as err:
+            _LOGGER.error(
+                "Failed to set segment %d brightness on device %s: %s",
+                segment_index,
+                device_id,
+                err,
+            )
             raise
 
     async def async_get_dynamic_scenes(

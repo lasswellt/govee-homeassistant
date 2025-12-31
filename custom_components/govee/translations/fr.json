@@ -7,19 +7,19 @@
     },
     "error": {
       "cannot_connect": "Impossible de se connecter. La clé d'API est-elle correcte et la connexion Internet fonctionne-t-elle?",
-      "unknown": "Erreure inconnue."
+      "unknown": "Erreur inconnue."
     },
     "step": {
       "user": {
         "data": {
-          "api_key": "clé d'API",
+          "api_key": "Clé d'API",
           "delay": "Intervalle d'interrogation"
         },
         "description": "Obtenez votre clé API à partir de l'application Govee Home. Pour plus de détails, visitez https://github.com/LaggAt/hacs-govee/blob/master/README.md"
       },
       "reauth_confirm": {
         "data": {
-          "api_key": "clé d'API"
+          "api_key": "Clé d'API"
         },
         "title": "Réauthentifier Govee",
         "description": "Votre clé API n'est plus valide. Veuillez saisir une nouvelle clé API."
@@ -29,21 +29,138 @@
   "options": {
     "error": {
       "cannot_connect": "Impossible de se connecter. La clé d'API est-elle correcte et la connexion Internet fonctionne-t-elle?",
-      "unknown": "Erreure inconnue.",
-      "disabled_attribute_updates_wrong": "Format incorrect, voir le 'lisez-moi' ci-dessus."
+      "unknown": "Erreur inconnue.",
+      "disabled_attribute_updates_wrong": "Format incorrect, voir le README ci-dessus."
     },
     "step": {
       "user": {
         "data": {
           "api_key": "Clé d'API (nécessite un redémarrage)",
           "delay": "Intervalle d'interrogation (nécessite un redémarrage)",
-          "use_assumed_state": "Utiliser 'état supposé' (deux boutons). Par défaut : Vrai",
+          "use_assumed_state": "Utiliser 'état supposé' (deux boutons). Par défaut : Vrai",
           "offline_is_off": "Lorsqu'une DEL est hors ligne, affichez-la comme éteinte (la valeur par défaut ne change pas d'état). Par défaut : Faux",
-          "disable_attribute_updates": "DÉSACTIVER les mises à jour d'état. Espace pour désactiver. Lisez le 'lisez-moi' ci-dessus !"
+          "enable_group_devices": "Activer les appareils groupés (Le contrôle fonctionne, l'état non disponible). Par défaut : Faux",
+          "disable_attribute_updates": "DÉSACTIVER les mises à jour d'état. Espace pour désactiver. Lisez le README ci-dessus !"
         },
         "title": "Options",
         "description": "Configurez l'intégration Govee. Pour plus de détails, visitez https://github.com/LaggAt/hacs-govee/blob/master/README.md"
       }
+    }
+  },
+  "entity": {
+    "light": {
+      "segment": {
+        "name": "Segment {segment_number}"
+      }
+    },
+    "select": {
+      "scene": {
+        "name": "Scène"
+      },
+      "diy_scene": {
+        "name": "Scène DIY"
+      }
+    },
+    "switch": {
+      "nightlight": {
+        "name": "Veilleuse"
+      },
+      "outlet": {
+        "name": "Prise"
+      }
+    }
+  },
+  "exceptions": {
+    "unknown_error": {
+      "message": "Une erreur inattendue s'est produite avec l'intégration Govee."
+    },
+    "authentication_failed": {
+      "message": "Échec de l'authentification. Veuillez vérifier votre clé API Govee."
+    },
+    "connection_failed": {
+      "message": "Échec de la connexion à l'API Govee. Veuillez vérifier votre connexion Internet."
+    },
+    "rate_limit_exceeded": {
+      "message": "Limite de taux de l'API Govee dépassée. Réessayez dans {retry_after} secondes."
+    },
+    "device_error": {
+      "message": "Erreur avec l'appareil {device_name} ({device_id})."
+    },
+    "capability_not_supported": {
+      "message": "L'appareil {device_id} ne prend pas en charge la capacité : {capability}."
+    },
+    "scene_error": {
+      "message": "Échec de l'opération de scène pour la scène : {scene_name}."
+    }
+  },
+  "issues": {
+    "group_device_limitation": {
+      "title": "L'appareil groupé a une prise en charge API limitée",
+      "description": "L'appareil **{device_name}** est un appareil groupé de l'application Govee Home (SameModeGroup, BaseGroup ou DreamViewScenic).\n\nCes appareils groupés ont une **prise en charge expérimentale** dans cette intégration :\n- Les commandes de contrôle fonctionnent (allumer/éteindre, luminosité, couleur, scènes)\n- Les requêtes d'état échouent - l'appareil utilise un suivi d'état optimiste\n- L'appareil s'affiche comme disponible même lorsque l'état ne peut pas être interrogé\n\nIl s'agit d'une limitation de l'API cloud Govee. Les appareils groupés créés dans l'application Govee Home ne prennent pas en charge les requêtes d'état via l'API.\n\n**Recommandation :** Si vous avez besoin d'un retour d'état précis, contrôlez les appareils individuels au lieu des groupes."
+    },
+    "rate_limit_minute_warning": {
+      "title": "Approche de la limite de taux par minute",
+      "description": "Votre intégration Govee approche de la limite de taux API.\n\n**État actuel :** {remaining} requêtes restantes cette minute (limite : 100/minute)\n\n**Ce que cela signifie :**\n- Si la limite est dépassée, les requêtes API seront automatiquement retardées\n- Vous pourriez constater des temps de réponse plus lents\n\n**Actions recommandées :**\n- Augmentez l'intervalle d'interrogation dans les options d'intégration\n- Réduisez le nombre d'appareils interrogés\n- Évitez les opérations de rafraîchissement manuel excessives\n\nCet avertissement disparaîtra automatiquement lorsque la limite de taux sera réinitialisée."
+    },
+    "rate_limit_day_warning": {
+      "title": "Approche de la limite de taux quotidienne",
+      "description": "Votre intégration Govee approche de la limite de taux API quotidienne.\n\n**État actuel :** {remaining} requêtes restantes aujourd'hui (limite : 10 000/jour)\n\n**Ce que cela signifie :**\n- Si la limite quotidienne est dépassée, les requêtes API peuvent échouer\n- L'intégration peut cesser de mettre à jour les états des appareils\n\n**Actions recommandées :**\n- **Augmentez immédiatement** l'intervalle d'interrogation dans les options d'intégration (recommandé : 60+ secondes)\n- Envisagez de réduire le nombre d'appareils\n- La limite quotidienne est réinitialisée à minuit UTC\n\nCet avertissement disparaîtra automatiquement lorsque la limite de taux sera réinitialisée."
+    }
+  },
+  "services": {
+    "set_segment_color": {
+      "name": "Définir la couleur du segment",
+      "description": "Définir la couleur pour des segments spécifiques d'une bande lumineuse Govee RGBIC.",
+      "fields": {
+        "segments": {
+          "name": "Segments",
+          "description": "Liste des indices de segments (basé sur 0)."
+        },
+        "rgb_color": {
+          "name": "Couleur RVB",
+          "description": "Couleur RVB sous forme [r, v, b] avec des valeurs 0-255."
+        }
+      }
+    },
+    "set_segment_brightness": {
+      "name": "Définir la luminosité du segment",
+      "description": "Définir la luminosité pour des segments spécifiques d'une bande lumineuse Govee RGBIC.",
+      "fields": {
+        "segments": {
+          "name": "Segments",
+          "description": "Liste des indices de segments (basé sur 0)."
+        },
+        "brightness": {
+          "name": "Luminosité",
+          "description": "Pourcentage de luminosité (0-100)."
+        }
+      }
+    },
+    "set_music_mode": {
+      "name": "Définir le mode musique",
+      "description": "Activer le mode réactif à la musique sur une lumière Govee.",
+      "fields": {
+        "mode": {
+          "name": "Mode",
+          "description": "Nom du mode musique."
+        },
+        "sensitivity": {
+          "name": "Sensibilité",
+          "description": "Sensibilité du microphone (0-100)."
+        },
+        "auto_color": {
+          "name": "Couleur automatique",
+          "description": "Activer les changements de couleur automatiques."
+        },
+        "rgb_color": {
+          "name": "Couleur fixe",
+          "description": "Couleur fixe lorsque la couleur automatique est désactivée."
+        }
+      }
+    },
+    "refresh_scenes": {
+      "name": "Rafraîchir les scènes",
+      "description": "Rafraîchir la liste des scènes depuis le cloud Govee."
     }
   }
 }

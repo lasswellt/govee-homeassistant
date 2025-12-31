@@ -4,14 +4,16 @@ from __future__ import annotations
 import pytest
 
 from custom_components.govee.api.exceptions import (
-    GoveeError,
+    GoveeApiError,
     GoveeAuthError,
     GoveeRateLimitError,
     GoveeConnectionError,
-    GoveeApiError,
     GoveeDeviceError,
     GoveeCapabilityError,
 )
+
+# Alias for test compatibility - GoveeApiError is the base class
+GoveeError = GoveeApiError
 
 
 class TestGoveeError:
@@ -136,23 +138,24 @@ class TestGoveeDeviceError:
 
     def test_create_device_error(self):
         """Test creating device error."""
-        error = GoveeDeviceError("Device is offline")
-        assert str(error) == "Device is offline"
+        error = GoveeDeviceError("AA:BB:CC:DD:EE:FF", "Device is offline")
+        assert "Device AA:BB:CC:DD:EE:FF: Device is offline" in str(error)
         assert isinstance(error, GoveeError)
+        assert error.device_id == "AA:BB:CC:DD:EE:FF"
 
     def test_raise_device_error(self):
         """Test raising device error."""
         with pytest.raises(GoveeDeviceError) as exc_info:
-            raise GoveeDeviceError("Device not responding")
+            raise GoveeDeviceError("TEST_DEVICE", "Device not responding")
 
         assert "Device not responding" in str(exc_info.value)
+        assert "TEST_DEVICE" in str(exc_info.value)
 
     def test_device_error_with_device_id(self):
         """Test device error with device ID."""
-        error = GoveeDeviceError(
-            "Device AA:BB:CC:DD:EE:FF is not available"
-        )
+        error = GoveeDeviceError("AA:BB:CC:DD:EE:FF", "is not available")
         assert "AA:BB:CC:DD:EE:FF" in str(error)
+        assert error.device_id == "AA:BB:CC:DD:EE:FF"
 
 
 class TestGoveeCapabilityError:
@@ -160,24 +163,26 @@ class TestGoveeCapabilityError:
 
     def test_create_capability_error(self):
         """Test creating capability error."""
-        error = GoveeCapabilityError("Device does not support color temperature")
-        assert str(error) == "Device does not support color temperature"
+        error = GoveeCapabilityError("AA:BB:CC:DD:EE:FF", "colorTemperatureK")
+        assert "colorTemperatureK" in str(error)
         assert isinstance(error, GoveeError)
+        assert error.capability == "colorTemperatureK"
 
     def test_raise_capability_error(self):
         """Test raising capability error."""
         with pytest.raises(GoveeCapabilityError) as exc_info:
-            raise GoveeCapabilityError("Capability not supported")
+            raise GoveeCapabilityError("TEST_DEVICE", "brightness")
 
-        assert "Capability not supported" in str(exc_info.value)
+        assert "brightness" in str(exc_info.value)
+        assert "TEST_DEVICE" in str(exc_info.value)
 
     def test_capability_error_specific_feature(self):
         """Test capability error for specific feature."""
-        error = GoveeCapabilityError(
-            "Device H6001 does not support RGB color control"
-        )
-        assert "RGB color control" in str(error)
-        assert "H6001" in str(error)
+        error = GoveeCapabilityError("H6001_DEVICE", "colorRgb")
+        assert "colorRgb" in str(error)
+        assert "H6001_DEVICE" in str(error)
+        assert error.device_id == "H6001_DEVICE"
+        assert error.capability == "colorRgb"
 
 
 class TestExceptionHierarchy:
@@ -190,8 +195,8 @@ class TestExceptionHierarchy:
             GoveeRateLimitError("Rate limit"),
             GoveeConnectionError("Connection"),
             GoveeApiError("API"),
-            GoveeDeviceError("Device"),
-            GoveeCapabilityError("Capability"),
+            GoveeDeviceError("DEVICE_ID", "Device error"),
+            GoveeCapabilityError("DEVICE_ID", "capability"),
         ]
 
         for error in errors_to_test:

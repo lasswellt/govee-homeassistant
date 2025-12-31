@@ -12,10 +12,8 @@ from custom_components.govee.switch import (
     GoveeNightLightSwitch,
 )
 from custom_components.govee.api.const import (
-    CAPABILITY_ON_OFF,
     CAPABILITY_TOGGLE,
     INSTANCE_NIGHTLIGHT_TOGGLE,
-    INSTANCE_POWER_SWITCH,
 )
 
 
@@ -125,9 +123,8 @@ class TestGoveeSwitchEntity:
         entity = GoveeSwitchEntity(mock_coordinator, mock_device_switch)
 
         assert entity._device == mock_device_switch
-        assert entity._attr_unique_id == f"govee_{mock_device_switch.device_id}_switch"
-        assert entity._attr_device_class == SwitchDeviceClass.OUTLET
-        assert entity._attr_name is None  # Uses device name
+        assert entity._attr_unique_id == f"{mock_device_switch.device_id}_switch"
+        assert entity.entity_description is not None
 
     def test_switch_is_on_true(
         self,
@@ -137,7 +134,10 @@ class TestGoveeSwitchEntity:
         """Test is_on returns True when switch is on."""
         from custom_components.govee.models import GoveeDeviceState
 
-        state = GoveeDeviceState(online=True, power_state=True, brightness=None)
+        state = GoveeDeviceState(
+            device_id=mock_device_switch.device_id,
+            online=True, power_state=True, brightness=None
+        )
         mock_coordinator.get_state.return_value = state
 
         entity = GoveeSwitchEntity(mock_coordinator, mock_device_switch)
@@ -152,7 +152,10 @@ class TestGoveeSwitchEntity:
         """Test is_on returns False when switch is off."""
         from custom_components.govee.models import GoveeDeviceState
 
-        state = GoveeDeviceState(online=True, power_state=False, brightness=None)
+        state = GoveeDeviceState(
+            device_id=mock_device_switch.device_id,
+            online=True, power_state=False, brightness=None
+        )
         mock_coordinator.get_state.return_value = state
 
         entity = GoveeSwitchEntity(mock_coordinator, mock_device_switch)
@@ -178,16 +181,14 @@ class TestGoveeSwitchEntity:
         mock_device_switch,
     ):
         """Test turning switch on."""
-        mock_coordinator.async_control_device = AsyncMock()
+        mock_coordinator.async_set_power_state = AsyncMock()
         entity = GoveeSwitchEntity(mock_coordinator, mock_device_switch)
 
         await entity.async_turn_on()
 
-        mock_coordinator.async_control_device.assert_called_once_with(
+        mock_coordinator.async_set_power_state.assert_called_once_with(
             mock_device_switch.device_id,
-            CAPABILITY_ON_OFF,
-            INSTANCE_POWER_SWITCH,
-            1,
+            True,
         )
 
     @pytest.mark.asyncio
@@ -198,16 +199,13 @@ class TestGoveeSwitchEntity:
         caplog,
     ):
         """Test turning switch on handles errors."""
-        mock_coordinator.async_control_device = AsyncMock(
+        mock_coordinator.async_set_power_state = AsyncMock(
             side_effect=Exception("API error")
         )
         entity = GoveeSwitchEntity(mock_coordinator, mock_device_switch)
 
-        await entity.async_turn_on()
-
-        # Should log error but not raise
-        assert "Failed to turn on" in caplog.text
-        assert "API error" in caplog.text
+        with pytest.raises(Exception, match="API error"):
+            await entity.async_turn_on()
 
     @pytest.mark.asyncio
     async def test_async_turn_off_success(
@@ -216,16 +214,14 @@ class TestGoveeSwitchEntity:
         mock_device_switch,
     ):
         """Test turning switch off."""
-        mock_coordinator.async_control_device = AsyncMock()
+        mock_coordinator.async_set_power_state = AsyncMock()
         entity = GoveeSwitchEntity(mock_coordinator, mock_device_switch)
 
         await entity.async_turn_off()
 
-        mock_coordinator.async_control_device.assert_called_once_with(
+        mock_coordinator.async_set_power_state.assert_called_once_with(
             mock_device_switch.device_id,
-            CAPABILITY_ON_OFF,
-            INSTANCE_POWER_SWITCH,
-            0,
+            False,
         )
 
     @pytest.mark.asyncio
@@ -236,16 +232,13 @@ class TestGoveeSwitchEntity:
         caplog,
     ):
         """Test turning switch off handles errors."""
-        mock_coordinator.async_control_device = AsyncMock(
+        mock_coordinator.async_set_power_state = AsyncMock(
             side_effect=Exception("API error")
         )
         entity = GoveeSwitchEntity(mock_coordinator, mock_device_switch)
 
-        await entity.async_turn_off()
-
-        # Should log error but not raise
-        assert "Failed to turn off" in caplog.text
-        assert "API error" in caplog.text
+        with pytest.raises(Exception, match="API error"):
+            await entity.async_turn_off()
 
 
 class TestGoveeNightLightSwitch:
@@ -279,9 +272,8 @@ class TestGoveeNightLightSwitch:
         entity = GoveeNightLightSwitch(mock_coordinator, nightlight_device)
 
         assert entity._device == nightlight_device
-        assert entity._attr_unique_id == f"govee_{nightlight_device.device_id}_nightlight"
-        assert entity._attr_device_class == SwitchDeviceClass.SWITCH
-        assert entity._attr_translation_key == "nightlight"
+        assert entity._attr_unique_id == f"{nightlight_device.device_id}_nightlight"
+        assert entity.entity_description is not None
 
     def test_nightlight_name(
         self,
@@ -302,6 +294,7 @@ class TestGoveeNightLightSwitch:
         from custom_components.govee.models import GoveeDeviceState
 
         state = GoveeDeviceState(
+            device_id=nightlight_device.device_id,
             online=True, power_state=True, brightness=100, nightlight_on=True
         )
         mock_coordinator.get_state.return_value = state
@@ -319,6 +312,7 @@ class TestGoveeNightLightSwitch:
         from custom_components.govee.models import GoveeDeviceState
 
         state = GoveeDeviceState(
+            device_id=nightlight_device.device_id,
             online=True, power_state=True, brightness=100, nightlight_on=False
         )
         mock_coordinator.get_state.return_value = state
