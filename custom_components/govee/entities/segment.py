@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from homeassistant.components.light import (
+from homeassistant.components.light import (  # type: ignore[attr-defined]
     ATTR_BRIGHTNESS,
     ATTR_RGB_COLOR,
     ColorMode,
@@ -90,7 +90,8 @@ class GoveeSegmentLight(GoveeEntity, LightEntity, RestoreEntity):
 
             # Restore RGB color if available
             if (rgb := last_state.attributes.get(ATTR_RGB_COLOR)) is not None:
-                self._optimistic_rgb = tuple(rgb)  # type: ignore[assignment]
+                rgb_list = list(rgb)
+                self._optimistic_rgb = (rgb_list[0], rgb_list[1], rgb_list[2])
 
             _LOGGER.debug(
                 "Restored segment %d state: on=%s, brightness=%s, rgb=%s",
@@ -170,7 +171,8 @@ class GoveeSegmentLight(GoveeEntity, LightEntity, RestoreEntity):
             self._optimistic_brightness = brightness
 
         # Also update device state tracking
-        self._device_state.apply_segment_update(self._segment_index, target_rgb)
+        if self.device_state is not None:
+            self.device_state.apply_segment_update(self._segment_index, target_rgb)
 
         self.async_write_ha_state()
 
@@ -189,7 +191,8 @@ class GoveeSegmentLight(GoveeEntity, LightEntity, RestoreEntity):
         self._optimistic_rgb = (0, 0, 0)
 
         # Also update device state tracking
-        self._device_state.apply_segment_update(self._segment_index, (0, 0, 0))
+        if self.device_state is not None:
+            self.device_state.apply_segment_update(self._segment_index, (0, 0, 0))
 
         self.async_write_ha_state()
 

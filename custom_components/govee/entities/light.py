@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from homeassistant.components.light import (
+from homeassistant.components.light import (  # type: ignore[attr-defined]
     ATTR_BRIGHTNESS,
     ATTR_COLOR_TEMP_KELVIN,
     ATTR_EFFECT,
@@ -273,18 +273,22 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
         if state is None:
             return None
 
+        supported = self._attr_supported_color_modes
+        if supported is None:
+            return ColorMode.ONOFF
+
         # Determine current mode based on state
         if (
             state.color_temp_kelvin is not None
-            and ColorMode.COLOR_TEMP in self._attr_supported_color_modes
+            and ColorMode.COLOR_TEMP in supported
         ):
             return ColorMode.COLOR_TEMP
         if (
             state.color_rgb is not None
-            and ColorMode.RGB in self._attr_supported_color_modes
+            and ColorMode.RGB in supported
         ):
             return ColorMode.RGB
-        if ColorMode.BRIGHTNESS in self._attr_supported_color_modes:
+        if ColorMode.BRIGHTNESS in supported:
             return ColorMode.BRIGHTNESS
         return ColorMode.ONOFF
 
@@ -302,7 +306,8 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
 
         This shows two buttons (on/off) in the UI instead of a toggle.
         """
-        return self._entry.options.get(CONF_USE_ASSUMED_STATE, True)
+        result: bool = self._entry.options.get(CONF_USE_ASSUMED_STATE, True)
+        return result
 
     # === Control Methods ===
 
@@ -410,11 +415,12 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
 
     async def _async_set_color_temp(self, temp_kelvin: int) -> None:
         """Set color temperature in Kelvin."""
+        # Get range bounds with defaults
+        min_kelvin = self._attr_min_color_temp_kelvin or 2000
+        max_kelvin = self._attr_max_color_temp_kelvin or 9000
+
         # Clamp to device range
-        temp_kelvin = max(
-            self._attr_min_color_temp_kelvin,
-            min(self._attr_max_color_temp_kelvin, temp_kelvin),
-        )
+        temp_kelvin = max(min_kelvin, min(max_kelvin, temp_kelvin))
 
         try:
             await self.coordinator.async_control_device(

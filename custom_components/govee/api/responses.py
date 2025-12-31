@@ -183,11 +183,12 @@ class ApiResponseBase(TypedDict):
             "code": 400,
             "message": "Invalid request"
         }
+
+    Note: Child classes should NOT inherit if they override payload type.
     """
 
     code: int
     message: str
-    payload: NotRequired[dict[str, object]]  # Type varies by endpoint
 
 
 class DevicesResponse(ApiResponseBase):
@@ -214,7 +215,7 @@ class DevicesResponse(ApiResponseBase):
     data: NotRequired[list[DeviceDict]]
 
 
-class DeviceStateResponse(ApiResponseBase):
+class DeviceStateResponse(TypedDict):
     """Response from POST /device/state endpoint.
 
     Example:
@@ -233,10 +234,12 @@ class DeviceStateResponse(ApiResponseBase):
         }
     """
 
+    code: int
+    message: str
     payload: NotRequired[DeviceStatePayload]
 
 
-class ControlResponse(ApiResponseBase):
+class ControlResponse(TypedDict):
     """Response from POST /device/control endpoint.
 
     Example:
@@ -247,10 +250,12 @@ class ControlResponse(ApiResponseBase):
         }
     """
 
+    code: int
+    message: str
     payload: NotRequired[ControlResponsePayload]
 
 
-class DynamicScenesResponse(ApiResponseBase):
+class DynamicScenesResponse(TypedDict):
     """Response from POST /device/scenes endpoint.
 
     Example:
@@ -272,10 +277,12 @@ class DynamicScenesResponse(ApiResponseBase):
         }
     """
 
+    code: int
+    message: str
     payload: NotRequired[DynamicScenesPayload]
 
 
-class DIYScenesResponse(ApiResponseBase):
+class DIYScenesResponse(TypedDict):
     """Response from POST /device/diy-scenes endpoint.
 
     Example:
@@ -297,4 +304,6 @@ class DIYScenesResponse(ApiResponseBase):
         }
     """
 
+    code: int
+    message: str
     payload: NotRequired[DIYScenesPayload]

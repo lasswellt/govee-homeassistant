@@ -5,7 +5,7 @@ import asyncio
 import logging
 import time
 import uuid
-from typing import Any
+from typing import Any, cast
 
 import aiohttp
 import async_timeout
@@ -280,7 +280,7 @@ class GoveeApiClient:
                             code=data.get("code"),
                         )
 
-                    return data
+                    return cast(dict[str, Any], data)
 
         except asyncio.TimeoutError as err:
             raise GoveeConnectionError("Request timed out") from err
@@ -299,7 +299,8 @@ class GoveeApiClient:
             GoveeApiError: API error
         """
         response = await self._request("GET", ENDPOINT_DEVICES)
-        return response.get("data", [])
+        data: list[dict[str, Any]] = response.get("data", [])
+        return data
 
     # === State Queries ===
 
@@ -329,7 +330,8 @@ class GoveeApiClient:
         }
 
         response = await self._request("POST", ENDPOINT_DEVICE_STATE, payload)
-        return response.get("payload", {})
+        payload_data: dict[str, Any] = response.get("payload", {})
+        return payload_data
 
     # === Control Commands ===
 

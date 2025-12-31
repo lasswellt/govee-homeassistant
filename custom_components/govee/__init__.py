@@ -15,6 +15,8 @@ from .const import CONFIG_ENTRY_VERSION, DEFAULT_POLL_INTERVAL, DOMAIN, PLATFORM
 from .coordinator import GoveeDataUpdateCoordinator
 from .models import GoveeConfigEntry, GoveeRuntimeData
 
+__all__ = ["GoveeConfigEntry", "GoveeRuntimeData"]
+
 _LOGGER = logging.getLogger(__name__)
 
 

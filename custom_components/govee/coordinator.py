@@ -658,3 +658,24 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
             1,
         )
         _LOGGER.debug("Identified device %s", device_id)
+
+    async def async_set_power_state(self, device_id: str, power_on: bool) -> None:
+        """Set power state for a device.
+
+        Args:
+            device_id: Device MAC address / identifier
+            power_on: True to turn on, False to turn off
+        """
+        from .api.const import CAPABILITY_ON_OFF, INSTANCE_POWER_SWITCH
+
+        await self.async_control_device(
+            device_id,
+            CAPABILITY_ON_OFF,
+            INSTANCE_POWER_SWITCH,
+            1 if power_on else 0,
+        )
+        _LOGGER.debug(
+            "Set power state for device %s to %s",
+            device_id,
+            "on" if power_on else "off",
+        )

@@ -68,11 +68,11 @@ def kelvin_to_rgb(kelvin: int) -> tuple[int, int, int]:
 
     # Calculate red
     if temp <= 66:
-        red = 255
+        red = 255.0
     else:
         red = temp - 60
         red = 329.698727446 * (red ** -0.1332047592)
-        red = max(0, min(255, red))
+        red = max(0.0, min(255.0, red))
 
     # Calculate green
     if temp <= 66:
@@ -85,12 +85,12 @@ def kelvin_to_rgb(kelvin: int) -> tuple[int, int, int]:
 
     # Calculate blue
     if temp >= 66:
-        blue = 255
+        blue = 255.0
     elif temp <= 19:
-        blue = 0
+        blue = 0.0
     else:
         blue = temp - 10
-        blue = 138.5177312231 * (blue ** 0.50) - 305.0447927307 if blue > 0 else 0
-        blue = max(0, min(255, blue))
+        blue = 138.5177312231 * (blue ** 0.50) - 305.0447927307 if blue > 0 else 0.0
+        blue = max(0.0, min(255.0, blue))
 
     return (int(red), int(green), int(blue))

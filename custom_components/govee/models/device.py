@@ -215,6 +215,7 @@ class GoveeDevice:
         if cap and cap.parameters and cap.parameters.fields:
             for fld in cap.parameters.fields:
                 if fld.get("fieldName") == "segment":
-                    elem_range = fld.get("elementRange", {})
-                    return elem_range.get("max", 0) + 1
+                    elem_range: dict[str, int] = fld.get("elementRange", {})
+                    max_val: int = elem_range.get("max", 0)
+                    return max_val + 1
         return 0

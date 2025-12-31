@@ -7,9 +7,9 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries, core, exceptions
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.const import CONF_API_KEY, CONF_DELAY
 from homeassistant.core import callback
-from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -57,9 +57,11 @@ class GoveeFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = CONFIG_ENTRY_VERSION
     CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
 
+    _reauth_entry: config_entries.ConfigEntry | None = None
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle the initial step."""
         errors: dict[str, str] = {}
 
@@ -90,7 +92,7 @@ class GoveeFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_reauth(
         self, entry_data: Mapping[str, Any]
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle re-authentication when API key becomes invalid."""
         self._reauth_entry = self.hass.config_entries.async_get_entry(
             self.context["entry_id"]
@@ -99,7 +101,7 @@ class GoveeFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_reauth_confirm(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Confirm re-authentication with new API key."""
         errors: dict[str, str] = {}
 
@@ -116,6 +118,8 @@ class GoveeFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
             if not errors:
                 # Update config entry with new API key
+                if self._reauth_entry is None:
+                    return self.async_abort(reason="unknown")
                 self.hass.config_entries.async_update_entry(
                     self._reauth_entry,
                     data={**self._reauth_entry.data, CONF_API_KEY: user_input[CONF_API_KEY]}
@@ -153,13 +157,13 @@ class GoveeOptionsFlowHandler(config_entries.OptionsFlow):
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Manage the options."""
         return await self.async_step_user()
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Manage the options."""
         # Get the current value for API key for comparison and default value
         old_api_key = self.config_entry.options.get(
@@ -229,7 +233,7 @@ class GoveeOptionsFlowHandler(config_entries.OptionsFlow):
             errors=errors,
         )
 
-    async def _update_options(self) -> FlowResult:
+    async def _update_options(self) -> ConfigFlowResult:
         """Update config entry options."""
         return self.async_create_entry(title=DOMAIN, data=self.options)
 
