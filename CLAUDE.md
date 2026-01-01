@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Home Assistant Custom Component (HACS integration) for controlling Govee lights and switches via the Govee cloud API. It uses the `govee-api-laggat` Python library for API communication.
+This is a Home Assistant Custom Component (HACS integration) for controlling Govee lights, LED strips, and smart devices via the Govee Cloud API v2.0. The integration includes its own built-in API client.
 
 ## Build and Test Commands
 
@@ -47,9 +47,10 @@ flake8 .
 
 - **`const.py`**: Domain constant (`govee`) and configuration keys
 
-### External Dependencies
+### API Client (`api/`)
 
-- **`govee-api-laggat`**: The Govee API wrapper library (separate repo at github.com/LaggAt/python-govee-api). Can be worked on via git subtree at `.git-subtree/python-govee-api/`.
+- **`client.py`**: Async HTTP client for Govee Cloud API v2.0. Handles device listing, state queries, commands, and scene retrieval.
+- **`const.py`**: API endpoints, capability types, and instance constants.
 
 ### State Management
 

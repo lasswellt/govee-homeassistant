@@ -79,12 +79,28 @@ This custom integration brings your Govee devices into Home Assistant, giving yo
 
 ## Getting Your API Key
 
-1. Open the **Govee Home** app on your mobile device
-2. Go to **Profile** (bottom right) > **Settings** (gear icon)
-3. Tap **About Us** > **Apply for API Key**
-4. Fill out the form and check your email (usually arrives within minutes)
+You need an API key from Govee to use this integration. The key is free and takes just a few minutes to obtain.
 
-> **Note:** Keep your API key secure. Never share it publicly.
+### Step-by-Step Instructions
+
+1. **Open the Govee Home app** on your iOS or Android device
+
+2. **Navigate to your profile:**
+   - Tap the **Profile** icon (bottom right corner)
+   - Tap the **Settings** gear icon (top right)
+
+3. **Request your API key:**
+   - Scroll down and tap **About Us**
+   - Tap **Apply for API Key**
+   - Fill out the short application form
+
+4. **Check your email:**
+   - Govee typically sends your API key within 5-10 minutes
+   - Check your spam folder if you don't see it
+
+5. **Copy your API key** - You'll need it during integration setup
+
+> **Important:** Keep your API key secure. Never share it publicly or commit it to version control.
 
 ---
 
@@ -379,13 +395,6 @@ When reporting issues, include:
 - Integration version
 - Debug logs (with personal data removed)
 - Device SKU
-
----
-
-## Credits
-
-- Original integration by [@LaggAt](https://github.com/LaggAt)
-- API v2.0 migration by [@lasswellt](https://github.com/lasswellt)
 
 ---
 

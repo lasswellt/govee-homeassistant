@@ -1,54 +1,45 @@
 [![hacs][hacsbadge]][hacs]
 ![Project Maintenance][maintenance-shield]
-[![BuyMeCoffee][buymecoffeebadge]][buymecoffee]
 
-
-_Component to integrate with [Govee][hacs-govee]._
+_Custom integration to control [Govee](https://www.govee.com/) devices via the Govee Cloud API v2.0._
 
 **This component will set up the following platforms.**
 
 Platform | Description
 -- | --
-`light` | Control your lights.
-
-<!-- ![example][exampleimg] -->
+`light` | Control lights and LED strips with brightness, color, color temperature, and scenes
+`select` | Scene selection (Dynamic, DIY, and Snapshot scenes)
+`switch` | Toggle controls for smart plugs and device features
+`sensor` | Rate limit monitoring (diagnostic)
+`button` | Manual scene refresh and device identification
 
 {% if not installed %}
 ## Installation
 
 1. In HACS/Integrations, search for 'Govee' and click install.
-1. In the HA UI go to "Configuration" -> "Integrations" click "+" and search for "govee".
+2. Restart Home Assistant.
+3. In the HA UI go to "Settings" → "Devices & Services" → "+ Add Integration" and search for "Govee".
 
 {% endif %}
 
-## Configuration is done in the UI
+## Configuration
 
-Usually you just add the integration, enter api-key and poll interval and you are good to go. When you need further help you can look here:
+You'll need an API key from Govee:
 
-* [Documentation on GitHub](https://github.com/LaggAt/hacs-govee/blob/master/README.md)
+1. Open the **Govee Home** app on your phone
+2. Go to **Profile** → **Settings** → **About Us** → **Apply for API Key**
+3. Check your email for the API key (usually arrives within 5-10 minutes)
+
+Enter your API key during integration setup. You can optionally adjust the poll interval.
+
+## Documentation
+
+* [Full Documentation on GitHub](https://github.com/lasswellt/hacs-govee/blob/master/README.md)
 * [Support thread on Home Assistant Community](https://community.home-assistant.io/t/govee-led-strips-integration/228516/1)
-* [Is there an issue with Govee API or the library?](https://raw.githubusercontent.com/LaggAt/actions/main/output/govee-api-up.png)
-* [Version statistics taken from Home Assistant Analytics](https://raw.githubusercontent.com/LaggAt/actions/main/output/goveestats_installations.png)
-
-## Sponsor
-
-A lot of effort is going into that integration. So if you can afford it and want to support us:
-
-<a href="https://www.buymeacoffee.com/LaggAt" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
-
-Thank you!
-
-<!---->
 
 ***
 
-[hacs-govee]: https://github.com/LaggAt/hacs-govee
-[buymecoffee]: https://www.buymeacoffee.com/LaggAt
-[buymecoffeebadge]: https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg?style=for-the-badge
+[hacs-govee]: https://github.com/lasswellt/hacs-govee
 [hacs]: https://github.com/hacs/integration
-[hacsbadge]: https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge
-[exampleimg]: example.png
-[license-shield]: https://img.shields.io/github/license/LaggAt/hacs-govee
-[maintenance-shield]: https://img.shields.io/badge/maintainer-Florian%20Lagg-blue.svg?style=for-the-badge
-[releases-shield]: https://img.shields.io/github/release/custom-components/hacs-govee.svg?style=for-the-badge
-[releases]: https://github.com/custom-components/hacs-govee/releases
+[hacsbadge]: https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge
+[maintenance-shield]: https://img.shields.io/badge/maintainer-lasswellt-blue.svg?style=for-the-badge

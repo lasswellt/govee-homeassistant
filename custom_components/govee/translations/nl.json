@@ -15,7 +15,7 @@
           "api_key": "API-sleutel",
           "delay": "Poll-interval"
         },
-        "description": "Haal je API-sleutel op uit de Govee Home-app. Zie voor details https://github.com/LaggAt/hacs-govee/blob/master/README.md"
+        "description": "Haal je API-sleutel op uit de Govee Home-app: Profiel → Instellingen → Over ons → API-sleutel aanvragen"
       },
       "reauth_confirm": {
         "data": {
@@ -43,7 +43,7 @@
           "disable_attribute_updates": "Statusupdates UITSCHAKELEN. Spatie om uit te schakelen. Lees de README hierboven!"
         },
         "title": "Opties",
-        "description": "Configureer de Govee-integratie. Zie voor details https://github.com/LaggAt/hacs-govee/blob/master/README.md"
+        "description": "Configureer de Govee-integratie. Wijzigingen aan API-sleutel en poll-interval vereisen een herstart."
       }
     }
   },

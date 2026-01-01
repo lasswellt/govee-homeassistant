@@ -15,7 +15,7 @@
           "api_key": "API Key",
           "delay": "Abfrage-Intervall"
         },
-        "description": "Den API Key bekommen Sie in der Govee Home App. Details dazu hier: https://github.com/LaggAt/hacs-govee/blob/master/README.md"
+        "description": "API-Schlüssel aus der Govee Home App abrufen: Profil → Einstellungen → Über uns → API-Schlüssel beantragen"
       },
       "reauth_confirm": {
         "data": {
@@ -43,7 +43,7 @@
           "disable_attribute_updates": "Status updates verhindern. Leertaste zum ausschalten. Bitte das README oben dazu lesen."
         },
         "title": "Einstellungen",
-        "description": "Einstellen der Govee Integration. Details dazu hier: https://github.com/LaggAt/hacs-govee/blob/master/README.md"
+        "description": "Govee Integration konfigurieren. Änderungen an API-Schlüssel und Abfrageintervall erfordern einen Neustart."
       }
     }
   },
