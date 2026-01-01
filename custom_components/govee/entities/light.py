@@ -40,30 +40,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
-    """Govee light entity with v2.0 API features and state restoration.
-
-    Entity Features:
-    - Full color control (RGB, color temperature, brightness)
-    - Dynamic scenes and DIY scenes via effect list
-    - Segment control for RGBIC strips (via services)
-    - Music mode activation (via service)
-    - State restoration for group devices (optimistic updates)
-
-    Color Mode Detection:
-    - Automatically detects supported color modes from device capabilities
-    - Supports RGB, color temperature, brightness-only, and on/off-only modes
-    - Color temperature ranges vary by device (detected from capabilities)
-
-    Brightness Conversion:
-    - Home Assistant uses 0-255 range
-    - Govee devices use varying ranges (0-100 or 0-254)
-    - Automatic conversion based on device capability ranges
-
-    State Restoration (RestoreEntity):
-    - Used for group devices where state cannot be queried
-    - Restores last known state on Home Assistant restart
-    - Provides continuity across restarts for optimistic state devices
-    """
+    """Govee light entity with full color control, scenes, and state restoration."""
 
     _attr_name = None  # Use device name from DeviceInfo
 
@@ -73,45 +50,21 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
         device: GoveeDevice,
         entry: GoveeConfigEntry,
     ) -> None:
-        """Initialize the light entity.
-
-        Initialization Steps:
-        1. Call parent constructors (GoveeEntity, LightEntity, RestoreEntity)
-        2. Set unique ID for entity registry
-        3. Set entity description for standardized configuration
-        4. Detect supported color modes from device capabilities
-        5. Detect supported features (effects, transitions)
-        6. Build effect list from available scenes
-        7. Configure color temperature range
-
-        Args:
-            coordinator: Data update coordinator for state management
-            device: Govee device model with capabilities
-            entry: Config entry for accessing options
-        """
+        """Initialize the light entity."""
         super().__init__(coordinator, device)
 
         self._entry = entry
         self._attr_unique_id = f"govee_{entry.title}_{device.device_id}"
-        
-        # Set entity description (no translation_key - uses device name)
+
         from ..entity_descriptions import LIGHT_DESCRIPTIONS
-        
         self.entity_description = LIGHT_DESCRIPTIONS["main"]
 
-        # Build supported color modes from device capabilities
-        # Determines what controls appear in UI (RGB, temp, brightness)
         self._attr_supported_color_modes = self._determine_color_modes()
-
-        # Build supported features (effects/scenes, transitions, etc.)
         self._attr_supported_features = self._determine_features()
 
-        # Build effect list from scene capabilities
-        # Maps scene names to API parameters for activation
         self._effect_map: dict[str, Any] = {}
         self._build_effect_list()
 
-        # Color temp range from device capabilities (varies by model)
         temp_range = device.get_color_temp_range()
         self._attr_min_color_temp_kelvin = temp_range[0]
         self._attr_max_color_temp_kelvin = temp_range[1]

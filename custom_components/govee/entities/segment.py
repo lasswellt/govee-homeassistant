@@ -22,22 +22,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class GoveeSegmentLight(GoveeEntity, LightEntity, RestoreEntity):
-    """Light entity for individual RGBIC device segment.
-
-    Represents a single controllable segment on an RGBIC device like
-    Govee light strips. Each segment can be controlled independently
-    for color and brightness.
-
-    State Management:
-    - Uses optimistic state tracking since API doesn't report per-segment state
-    - State persists via RestoreEntity across Home Assistant restarts
-    - Segment state is cleared when main light changes (scene, color mode change)
-
-    Supported Features:
-    - RGB color control per segment
-    - Brightness control per segment
-    - Turn on/off (off = black RGB 0,0,0)
-    """
+    """Light entity for individual RGBIC device segment with optimistic state tracking."""
 
     _attr_color_mode = ColorMode.RGB
     _attr_supported_color_modes = {ColorMode.RGB}
@@ -48,47 +33,28 @@ class GoveeSegmentLight(GoveeEntity, LightEntity, RestoreEntity):
         device: GoveeDevice,
         segment_index: int,
     ) -> None:
-        """Initialize the segment light entity.
-
-        Args:
-            coordinator: Data update coordinator for state management
-            device: Parent Govee device with segment support
-            segment_index: Zero-based index of this segment
-        """
+        """Initialize the segment light entity."""
         super().__init__(coordinator, device)
 
         self._segment_index = segment_index
         self._attr_unique_id = f"{device.device_id}_segment_{segment_index}"
-
-        # Set entity description for standardized configuration
         self.entity_description = SEGMENT_LIGHT_DESCRIPTION
-
-        # Translation placeholders for dynamic segment naming
-        # Results in "Segment 1", "Segment 2", etc. (1-based for users)
         self._attr_translation_placeholders = {"segment_number": str(segment_index + 1)}
 
-        # Optimistic state tracking (API doesn't report per-segment state)
         self._optimistic_on: bool | None = None
-        self._optimistic_brightness: int | None = None  # 0-255 HA scale
+        self._optimistic_brightness: int | None = None
         self._optimistic_rgb: tuple[int, int, int] | None = None
 
     async def async_added_to_hass(self) -> None:
-        """Restore state when entity is added to Home Assistant.
-
-        Called after entity is added to HA. Restores previous state
-        from RestoreEntity storage if available.
-        """
+        """Restore previous state when entity is added to Home Assistant."""
         await super().async_added_to_hass()
 
-        # Restore previous state if available
         if (last_state := await self.async_get_last_state()) is not None:
             self._optimistic_on = last_state.state == "on"
 
-            # Restore brightness if available
             if (brightness := last_state.attributes.get(ATTR_BRIGHTNESS)) is not None:
                 self._optimistic_brightness = int(brightness)
 
-            # Restore RGB color if available
             if (rgb := last_state.attributes.get(ATTR_RGB_COLOR)) is not None:
                 rgb_list = list(rgb)
                 self._optimistic_rgb = (rgb_list[0], rgb_list[1], rgb_list[2])
@@ -125,14 +91,7 @@ class GoveeSegmentLight(GoveeEntity, LightEntity, RestoreEntity):
         return True
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn the segment on with optional color/brightness.
-
-        Supports:
-        - ATTR_RGB_COLOR: Set specific RGB color
-        - ATTR_BRIGHTNESS: Set brightness level
-
-        If no RGB color specified and segment was off, defaults to white.
-        """
+        """Turn the segment on with optional color/brightness."""
         rgb_color: tuple[int, int, int] | None = kwargs.get(ATTR_RGB_COLOR)
         brightness: int | None = kwargs.get(ATTR_BRIGHTNESS)
 
@@ -197,11 +156,7 @@ class GoveeSegmentLight(GoveeEntity, LightEntity, RestoreEntity):
         self.async_write_ha_state()
 
     def clear_segment_state(self) -> None:
-        """Clear optimistic segment state.
-
-        Called when main light changes (scene, effect, color mode)
-        which would override individual segment colors.
-        """
+        """Clear optimistic segment state when main light changes."""
         self._optimistic_on = None
         self._optimistic_brightness = None
         self._optimistic_rgb = None

@@ -13,17 +13,7 @@ from ..models import GoveeDevice, GoveeDeviceState
 
 
 class GoveeEntity(CoordinatorEntity[GoveeDataUpdateCoordinator]):
-    """Base entity for Govee devices.
-
-    Provides common functionality for all Govee entities including:
-    - Device registry integration
-    - Availability logic (including group device handling)
-    - State access from coordinator
-    - Extra state attributes (rate limits, device info)
-
-    All Govee entities inherit from this base class to ensure consistent
-    behavior across platforms.
-    """
+    """Base entity for Govee devices with device registry and availability logic."""
 
     _attr_has_entity_name = True
 
@@ -32,12 +22,7 @@ class GoveeEntity(CoordinatorEntity[GoveeDataUpdateCoordinator]):
         coordinator: GoveeDataUpdateCoordinator,
         device: GoveeDevice,
     ) -> None:
-        """Initialize the entity.
-
-        Args:
-            coordinator: Data update coordinator
-            device: Govee device model
-        """
+        """Initialize the entity."""
         super().__init__(coordinator)
         self._device = device
         self._device_id = device.device_id
@@ -53,44 +38,25 @@ class GoveeEntity(CoordinatorEntity[GoveeDataUpdateCoordinator]):
 
     @property
     def device_state(self) -> GoveeDeviceState | None:
-        """Get current device state from coordinator.
-
-        Returns:
-            Current device state or None if not available
-        """
+        """Get current device state from coordinator."""
         return self.coordinator.get_state(self._device_id)
 
     @property
     def _is_group_device(self) -> bool:
-        """Check if this is a group device (experimental support).
-
-        Returns:
-            True if device is a Govee Home app group
-        """
+        """Check if this is a group device (experimental support)."""
         from ..const import UNSUPPORTED_DEVICE_SKUS
 
         return self._device.sku in UNSUPPORTED_DEVICE_SKUS
 
     @property
     def available(self) -> bool:
-        """Return if entity is available.
-
-        Group devices are always available for control even though
-        their state cannot be queried (online=False). This allows
-        commands to be sent with optimistic state tracking.
-
-        Returns:
-            True if entity is available for interaction
-        """
+        """Return if entity is available (group devices always available for control)."""
         if not super().available:
             return False
 
-        # Group devices: always available if coordinator is available
-        # They can be controlled even though state queries fail
         if self._is_group_device:
             return True
 
-        # Regular devices: require online state
         state = self.device_state
         if state is None:
             return False
@@ -99,11 +65,7 @@ class GoveeEntity(CoordinatorEntity[GoveeDataUpdateCoordinator]):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return extra state attributes.
-
-        Returns:
-            Dictionary of additional state attributes
-        """
+        """Return extra state attributes."""
         attrs = {
             "device_id": self._device_id,
             "model": self._device.sku,

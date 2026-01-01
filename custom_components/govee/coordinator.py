@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -19,25 +19,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
-    """Coordinator for Govee device state updates.
-
-    This coordinator manages device discovery, state polling, and scene caching
-    for the Govee integration. It handles both regular devices and experimental
-    group devices with optimistic state tracking.
-
-    Key Features:
-    - Device discovery with filtering (regular vs group devices)
-    - Periodic state polling from Govee cloud API
-    - Scene caching (dynamic and DIY scenes)
-    - Rate limit tracking and enforcement
-    - Optimistic state updates for group devices
-
-    Architecture:
-    - Inherits from Home Assistant's DataUpdateCoordinator
-    - Provides centralized state management for all Govee entities
-    - Implements retry logic and error handling for API failures
-    - Caches scenes to minimize API calls
-    """
+    """Coordinator for Govee device discovery, state polling, and scene caching."""
 
     config_entry: GoveeConfigEntry
 
@@ -288,13 +270,11 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
             except Exception as err:
                 return (device_id, err)
 
-        # Create tasks for all devices
         tasks = [
             fetch_device_state(device_id, device)
             for device_id, device in self.devices.items()
         ]
 
-        # Execute all tasks in parallel with timeout
         try:
             results = await asyncio.wait_for(
                 asyncio.gather(*tasks, return_exceptions=False),
@@ -304,7 +284,6 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
             _LOGGER.warning("State update timed out after 30s")
             raise UpdateFailed("State update timeout") from None
 
-        # Process results
         for device_id, result in results:
             device = self.devices[device_id]
 
@@ -318,7 +297,6 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
                     device_id,
                     result,
                 )
-                # Keep previous state if available
                 if self.data and device_id in self.data:
                     states[device_id] = self.data[device_id]
 
@@ -649,7 +627,6 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
             INSTANCE_POWER_SWITCH,
             0,
         )
-        import asyncio
         await asyncio.sleep(0.5)
         await self.async_control_device(
             device_id,
