@@ -1323,6 +1323,9 @@ class TestRefreshScenes:
         mock_api_client.get_diy_scenes = AsyncMock(return_value=[
             {"name": "New DIY", "value": {"id": "newdiy"}},
         ])
+        mock_api_client.get_snapshots = AsyncMock(return_value=[
+            {"name": "New Snapshot", "value": {"id": "newsnapshot"}},
+        ])
 
         await coordinator.async_refresh_device_scenes(device_id)
 

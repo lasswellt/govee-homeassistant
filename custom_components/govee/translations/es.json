@@ -59,6 +59,9 @@
       },
       "diy_scene": {
         "name": "Escena DIY"
+      },
+      "snapshot_scene": {
+        "name": "Escena Snapshot"
       }
     },
     "switch": {
@@ -67,6 +70,21 @@
       },
       "outlet": {
         "name": "Enchufe"
+      },
+      "oscillation": {
+        "name": "Oscilación"
+      },
+      "thermostat": {
+        "name": "Termostato"
+      },
+      "gradient": {
+        "name": "Modo gradiente"
+      },
+      "warm_mist": {
+        "name": "Niebla cálida"
+      },
+      "air_deflector": {
+        "name": "Deflector de aire"
       }
     },
     "sensor": {

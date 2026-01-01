@@ -23,7 +23,7 @@ This custom integration brings your Govee devices into Home Assistant, giving yo
 - Individual segment control for RGBIC strips
 - Rate limit protection with proactive warnings
 - Built-in diagnostics for troubleshooting
-- 99.78% test coverage with strict type safety
+- 96.90% test coverage with strict type safety
 
 ---
 
@@ -113,9 +113,12 @@ Access options via: **Settings** > **Devices & Services** > **Govee** > **Config
 
 | Device Type | Platforms | Features |
 |-------------|-----------|----------|
-| LED Lights & Strips | Light, Select | On/off, brightness, RGB, color temp, scenes |
+| LED Lights & Strips | Light, Select, Switch | On/off, brightness, RGB, color temp, scenes, gradient mode |
 | RGBIC Strips | Light, Select | Above + segment control |
 | Smart Plugs | Switch | On/off control |
+| Fans & Air Purifiers | Switch | On/off, oscillation, air deflector |
+| Heaters | Switch | On/off, thermostat |
+| Humidifiers | Switch | On/off, warm mist |
 
 > **Note:** Only cloud-enabled devices are supported. Bluetooth-only devices cannot be controlled via the API.
 
@@ -138,15 +141,21 @@ data:
 
 ### Select Entities
 
-Dedicated dropdowns for scene and DIY scene selection:
+Dedicated dropdowns for scene selection:
 
 - `select.<device>_scene` - Dynamic scenes from Govee cloud
 - `select.<device>_diy_scene` - Your custom DIY scenes (disabled by default)
+- `select.<device>_snapshot_scene` - Saved device snapshots (disabled by default)
 
 ### Switch Entities
 
 - Smart plug on/off control
 - Night light mode toggle (supported devices)
+- Oscillation toggle (fans, air purifiers)
+- Thermostat toggle (heaters)
+- Gradient mode toggle (lights)
+- Warm mist toggle (humidifiers)
+- Air deflector toggle (air purifiers)
 
 ### Sensor Entities (Diagnostic)
 

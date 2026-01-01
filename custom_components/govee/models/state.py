@@ -5,13 +5,19 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..api.const import (
+    INSTANCE_AIR_DEFLECTOR_TOGGLE,
     INSTANCE_BRIGHTNESS,
     INSTANCE_COLOR_RGB,
     INSTANCE_COLOR_TEMP,
     INSTANCE_DIY_SCENE,
+    INSTANCE_GRADIENT_TOGGLE,
     INSTANCE_LIGHT_SCENE,
     INSTANCE_NIGHTLIGHT_TOGGLE,
+    INSTANCE_OSCILLATION_TOGGLE,
     INSTANCE_POWER_SWITCH,
+    INSTANCE_SNAPSHOT,
+    INSTANCE_THERMOSTAT_TOGGLE,
+    INSTANCE_WARM_MIST_TOGGLE,
 )
 
 
@@ -35,6 +41,11 @@ class GoveeDeviceState:
     segment_brightness: dict[int, int] | None = None
 
     nightlight_on: bool | None = None
+    oscillation_on: bool | None = None
+    thermostat_on: bool | None = None
+    gradient_on: bool | None = None
+    warm_mist_on: bool | None = None
+    air_deflector_on: bool | None = None
 
     humidity: int | None = None
     temperature: float | None = None
@@ -66,6 +77,16 @@ class GoveeDeviceState:
                 state.color_temp_kelvin = value
             elif instance == INSTANCE_NIGHTLIGHT_TOGGLE:
                 state.nightlight_on = value == 1
+            elif instance == INSTANCE_OSCILLATION_TOGGLE:
+                state.oscillation_on = value == 1
+            elif instance == INSTANCE_THERMOSTAT_TOGGLE:
+                state.thermostat_on = value == 1
+            elif instance == INSTANCE_GRADIENT_TOGGLE:
+                state.gradient_on = value == 1
+            elif instance == INSTANCE_WARM_MIST_TOGGLE:
+                state.warm_mist_on = value == 1
+            elif instance == INSTANCE_AIR_DEFLECTOR_TOGGLE:
+                state.air_deflector_on = value == 1
             elif instance == "online":
                 state.online = value
 
@@ -91,6 +112,11 @@ class GoveeDeviceState:
             segment_colors=dict(other.segment_colors) if other.segment_colors else None,
             segment_brightness=dict(other.segment_brightness) if other.segment_brightness else None,
             nightlight_on=other.nightlight_on,
+            oscillation_on=other.oscillation_on,
+            thermostat_on=other.thermostat_on,
+            gradient_on=other.gradient_on,
+            warm_mist_on=other.warm_mist_on,
+            air_deflector_on=other.air_deflector_on,
             humidity=other.humidity,
             temperature=other.temperature,
             fan_speed=other.fan_speed,
@@ -111,6 +137,16 @@ class GoveeDeviceState:
             self.color_temp_kelvin = new_state.color_temp_kelvin
         if new_state.nightlight_on is not None:
             self.nightlight_on = new_state.nightlight_on
+        if new_state.oscillation_on is not None:
+            self.oscillation_on = new_state.oscillation_on
+        if new_state.thermostat_on is not None:
+            self.thermostat_on = new_state.thermostat_on
+        if new_state.gradient_on is not None:
+            self.gradient_on = new_state.gradient_on
+        if new_state.warm_mist_on is not None:
+            self.warm_mist_on = new_state.warm_mist_on
+        if new_state.air_deflector_on is not None:
+            self.air_deflector_on = new_state.air_deflector_on
         self.online = new_state.online
 
     def apply_optimistic_update(
@@ -147,8 +183,27 @@ class GoveeDeviceState:
             self.current_scene = f"diy_{value}"
             self.current_scene_name = None
             self.scene_set_time = time.time()
+        elif instance == INSTANCE_SNAPSHOT:
+            if isinstance(value, dict):
+                scene_id = value.get("id") or value.get("paramId") or str(value)
+                self.current_scene = f"snapshot_{scene_id}"
+                self.current_scene_name = value.get("name")
+            else:
+                self.current_scene = f"snapshot_{value}"
+                self.current_scene_name = None
+            self.scene_set_time = time.time()
         elif instance == INSTANCE_NIGHTLIGHT_TOGGLE:
             self.nightlight_on = value == 1
+        elif instance == INSTANCE_OSCILLATION_TOGGLE:
+            self.oscillation_on = value == 1
+        elif instance == INSTANCE_THERMOSTAT_TOGGLE:
+            self.thermostat_on = value == 1
+        elif instance == INSTANCE_GRADIENT_TOGGLE:
+            self.gradient_on = value == 1
+        elif instance == INSTANCE_WARM_MIST_TOGGLE:
+            self.warm_mist_on = value == 1
+        elif instance == INSTANCE_AIR_DEFLECTOR_TOGGLE:
+            self.air_deflector_on = value == 1
 
     def _clear_scene_state(self) -> None:
         self.current_scene = None

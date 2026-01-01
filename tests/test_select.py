@@ -11,6 +11,7 @@ from custom_components.govee.api.const import (
     CAPABILITY_DYNAMIC_SCENE,
     INSTANCE_LIGHT_SCENE,
     INSTANCE_DIY_SCENE,
+    INSTANCE_SNAPSHOT,
 )
 from custom_components.govee.models import SceneOption
 
@@ -553,3 +554,192 @@ class TestGoveeSceneSelect:
         assert len(entity._attr_options) == 1
         assert "New Scene" in entity._attr_options
         entity.async_write_ha_state.assert_called_once()
+
+
+class TestSnapshotSceneSelect:
+    """Test snapshot scene select functionality."""
+
+    @pytest.fixture
+    def device_with_snapshot_capability(self, mock_device_light_with_scenes):
+        """Create a device with snapshot capability."""
+        from custom_components.govee.models.capability import DeviceCapability
+        from custom_components.govee.models import GoveeDevice
+
+        snapshot_capability = DeviceCapability(
+            type=CAPABILITY_DYNAMIC_SCENE,
+            instance=INSTANCE_SNAPSHOT,
+            parameters={
+                "options": [{"name": "Snapshot 1", "value": {"id": 1}}]
+            },
+        )
+        return GoveeDevice(
+            device_id=mock_device_light_with_scenes.device_id,
+            sku=mock_device_light_with_scenes.sku,
+            device_name=mock_device_light_with_scenes.device_name,
+            device_type=mock_device_light_with_scenes.device_type,
+            capabilities=list(mock_device_light_with_scenes.capabilities) + [snapshot_capability],
+            firmware_version=mock_device_light_with_scenes.firmware_version,
+        )
+
+    @pytest.mark.asyncio
+    async def test_setup_entry_with_snapshot_support(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_coordinator,
+        device_with_snapshot_capability,
+    ):
+        """Test setup creates snapshot scene select entity."""
+        mock_config_entry.runtime_data = MagicMock()
+        mock_config_entry.runtime_data.coordinator = mock_coordinator
+        mock_config_entry.runtime_data.devices = {
+            device_with_snapshot_capability.device_id: device_with_snapshot_capability
+        }
+
+        async_add_entities = MagicMock()
+
+        with patch(
+            "custom_components.govee.services.async_setup_select_services",
+            new_callable=AsyncMock,
+        ):
+            await async_setup_entry(hass, mock_config_entry, async_add_entities)
+
+        # Should add dynamic, and snapshot scene select entities
+        async_add_entities.assert_called_once()
+        entities = async_add_entities.call_args[0][0]
+        assert len(entities) >= 2
+
+        # One should be snapshot
+        scene_types = [e._scene_type for e in entities]
+        assert "snapshot" in scene_types
+
+    def test_select_entity_initialization_snapshot(
+        self,
+        mock_coordinator,
+        mock_device_light_with_scenes,
+    ):
+        """Test select entity initializes correctly for snapshot scenes."""
+        entity = GoveeSceneSelect(
+            mock_coordinator,
+            mock_device_light_with_scenes,
+            scene_type="snapshot",
+            instance=INSTANCE_SNAPSHOT,
+        )
+
+        assert entity._scene_type == "snapshot"
+        assert entity._instance == INSTANCE_SNAPSHOT
+        assert entity._attr_unique_id == f"{mock_device_light_with_scenes.device_id}_snapshot_scene"
+        assert entity.entity_description is not None
+
+    @pytest.mark.asyncio
+    async def test_refresh_options_snapshot_scenes(
+        self,
+        mock_coordinator,
+        mock_device_light_with_scenes,
+    ):
+        """Test _async_refresh_options for snapshot scenes."""
+        scenes = [
+            SceneOption(name="Snapshot A", value={"id": 101}),
+            SceneOption(name="Snapshot B", value={"id": 102}),
+        ]
+        mock_coordinator.async_get_snapshots = AsyncMock(return_value=scenes)
+
+        entity = GoveeSceneSelect(
+            mock_coordinator,
+            mock_device_light_with_scenes,
+            scene_type="snapshot",
+            instance=INSTANCE_SNAPSHOT,
+        )
+
+        await entity._async_refresh_options()
+
+        # Should populate options
+        assert len(entity._attr_options) == 2
+        assert "Snapshot A" in entity._attr_options
+        assert "Snapshot B" in entity._attr_options
+        mock_coordinator.async_get_snapshots.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_async_select_option_snapshot_success(
+        self,
+        mock_coordinator,
+        mock_device_light_with_scenes,
+    ):
+        """Test async_select_option sets snapshot scene."""
+        mock_coordinator.async_control_device = AsyncMock()
+
+        entity = GoveeSceneSelect(
+            mock_coordinator,
+            mock_device_light_with_scenes,
+            scene_type="snapshot",
+            instance=INSTANCE_SNAPSHOT,
+        )
+
+        # Populate options map with snapshot value (dict type)
+        entity._options_map = {
+            "My Snapshot": SceneOption(name="My Snapshot", value={"id": 42, "params": {}}),
+        }
+
+        await entity.async_select_option("My Snapshot")
+
+        # Should call coordinator to control device with snapshot scene value
+        mock_coordinator.async_control_device.assert_called_once_with(
+            mock_device_light_with_scenes.device_id,
+            CAPABILITY_DYNAMIC_SCENE,
+            INSTANCE_SNAPSHOT,
+            {"id": 42, "params": {}},
+        )
+
+    def test_current_option_snapshot_scene(
+        self,
+        mock_coordinator,
+        mock_device_light_with_scenes,
+    ):
+        """Test current_option for snapshot scene."""
+        from custom_components.govee.models import GoveeDeviceState
+
+        # For snapshot scenes, current_scene should have "snapshot_" prefix
+        state = GoveeDeviceState(
+            device_id=mock_device_light_with_scenes.device_id,
+            online=True, power_state=True, brightness=100, current_scene="snapshot_42"
+        )
+        mock_coordinator.get_state.return_value = state
+
+        entity = GoveeSceneSelect(
+            mock_coordinator,
+            mock_device_light_with_scenes,
+            scene_type="snapshot",
+            instance=INSTANCE_SNAPSHOT,
+        )
+
+        # Populate options map with snapshot value
+        entity._options_map = {
+            "Saved State": SceneOption(name="Saved State", value={"id": 42}),
+        }
+
+        assert entity.current_option == "Saved State"
+
+    @pytest.mark.asyncio
+    async def test_refresh_options_snapshot_handles_errors(
+        self,
+        mock_coordinator,
+        mock_device_light_with_scenes,
+        caplog,
+    ):
+        """Test _async_refresh_options handles API errors for snapshots."""
+        mock_coordinator.async_get_snapshots = AsyncMock(
+            side_effect=Exception("API error")
+        )
+
+        entity = GoveeSceneSelect(
+            mock_coordinator,
+            mock_device_light_with_scenes,
+            scene_type="snapshot",
+            instance=INSTANCE_SNAPSHOT,
+        )
+
+        await entity._async_refresh_options()
+
+        # Should log warning but not raise
+        assert "Failed to load snapshot scenes" in caplog.text
+        assert "API error" in caplog.text

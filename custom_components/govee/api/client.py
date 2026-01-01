@@ -15,6 +15,7 @@ from .const import (
     ENDPOINT_DEVICE_STATE,
     ENDPOINT_DIY_SCENES,
     ENDPOINT_DYNAMIC_SCENES,
+    ENDPOINT_SNAPSHOTS,
     REQUEST_TIMEOUT,
 )
 from .exceptions import (
@@ -363,6 +364,36 @@ class GoveeApiClient:
                 scenes.extend(options)
 
         return scenes
+
+    async def get_snapshots(self, device_id: str, sku: str) -> list[dict[str, Any]]:
+        payload = {
+            "requestId": str(uuid.uuid4()),
+            "payload": {
+                "sku": sku,
+                "device": device_id,
+            },
+        }
+
+        response = await self._request("POST", ENDPOINT_SNAPSHOTS, payload)
+        capabilities = response.get("payload", {}).get("capabilities", [])
+
+        scenes = []
+        for cap in capabilities:
+            if cap.get("instance") == "snapshot":
+                parameters = cap.get("parameters", {})
+                options = parameters.get("options", [])
+                scenes.extend(options)
+
+        return scenes
+
+    async def set_snapshot(
+        self, device_id: str, sku: str, snapshot_value: dict[str, Any]
+    ) -> dict[str, Any]:
+        from .const import CAPABILITY_DYNAMIC_SCENE, INSTANCE_SNAPSHOT
+
+        return await self.control_device(
+            device_id, sku, CAPABILITY_DYNAMIC_SCENE, INSTANCE_SNAPSHOT, snapshot_value
+        )
 
     async def test_connection(self) -> bool:
         await self.get_devices()

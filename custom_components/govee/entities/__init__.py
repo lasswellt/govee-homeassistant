@@ -16,7 +16,15 @@ from .light import GoveeLightEntity
 from .segment import GoveeSegmentLight
 from .select import GoveeSceneSelect
 from .sensor import GoveeRateLimitSensor
-from .switch import GoveeNightLightSwitch, GoveeSwitchEntity
+from .switch import (
+    GoveeAirDeflectorSwitch,
+    GoveeGradientSwitch,
+    GoveeNightLightSwitch,
+    GoveeOscillationSwitch,
+    GoveeSwitchEntity,
+    GoveeThermostatSwitch,
+    GoveeWarmMistSwitch,
+)
 
 __all__ = [
     # Base entity
@@ -32,6 +40,11 @@ __all__ = [
     # Sensor entities
     "GoveeRateLimitSensor",
     # Switch entities
+    "GoveeAirDeflectorSwitch",
+    "GoveeGradientSwitch",
     "GoveeNightLightSwitch",
+    "GoveeOscillationSwitch",
     "GoveeSwitchEntity",
+    "GoveeThermostatSwitch",
+    "GoveeWarmMistSwitch",
 ]

@@ -46,6 +46,8 @@ class GoveeSceneSelect(GoveeEntity, SelectEntity):
         try:
             if self._scene_type == "diy":
                 scenes = await self.coordinator.async_get_diy_scenes(self._device_id)
+            elif self._scene_type == "snapshot":
+                scenes = await self.coordinator.async_get_snapshots(self._device_id)
             else:
                 scenes = await self.coordinator.async_get_dynamic_scenes(
                     self._device_id
@@ -78,6 +80,13 @@ class GoveeSceneSelect(GoveeEntity, SelectEntity):
         for name, scene in self._options_map.items():
             if self._scene_type == "diy":
                 if f"diy_{scene.value}" == state.current_scene:
+                    return name
+            elif self._scene_type == "snapshot":
+                if isinstance(scene.value, dict):
+                    scene_id = scene.value.get("id") or scene.value.get("paramId")
+                    if f"snapshot_{scene_id}" == state.current_scene:
+                        return name
+                elif f"snapshot_{scene.value}" == state.current_scene:
                     return name
             else:
                 if isinstance(scene.value, dict):

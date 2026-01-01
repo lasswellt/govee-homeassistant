@@ -59,6 +59,9 @@
       },
       "diy_scene": {
         "name": "Cena DIY"
+      },
+      "snapshot_scene": {
+        "name": "Cena Snapshot"
       }
     },
     "switch": {
@@ -67,6 +70,37 @@
       },
       "outlet": {
         "name": "Tomada"
+      },
+      "oscillation": {
+        "name": "Oscilação"
+      },
+      "thermostat": {
+        "name": "Termostato"
+      },
+      "gradient": {
+        "name": "Modo Gradiente"
+      },
+      "warm_mist": {
+        "name": "Névoa Quente"
+      },
+      "air_deflector": {
+        "name": "Defletor de Ar"
+      }
+    },
+    "sensor": {
+      "rate_limit_remaining_minute": {
+        "name": "Limite API (Minuto)"
+      },
+      "rate_limit_remaining_day": {
+        "name": "Limite API (Dia)"
+      }
+    },
+    "button": {
+      "refresh_scenes": {
+        "name": "Atualizar Cenas"
+      },
+      "identify": {
+        "name": "Identificar"
       }
     }
   },
@@ -105,6 +139,10 @@
     "rate_limit_day_warning": {
       "title": "Aproximando-se do Limite de Taxa Diário",
       "description": "Sua integração Govee está se aproximando do limite de taxa diário da API.\n\n**Status atual:** {remaining} requisições restantes hoje (limite: 10.000/dia)\n\n**O que isso significa:**\n- Se o limite diário for excedido, as requisições da API podem falhar\n- A integração pode parar de atualizar os estados dos dispositivos\n\n**Ações recomendadas:**\n- **Aumente imediatamente** o intervalo de escaneamento nas opções de integração (recomendado: 60+ segundos)\n- Considere reduzir o número de dispositivos\n- O limite diário é reiniciado à meia-noite UTC\n\nEste aviso será limpo automaticamente quando o limite de taxa for reiniciado."
+    },
+    "auth_failed": {
+      "title": "Autenticação Govee Falhou",
+      "description": "A chave de API Govee não é mais válida.\n\n**O que isso significa:**\n- A integração não pode se comunicar com os servidores Govee\n- O controle do dispositivo e as atualizações de estado não funcionarão\n\n**Como corrigir:**\n1. Vá para Configurações → Dispositivos e serviços → Govee\n2. Clique em 'Configurar' ou 'Reconfigurar'\n3. Insira uma nova chave de API válida\n\n**Obter uma nova chave de API:**\n1. Abra o aplicativo Govee Home\n2. Vá para Perfil → Configurações → Sobre nós → Solicitar chave de API"
     }
   },
   "services": {

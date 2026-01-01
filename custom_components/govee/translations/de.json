@@ -59,6 +59,9 @@
       },
       "diy_scene": {
         "name": "DIY Szene"
+      },
+      "snapshot_scene": {
+        "name": "Snapshot Szene"
       }
     },
     "switch": {
@@ -67,6 +70,37 @@
       },
       "outlet": {
         "name": "Steckdose"
+      },
+      "oscillation": {
+        "name": "Oszillation"
+      },
+      "thermostat": {
+        "name": "Thermostat"
+      },
+      "gradient": {
+        "name": "Gradientenmodus"
+      },
+      "warm_mist": {
+        "name": "Warmer Nebel"
+      },
+      "air_deflector": {
+        "name": "Luftabweiser"
+      }
+    },
+    "sensor": {
+      "rate_limit_remaining_minute": {
+        "name": "API-Limit (Minute)"
+      },
+      "rate_limit_remaining_day": {
+        "name": "API-Limit (Tag)"
+      }
+    },
+    "button": {
+      "refresh_scenes": {
+        "name": "Szenen aktualisieren"
+      },
+      "identify": {
+        "name": "Identifizieren"
       }
     }
   },

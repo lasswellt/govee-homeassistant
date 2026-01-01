@@ -59,6 +59,9 @@
       },
       "diy_scene": {
         "name": "Scena DIY"
+      },
+      "snapshot_scene": {
+        "name": "Scena Snapshot"
       }
     },
     "switch": {
@@ -67,6 +70,21 @@
       },
       "outlet": {
         "name": "Presa"
+      },
+      "oscillation": {
+        "name": "Oscillazione"
+      },
+      "thermostat": {
+        "name": "Termostato"
+      },
+      "gradient": {
+        "name": "Modalità gradiente"
+      },
+      "warm_mist": {
+        "name": "Nebbia calda"
+      },
+      "air_deflector": {
+        "name": "Deflettore aria"
       }
     },
     "sensor": {

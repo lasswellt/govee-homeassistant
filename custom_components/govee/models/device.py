@@ -11,16 +11,22 @@ from ..api.const import (
     CAPABILITY_RANGE,
     CAPABILITY_SEGMENT_COLOR,
     CAPABILITY_TOGGLE,
+    INSTANCE_AIR_DEFLECTOR_TOGGLE,
     INSTANCE_BRIGHTNESS,
     INSTANCE_COLOR_RGB,
     INSTANCE_COLOR_TEMP,
     INSTANCE_DIY_SCENE,
+    INSTANCE_GRADIENT_TOGGLE,
     INSTANCE_LIGHT_SCENE,
     INSTANCE_MUSIC_MODE,
     INSTANCE_NIGHTLIGHT_TOGGLE,
+    INSTANCE_OSCILLATION_TOGGLE,
     INSTANCE_POWER_SWITCH,
     INSTANCE_SEGMENTED_BRIGHTNESS,
     INSTANCE_SEGMENTED_COLOR,
+    INSTANCE_SNAPSHOT,
+    INSTANCE_THERMOSTAT_TOGGLE,
+    INSTANCE_WARM_MIST_TOGGLE,
 )
 from .capability import DeviceCapability
 
@@ -106,6 +112,30 @@ class GoveeDevice:
     @property
     def supports_nightlight(self) -> bool:
         return self.has_capability(CAPABILITY_TOGGLE, INSTANCE_NIGHTLIGHT_TOGGLE)
+
+    @property
+    def supports_snapshots(self) -> bool:
+        return self.has_capability(CAPABILITY_DYNAMIC_SCENE, INSTANCE_SNAPSHOT)
+
+    @property
+    def supports_oscillation_toggle(self) -> bool:
+        return self.has_capability(CAPABILITY_TOGGLE, INSTANCE_OSCILLATION_TOGGLE)
+
+    @property
+    def supports_thermostat_toggle(self) -> bool:
+        return self.has_capability(CAPABILITY_TOGGLE, INSTANCE_THERMOSTAT_TOGGLE)
+
+    @property
+    def supports_gradient_toggle(self) -> bool:
+        return self.has_capability(CAPABILITY_TOGGLE, INSTANCE_GRADIENT_TOGGLE)
+
+    @property
+    def supports_warm_mist_toggle(self) -> bool:
+        return self.has_capability(CAPABILITY_TOGGLE, INSTANCE_WARM_MIST_TOGGLE)
+
+    @property
+    def supports_air_deflector_toggle(self) -> bool:
+        return self.has_capability(CAPABILITY_TOGGLE, INSTANCE_AIR_DEFLECTOR_TOGGLE)
 
     def get_brightness_range(self) -> tuple[int, int]:
         cap = self.get_capability(CAPABILITY_RANGE, INSTANCE_BRIGHTNESS)

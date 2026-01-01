@@ -35,6 +35,7 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
         self.devices: dict[str, GoveeDevice] = {}
         self._scene_cache: dict[str, list[SceneOption]] = {}
         self._diy_scene_cache: dict[str, list[SceneOption]] = {}
+        self._snapshot_cache: dict[str, list[SceneOption]] = {}
 
         super().__init__(
             hass,
@@ -471,6 +472,17 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
             refresh,
         )
 
+    async def async_get_snapshots(
+        self, device_id: str, refresh: bool = False
+    ) -> list[SceneOption]:
+        return await self._async_get_scenes_cached(
+            device_id,
+            self._snapshot_cache,
+            self.client.get_snapshots,
+            "snapshot",
+            refresh,
+        )
+
     def invalidate_scene_cache(self, device_id: str | None = None) -> None:
         """Invalidate scene cache for one or all devices.
 
@@ -484,10 +496,12 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
         if device_id:
             self._scene_cache.pop(device_id, None)
             self._diy_scene_cache.pop(device_id, None)
+            self._snapshot_cache.pop(device_id, None)
             _LOGGER.debug("Invalidated scene cache for device %s", device_id)
         else:
             self._scene_cache.clear()
             self._diy_scene_cache.clear()
+            self._snapshot_cache.clear()
             _LOGGER.debug("Invalidated all scene caches")
 
     @property
@@ -502,9 +516,11 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
         """Refresh scene lists for a device (used by refresh scenes button)."""
         self._scene_cache.pop(device_id, None)
         self._diy_scene_cache.pop(device_id, None)
+        self._snapshot_cache.pop(device_id, None)
 
         await self.async_get_dynamic_scenes(device_id)
         await self.async_get_diy_scenes(device_id)
+        await self.async_get_snapshots(device_id)
 
         _LOGGER.debug("Refreshed scenes for device %s", device_id)
 

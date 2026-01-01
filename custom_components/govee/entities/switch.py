@@ -10,8 +10,13 @@ from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
 from ..api.const import (
     CAPABILITY_ON_OFF,
     CAPABILITY_TOGGLE,
+    INSTANCE_AIR_DEFLECTOR_TOGGLE,
+    INSTANCE_GRADIENT_TOGGLE,
     INSTANCE_NIGHTLIGHT_TOGGLE,
+    INSTANCE_OSCILLATION_TOGGLE,
     INSTANCE_POWER_SWITCH,
+    INSTANCE_THERMOSTAT_TOGGLE,
+    INSTANCE_WARM_MIST_TOGGLE,
 )
 from ..coordinator import GoveeDataUpdateCoordinator
 from ..models import GoveeDevice
@@ -115,3 +120,213 @@ class GoveeNightLightSwitch(GoveeEntity, SwitchEntity):
                 self._device.device_name,
                 err,
             )
+
+
+class GoveeOscillationSwitch(GoveeEntity, SwitchEntity):
+    """Govee oscillation toggle switch for fans and air purifiers."""
+
+    _attr_device_class = SwitchDeviceClass.SWITCH
+    _attr_translation_key = "oscillation"
+
+    def __init__(
+        self,
+        coordinator: GoveeDataUpdateCoordinator,
+        device: GoveeDevice,
+    ) -> None:
+        super().__init__(coordinator, device)
+        self._attr_unique_id = f"{device.device_id}_oscillation"
+
+        from ..entity_descriptions import SWITCH_DESCRIPTIONS
+
+        self.entity_description = SWITCH_DESCRIPTIONS["oscillation"]
+
+    @property
+    def is_on(self) -> bool | None:
+        state = self.device_state
+        if state is None:
+            return None
+        return state.oscillation_on
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self.coordinator.async_control_device(
+            self._device_id,
+            CAPABILITY_TOGGLE,
+            INSTANCE_OSCILLATION_TOGGLE,
+            1,
+        )
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self.coordinator.async_control_device(
+            self._device_id,
+            CAPABILITY_TOGGLE,
+            INSTANCE_OSCILLATION_TOGGLE,
+            0,
+        )
+
+
+class GoveeThermostatSwitch(GoveeEntity, SwitchEntity):
+    """Govee thermostat toggle switch for heaters."""
+
+    _attr_device_class = SwitchDeviceClass.SWITCH
+    _attr_translation_key = "thermostat"
+
+    def __init__(
+        self,
+        coordinator: GoveeDataUpdateCoordinator,
+        device: GoveeDevice,
+    ) -> None:
+        super().__init__(coordinator, device)
+        self._attr_unique_id = f"{device.device_id}_thermostat"
+
+        from ..entity_descriptions import SWITCH_DESCRIPTIONS
+
+        self.entity_description = SWITCH_DESCRIPTIONS["thermostat"]
+
+    @property
+    def is_on(self) -> bool | None:
+        state = self.device_state
+        if state is None:
+            return None
+        return state.thermostat_on
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self.coordinator.async_control_device(
+            self._device_id,
+            CAPABILITY_TOGGLE,
+            INSTANCE_THERMOSTAT_TOGGLE,
+            1,
+        )
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self.coordinator.async_control_device(
+            self._device_id,
+            CAPABILITY_TOGGLE,
+            INSTANCE_THERMOSTAT_TOGGLE,
+            0,
+        )
+
+
+class GoveeGradientSwitch(GoveeEntity, SwitchEntity):
+    """Govee gradient mode toggle switch for lights."""
+
+    _attr_device_class = SwitchDeviceClass.SWITCH
+    _attr_translation_key = "gradient"
+
+    def __init__(
+        self,
+        coordinator: GoveeDataUpdateCoordinator,
+        device: GoveeDevice,
+    ) -> None:
+        super().__init__(coordinator, device)
+        self._attr_unique_id = f"{device.device_id}_gradient"
+
+        from ..entity_descriptions import SWITCH_DESCRIPTIONS
+
+        self.entity_description = SWITCH_DESCRIPTIONS["gradient"]
+
+    @property
+    def is_on(self) -> bool | None:
+        state = self.device_state
+        if state is None:
+            return None
+        return state.gradient_on
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self.coordinator.async_control_device(
+            self._device_id,
+            CAPABILITY_TOGGLE,
+            INSTANCE_GRADIENT_TOGGLE,
+            1,
+        )
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self.coordinator.async_control_device(
+            self._device_id,
+            CAPABILITY_TOGGLE,
+            INSTANCE_GRADIENT_TOGGLE,
+            0,
+        )
+
+
+class GoveeWarmMistSwitch(GoveeEntity, SwitchEntity):
+    """Govee warm mist toggle switch for humidifiers."""
+
+    _attr_device_class = SwitchDeviceClass.SWITCH
+    _attr_translation_key = "warm_mist"
+
+    def __init__(
+        self,
+        coordinator: GoveeDataUpdateCoordinator,
+        device: GoveeDevice,
+    ) -> None:
+        super().__init__(coordinator, device)
+        self._attr_unique_id = f"{device.device_id}_warm_mist"
+
+        from ..entity_descriptions import SWITCH_DESCRIPTIONS
+
+        self.entity_description = SWITCH_DESCRIPTIONS["warm_mist"]
+
+    @property
+    def is_on(self) -> bool | None:
+        state = self.device_state
+        if state is None:
+            return None
+        return state.warm_mist_on
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self.coordinator.async_control_device(
+            self._device_id,
+            CAPABILITY_TOGGLE,
+            INSTANCE_WARM_MIST_TOGGLE,
+            1,
+        )
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self.coordinator.async_control_device(
+            self._device_id,
+            CAPABILITY_TOGGLE,
+            INSTANCE_WARM_MIST_TOGGLE,
+            0,
+        )
+
+
+class GoveeAirDeflectorSwitch(GoveeEntity, SwitchEntity):
+    """Govee air deflector toggle switch for air purifiers."""
+
+    _attr_device_class = SwitchDeviceClass.SWITCH
+    _attr_translation_key = "air_deflector"
+
+    def __init__(
+        self,
+        coordinator: GoveeDataUpdateCoordinator,
+        device: GoveeDevice,
+    ) -> None:
+        super().__init__(coordinator, device)
+        self._attr_unique_id = f"{device.device_id}_air_deflector"
+
+        from ..entity_descriptions import SWITCH_DESCRIPTIONS
+
+        self.entity_description = SWITCH_DESCRIPTIONS["air_deflector"]
+
+    @property
+    def is_on(self) -> bool | None:
+        state = self.device_state
+        if state is None:
+            return None
+        return state.air_deflector_on
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self.coordinator.async_control_device(
+            self._device_id,
+            CAPABILITY_TOGGLE,
+            INSTANCE_AIR_DEFLECTOR_TOGGLE,
+            1,
+        )
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self.coordinator.async_control_device(
+            self._device_id,
+            CAPABILITY_TOGGLE,
+            INSTANCE_AIR_DEFLECTOR_TOGGLE,
+            0,
+        )

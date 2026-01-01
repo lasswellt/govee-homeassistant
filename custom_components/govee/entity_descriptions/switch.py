@@ -23,4 +23,34 @@ SWITCH_DESCRIPTIONS: dict[str, GoveeSwitchEntityDescription] = {
         device_class=SwitchDeviceClass.SWITCH,
         entity_registry_enabled_default=False,
     ),
+    "oscillation": GoveeSwitchEntityDescription(
+        key="oscillation",
+        translation_key="oscillation",
+        device_class=SwitchDeviceClass.SWITCH,
+        entity_registry_enabled_default=True,
+    ),
+    "thermostat": GoveeSwitchEntityDescription(
+        key="thermostat",
+        translation_key="thermostat",
+        device_class=SwitchDeviceClass.SWITCH,
+        entity_registry_enabled_default=True,
+    ),
+    "gradient": GoveeSwitchEntityDescription(
+        key="gradient",
+        translation_key="gradient",
+        device_class=SwitchDeviceClass.SWITCH,
+        entity_registry_enabled_default=False,
+    ),
+    "warm_mist": GoveeSwitchEntityDescription(
+        key="warm_mist",
+        translation_key="warm_mist",
+        device_class=SwitchDeviceClass.SWITCH,
+        entity_registry_enabled_default=True,
+    ),
+    "air_deflector": GoveeSwitchEntityDescription(
+        key="air_deflector",
+        translation_key="air_deflector",
+        device_class=SwitchDeviceClass.SWITCH,
+        entity_registry_enabled_default=True,
+    ),
 }

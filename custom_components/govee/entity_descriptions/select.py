@@ -21,4 +21,9 @@ SELECT_DESCRIPTIONS: dict[str, GoveeSelectEntityDescription] = {
         translation_key="diy_scene",
         entity_registry_enabled_default=False,
     ),
+    "snapshot": GoveeSelectEntityDescription(
+        key="snapshot_scene",
+        translation_key="snapshot_scene",
+        entity_registry_enabled_default=False,
+    ),
 }

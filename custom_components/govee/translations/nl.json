@@ -59,6 +59,9 @@
       },
       "diy_scene": {
         "name": "DIY-scène"
+      },
+      "snapshot_scene": {
+        "name": "Snapshot-scène"
       }
     },
     "switch": {
@@ -67,6 +70,21 @@
       },
       "outlet": {
         "name": "Stopcontact"
+      },
+      "oscillation": {
+        "name": "Oscillatie"
+      },
+      "thermostat": {
+        "name": "Thermostaat"
+      },
+      "gradient": {
+        "name": "Gradiëntmodus"
+      },
+      "warm_mist": {
+        "name": "Warme nevel"
+      },
+      "air_deflector": {
+        "name": "Luchtafbuiger"
       }
     },
     "sensor": {

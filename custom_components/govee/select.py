@@ -6,7 +6,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import GoveeConfigEntry
-from .api.const import INSTANCE_DIY_SCENE, INSTANCE_LIGHT_SCENE
+from .api.const import INSTANCE_DIY_SCENE, INSTANCE_LIGHT_SCENE, INSTANCE_SNAPSHOT
 from .const import DEVICE_TYPE_LIGHT
 from .entities import GoveeSceneSelect
 
@@ -44,6 +44,16 @@ async def async_setup_entry(
                     device,
                     scene_type="diy",
                     instance=INSTANCE_DIY_SCENE,
+                )
+            )
+
+        if device.supports_snapshots:
+            entities.append(
+                GoveeSceneSelect(
+                    coordinator,
+                    device,
+                    scene_type="snapshot",
+                    instance=INSTANCE_SNAPSHOT,
                 )
             )
 
