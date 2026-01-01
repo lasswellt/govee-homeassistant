@@ -29,10 +29,12 @@ class GoveeSceneSelect(GoveeEntity, SelectEntity):
         instance: str,
     ) -> None:
         super().__init__(coordinator, device)
-        
+
         self._scene_type = scene_type
         self._instance = instance
         self._attr_unique_id = f"{device.device_id}_{scene_type}_scene"
+        self._options_map: dict[str, SceneOption] = {}
+        self._attr_options: list[str] = []
 
         from ..entity_descriptions import SELECT_DESCRIPTIONS
 
