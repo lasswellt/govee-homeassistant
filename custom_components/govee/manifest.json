@@ -11,6 +11,6 @@
   "issue_tracker": "https://github.com/lasswellt/hacs-govee/issues",
   "requirements": [],
   "ssdp": [],
-  "version": "2025.12.10",
+  "version": "2025.12.11",
   "zeroconf": []
 }
