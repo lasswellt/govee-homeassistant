@@ -72,7 +72,7 @@ class TestGoveeRateLimitSensor:
 
     def test_sensor_native_value_day(self, mock_coordinator):
         """Test native_value for day sensor."""
-        mock_coordinator.rate_limit_remaining_day = 9500
+        mock_coordinator.rate_limit_remaining = 9500
 
         description = SENSOR_DESCRIPTIONS["rate_limit_remaining_day"]
         entity = GoveeRateLimitSensor(mock_coordinator, description)

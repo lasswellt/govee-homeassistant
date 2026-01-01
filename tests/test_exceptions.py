@@ -11,7 +11,6 @@ from custom_components.govee.exceptions import (
     GoveeRateLimitError,
     GoveeDeviceError,
     GoveeCapabilityError,
-    GoveeSceneError,
 )
 
 
@@ -177,31 +176,6 @@ class TestGoveeCapabilityError:
         assert isinstance(exc, GoveeException)
 
 
-class TestGoveeSceneError:
-    """Tests for GoveeSceneError."""
-
-    def test_translation_key(self) -> None:
-        """Test scene error has correct translation key."""
-        exc = GoveeSceneError()
-        assert exc.translation_key == "scene_error"
-        assert exc.translation_domain == DOMAIN
-
-    def test_placeholders_with_scene_name(self) -> None:
-        """Test placeholders include scene name when provided."""
-        exc = GoveeSceneError(scene_name="Romantic")
-        assert exc.translation_placeholders["scene_name"] == "Romantic"
-
-    def test_placeholders_without_scene_name(self) -> None:
-        """Test scene_name defaults to 'unknown' when not provided."""
-        exc = GoveeSceneError()
-        assert exc.translation_placeholders["scene_name"] == "unknown"
-
-    def test_is_govee_exception(self) -> None:
-        """Test inherits from GoveeException."""
-        exc = GoveeSceneError()
-        assert isinstance(exc, GoveeException)
-
-
 class TestExceptionHierarchy:
     """Tests for exception class hierarchy."""
 
@@ -213,7 +187,6 @@ class TestExceptionHierarchy:
             GoveeRateLimitError(),
             GoveeDeviceError(device_id="test"),
             GoveeCapabilityError(device_id="test", capability="test"),
-            GoveeSceneError(),
         ]
         for exc in exceptions:
             assert isinstance(exc, GoveeException)
@@ -227,7 +200,6 @@ class TestExceptionHierarchy:
             GoveeRateLimitError(),
             GoveeDeviceError(device_id="test"),
             GoveeCapabilityError(device_id="test", capability="test"),
-            GoveeSceneError(),
         ]
         for exc in exceptions:
             assert exc.translation_domain == DOMAIN
@@ -240,7 +212,6 @@ class TestExceptionHierarchy:
             GoveeRateLimitError(retry_after=30),
             GoveeDeviceError(device_id="test"),
             GoveeCapabilityError(device_id="test", capability="test"),
-            GoveeSceneError(scene_name="Test"),
         ]
 
         for exc in exceptions_to_raise:

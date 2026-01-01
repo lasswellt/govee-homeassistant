@@ -5,7 +5,7 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.const import CONF_API_KEY
 
 from custom_components.govee import (
@@ -116,8 +116,8 @@ class TestAsyncSetupEntry:
             )
             mock_coord_class.return_value = mock_coordinator
 
-            # Should raise ConfigEntryNotReady
-            with pytest.raises(ConfigEntryNotReady, match="Invalid API key"):
+            # Should raise ConfigEntryAuthFailed to trigger reauth flow
+            with pytest.raises(ConfigEntryAuthFailed, match="Invalid API key"):
                 await async_setup_entry(hass, mock_config_entry)
 
             # Should close client

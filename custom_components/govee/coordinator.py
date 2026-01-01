@@ -42,6 +42,7 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
             config_entry=config_entry,
             name="Govee",
             update_interval=update_interval,
+            always_update=False,  # Only notify listeners when data changes
         )
 
     def _create_group_device_issue(self, device: GoveeDevice) -> None:
@@ -301,11 +302,12 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
         instance: str,
         value: Any,
     ) -> None:
-        """Send a control command and apply optimistic update.
+        """Send a control command with optimistic update and rollback on failure.
 
-        Optimistic Updates:
-        - State is updated immediately before API confirmation
-        - Provides responsive UI (no wait for cloud round-trip)
+        Optimistic Updates with Rollback:
+        - State is captured before any changes
+        - Optimistic update is applied immediately for responsive UI
+        - On API failure, state is rolled back to previous values
         - Next polling cycle will sync actual state from API
         - Critical for group devices where state queries fail
         """
@@ -313,6 +315,14 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
         if not device:
             _LOGGER.error("Device not found: %s", device_id)
             return
+
+        # Capture state for rollback before any changes
+        previous_state: GoveeDeviceState | None = None
+        if self.data and device_id in self.data:
+            previous_state = GoveeDeviceState.from_state(self.data[device_id])
+            # Apply optimistic update immediately for responsive UI
+            self.data[device_id].apply_optimistic_update(instance, value)
+            self.async_set_updated_data(self.data)
 
         try:
             await self.client.control_device(
@@ -322,12 +332,18 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
                 instance,
                 value,
             )
-
-            if self.data and device_id in self.data:
-                self.data[device_id].apply_optimistic_update(instance, value)
-                self.async_set_updated_data(self.data)
+            # Success - optimistic update was correct, nothing more to do
 
         except GoveeApiError as err:
+            # Rollback optimistic update on failure
+            if previous_state and self.data and device_id in self.data:
+                self.data[device_id] = previous_state
+                self.async_set_updated_data(self.data)
+                _LOGGER.debug(
+                    "Rolled back optimistic update for %s after control failure",
+                    device_id,
+                )
+
             is_group_device = device.sku in UNSUPPORTED_DEVICE_SKUS
 
             if is_group_device:
@@ -454,6 +470,25 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
             "DIY",
             refresh,
         )
+
+    def invalidate_scene_cache(self, device_id: str | None = None) -> None:
+        """Invalidate scene cache for one or all devices.
+
+        Call this when configuration changes that might affect scenes,
+        such as API key changes or options flow updates.
+
+        Args:
+            device_id: If provided, invalidate only this device's cache.
+                       If None, invalidate all cached scenes.
+        """
+        if device_id:
+            self._scene_cache.pop(device_id, None)
+            self._diy_scene_cache.pop(device_id, None)
+            _LOGGER.debug("Invalidated scene cache for device %s", device_id)
+        else:
+            self._scene_cache.clear()
+            self._diy_scene_cache.clear()
+            _LOGGER.debug("Invalidated all scene caches")
 
     @property
     def rate_limit_remaining(self) -> int:

@@ -71,6 +71,32 @@ class GoveeDeviceState:
 
         return state
 
+    @classmethod
+    def from_state(cls, other: GoveeDeviceState) -> GoveeDeviceState:
+        """Create a deep copy for rollback purposes.
+
+        Creates an independent copy of all state fields, including
+        deep copies of mutable containers (dicts).
+        """
+        return cls(
+            device_id=other.device_id,
+            online=other.online,
+            power_state=other.power_state,
+            brightness=other.brightness,
+            color_rgb=other.color_rgb,
+            color_temp_kelvin=other.color_temp_kelvin,
+            current_scene=other.current_scene,
+            current_scene_name=other.current_scene_name,
+            scene_set_time=other.scene_set_time,
+            segment_colors=dict(other.segment_colors) if other.segment_colors else None,
+            segment_brightness=dict(other.segment_brightness) if other.segment_brightness else None,
+            nightlight_on=other.nightlight_on,
+            humidity=other.humidity,
+            temperature=other.temperature,
+            fan_speed=other.fan_speed,
+            mode=other.mode,
+        )
+
     def update_from_api(self, data: dict[str, Any]) -> None:
         """Only updates fields present in response, preserving optimistic state."""
         new_state = GoveeDeviceState.from_api(self.device_id, data)

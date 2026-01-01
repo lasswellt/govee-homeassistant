@@ -46,17 +46,15 @@ async def validate_api_key(
     return user_input
 
 
-@config_entries.HANDLERS.register(DOMAIN)
 class GoveeFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for Govee."""
 
     VERSION = CONFIG_ENTRY_VERSION
-    CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
-
-    _reauth_entry: config_entries.ConfigEntry | None = None
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        """Handle the initial user configuration step."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -87,14 +85,13 @@ class GoveeFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_reauth(
         self, entry_data: Mapping[str, Any]
     ) -> ConfigFlowResult:
-        self._reauth_entry = self.hass.config_entries.async_get_entry(
-            self.context["entry_id"]
-        )
+        """Handle reauth triggered by ConfigEntryAuthFailed."""
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        """Handle the reauth confirmation step."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -109,14 +106,11 @@ class GoveeFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "unknown"
 
             if not errors:
-                if self._reauth_entry is None:
-                    return self.async_abort(reason="unknown")
-                self.hass.config_entries.async_update_entry(
-                    self._reauth_entry,
-                    data={**self._reauth_entry.data, CONF_API_KEY: user_input[CONF_API_KEY]}
+                # Use modern reauth pattern
+                return self.async_update_reload_and_abort(
+                    self._get_reauth_entry(),
+                    data_updates={CONF_API_KEY: user_input[CONF_API_KEY]},
                 )
-                await self.hass.config_entries.async_reload(self._reauth_entry.entry_id)
-                return self.async_abort(reason="reauth_successful")
 
         return self.async_show_form(
             step_id="reauth_confirm",
@@ -137,19 +131,24 @@ class GoveeFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class GoveeOptionsFlowHandler(config_entries.OptionsFlow):
+    """Handle Govee options flow."""
+
     VERSION = 1
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        """Initialize options flow."""
         self.options = dict(config_entry.options)
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        """Handle options flow initialization."""
         return await self.async_step_user()
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        """Handle options flow user step."""
         old_api_key = self.config_entry.options.get(
             CONF_API_KEY, self.config_entry.data.get(CONF_API_KEY, "")
         )
@@ -214,6 +213,14 @@ class GoveeOptionsFlowHandler(config_entries.OptionsFlow):
         )
 
     async def _update_options(self) -> ConfigFlowResult:
+        """Update options and invalidate scene cache."""
+        # Invalidate scene cache when options change
+        # (especially important when API key changes)
+        if hasattr(self.config_entry, "runtime_data") and self.config_entry.runtime_data:
+            coordinator = self.config_entry.runtime_data.coordinator
+            coordinator.invalidate_scene_cache()
+            _LOGGER.debug("Invalidated scene cache on options update")
+
         return self.async_create_entry(title=DOMAIN, data=self.options)
 
 

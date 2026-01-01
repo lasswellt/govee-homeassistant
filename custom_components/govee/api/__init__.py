@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from .client import GoveeApiClient, RateLimiter
+from .client import GoveeApiClient
+from .rate_limiter import RateLimiter, RateLimitStatus
 from .const import (
     BASE_URL,
     BRIGHTNESS_MAX,
@@ -33,6 +34,7 @@ from .exceptions import (
 __all__ = [
     "GoveeApiClient",
     "RateLimiter",
+    "RateLimitStatus",
     "GoveeApiError",
     "GoveeAuthError",
     "GoveeConnectionError",

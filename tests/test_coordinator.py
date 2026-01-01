@@ -1036,13 +1036,13 @@ class TestRateLimits:
 
         assert coordinator.rate_limit_remaining_minute == 95
 
-    def test_rate_limit_remaining_day_returns_value(
+    def test_rate_limit_remaining_returns_day_value(
         self,
         hass: HomeAssistant,
         mock_config_entry,
         mock_api_client,
     ):
-        """Test rate_limit_remaining_day returns daily remaining."""
+        """Test rate_limit_remaining returns daily remaining."""
         coordinator = GoveeDataUpdateCoordinator(
             hass,
             mock_config_entry,
@@ -1052,7 +1052,7 @@ class TestRateLimits:
 
         mock_api_client.rate_limiter.remaining_day = 8500
 
-        assert coordinator.rate_limit_remaining_day == 8500
+        assert coordinator.rate_limit_remaining == 8500
 
 
 class TestCheckRateLimits:
@@ -1634,3 +1634,318 @@ class TestDiyScenesMissingDevice:
 
         # Should return empty list when no cache exists
         assert result == []
+
+
+# ==============================================================================
+# Optimistic Update Rollback Tests
+# ==============================================================================
+
+
+class TestOptimisticUpdateRollback:
+    """Test optimistic update rollback on API failure."""
+
+    @pytest.mark.asyncio
+    async def test_rollback_on_control_failure(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+        mock_device_light,
+    ):
+        """Test that optimistic updates are rolled back on API failure."""
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        coordinator.devices = {mock_device_light.device_id: mock_device_light}
+
+        # Set initial state
+        initial_state = GoveeDeviceState(
+            device_id=mock_device_light.device_id,
+            online=True,
+            power_state=False,  # Initially off
+            brightness=50,
+        )
+        coordinator.data = {mock_device_light.device_id: initial_state}
+
+        # Mock API to fail
+        mock_api_client.control_device = AsyncMock(
+            side_effect=GoveeApiError("API Error")
+        )
+
+        # Try to turn on - should fail and rollback
+        with pytest.raises(GoveeApiError):
+            await coordinator.async_control_device(
+                mock_device_light.device_id,
+                "devices.capabilities.on_off",
+                "powerSwitch",
+                1,  # Turn on
+            )
+
+        # State should be rolled back to original (off)
+        state = coordinator.data[mock_device_light.device_id]
+        assert state.power_state is False  # Rolled back
+
+    @pytest.mark.asyncio
+    async def test_no_rollback_on_success(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+        mock_device_light,
+    ):
+        """Test that optimistic updates are kept on success."""
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        coordinator.devices = {mock_device_light.device_id: mock_device_light}
+
+        # Set initial state
+        coordinator.data = {
+            mock_device_light.device_id: GoveeDeviceState(
+                device_id=mock_device_light.device_id,
+                online=True,
+                power_state=False,
+                brightness=50,
+            )
+        }
+
+        # Mock API to succeed
+        mock_api_client.control_device = AsyncMock(return_value=None)
+
+        # Turn on - should succeed
+        await coordinator.async_control_device(
+            mock_device_light.device_id,
+            "devices.capabilities.on_off",
+            "powerSwitch",
+            1,
+        )
+
+        # State should be updated (on)
+        state = coordinator.data[mock_device_light.device_id]
+        assert state.power_state is True
+
+    @pytest.mark.asyncio
+    async def test_rollback_restores_brightness(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+        mock_device_light,
+    ):
+        """Test that brightness is rolled back on failure."""
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        coordinator.devices = {mock_device_light.device_id: mock_device_light}
+
+        # Set initial state with brightness 50
+        coordinator.data = {
+            mock_device_light.device_id: GoveeDeviceState(
+                device_id=mock_device_light.device_id,
+                online=True,
+                power_state=True,
+                brightness=50,
+            )
+        }
+
+        mock_api_client.control_device = AsyncMock(
+            side_effect=GoveeApiError("API Error")
+        )
+
+        # Try to change brightness to 100 - should fail and rollback
+        with pytest.raises(GoveeApiError):
+            await coordinator.async_control_device(
+                mock_device_light.device_id,
+                "devices.capabilities.range",
+                "brightness",
+                100,
+            )
+
+        # Brightness should be rolled back to 50
+        state = coordinator.data[mock_device_light.device_id]
+        assert state.brightness == 50
+
+    @pytest.mark.asyncio
+    async def test_rollback_restores_color(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+        mock_device_light,
+    ):
+        """Test that color is rolled back on failure."""
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        coordinator.devices = {mock_device_light.device_id: mock_device_light}
+
+        # Set initial state with red color
+        coordinator.data = {
+            mock_device_light.device_id: GoveeDeviceState(
+                device_id=mock_device_light.device_id,
+                online=True,
+                power_state=True,
+                brightness=100,
+                color_rgb=(255, 0, 0),  # Red
+            )
+        }
+
+        mock_api_client.control_device = AsyncMock(
+            side_effect=GoveeApiError("API Error")
+        )
+
+        # Try to change color to blue (0, 0, 255) - should fail and rollback
+        blue_int = (0 << 16) + (0 << 8) + 255
+        with pytest.raises(GoveeApiError):
+            await coordinator.async_control_device(
+                mock_device_light.device_id,
+                "devices.capabilities.color_setting",
+                "colorRgb",
+                blue_int,
+            )
+
+        # Color should be rolled back to red
+        state = coordinator.data[mock_device_light.device_id]
+        assert state.color_rgb == (255, 0, 0)
+
+
+# ==============================================================================
+# Scene Cache Invalidation Tests
+# ==============================================================================
+
+
+class TestSceneCacheInvalidation:
+    """Test scene cache invalidation functionality."""
+
+    def test_invalidate_scene_cache_all(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+    ):
+        """Test invalidating all scene caches."""
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        # Pre-populate caches
+        coordinator._scene_cache = {
+            "device1": [SceneOption(name="Scene1", value=1)],
+            "device2": [SceneOption(name="Scene2", value=2)],
+        }
+        coordinator._diy_scene_cache = {
+            "device1": [SceneOption(name="DIY1", value=101)],
+            "device2": [SceneOption(name="DIY2", value=102)],
+        }
+
+        # Invalidate all caches
+        coordinator.invalidate_scene_cache()
+
+        assert coordinator._scene_cache == {}
+        assert coordinator._diy_scene_cache == {}
+
+    def test_invalidate_scene_cache_single_device(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+    ):
+        """Test invalidating scene cache for single device."""
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        # Pre-populate caches
+        coordinator._scene_cache = {
+            "device1": [SceneOption(name="Scene1", value=1)],
+            "device2": [SceneOption(name="Scene2", value=2)],
+        }
+        coordinator._diy_scene_cache = {
+            "device1": [SceneOption(name="DIY1", value=101)],
+            "device2": [SceneOption(name="DIY2", value=102)],
+        }
+
+        # Invalidate only device1 cache
+        coordinator.invalidate_scene_cache("device1")
+
+        # Device1 cache should be cleared
+        assert "device1" not in coordinator._scene_cache
+        assert "device1" not in coordinator._diy_scene_cache
+
+        # Device2 cache should remain
+        assert "device2" in coordinator._scene_cache
+        assert "device2" in coordinator._diy_scene_cache
+
+    def test_invalidate_nonexistent_device_cache(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+    ):
+        """Test invalidating cache for device that doesn't exist."""
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        # Pre-populate caches
+        coordinator._scene_cache = {
+            "device1": [SceneOption(name="Scene1", value=1)],
+        }
+
+        # Invalidate nonexistent device - should not error
+        coordinator.invalidate_scene_cache("nonexistent")
+
+        # Existing cache should remain
+        assert "device1" in coordinator._scene_cache
+
+
+# ==============================================================================
+# Always Update False Tests
+# ==============================================================================
+
+
+class TestAlwaysUpdateFalse:
+    """Test that coordinator uses always_update=False."""
+
+    def test_coordinator_has_always_update_false(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+    ):
+        """Test coordinator is initialized with always_update=False."""
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        # The always_update attribute should be False
+        # This prevents unnecessary listener notifications when data hasn't changed
+        assert coordinator.always_update is False

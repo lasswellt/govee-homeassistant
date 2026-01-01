@@ -6,7 +6,7 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_KEY, CONF_DELAY
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import GoveeApiClient, GoveeApiError, GoveeAuthError
@@ -42,7 +42,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GoveeConfigEntry) -> boo
     except GoveeAuthError as err:
         _LOGGER.error("Invalid API key: %s", err)
         await client.close()
-        raise ConfigEntryNotReady("Invalid API key") from err
+        raise ConfigEntryAuthFailed("Invalid API key") from err
     except GoveeApiError as err:
         _LOGGER.error("Failed to connect to Govee API: %s", err)
         await client.close()

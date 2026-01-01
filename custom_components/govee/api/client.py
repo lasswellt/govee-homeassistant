@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 import uuid
 from typing import Any, cast
 
@@ -16,16 +15,7 @@ from .const import (
     ENDPOINT_DEVICE_STATE,
     ENDPOINT_DIY_SCENES,
     ENDPOINT_DYNAMIC_SCENES,
-    HEADER_API_RATE_LIMIT_REMAINING,
-    HEADER_API_RATE_LIMIT_RESET,
-    HEADER_RATE_LIMIT_REMAINING,
-    HEADER_RATE_LIMIT_RESET,
-    MAX_RATE_LIMIT_WAIT,
-    RATE_LIMIT_PER_DAY,
-    RATE_LIMIT_PER_MINUTE,
     REQUEST_TIMEOUT,
-    SECONDS_PER_DAY,
-    SECONDS_PER_MINUTE,
 )
 from .exceptions import (
     GoveeApiError,
@@ -33,129 +23,9 @@ from .exceptions import (
     GoveeConnectionError,
     GoveeRateLimitError,
 )
+from .rate_limiter import RateLimiter
 
 _LOGGER = logging.getLogger(__name__)
-
-
-class RateLimiter:
-    """Rate limiter for Govee API with dual limits (per-minute and per-day).
-
-    Govee API Rate Limits:
-    - Per-minute limit: 100 requests/minute
-    - Per-day limit: 10,000 requests/day
-
-    Rate Limiting Algorithm:
-    1. Track timestamps of all recent requests (minute and day windows)
-    2. Before each request, check if limits would be exceeded
-    3. If limit would be exceeded, sleep until oldest request expires
-    4. Update limits from API response headers (more accurate than local tracking)
-
-    Thread Safety:
-    - Uses asyncio.Lock to prevent race conditions
-    - All requests must call acquire() before making API calls
-
-    State Tracking:
-    - Local tracking: List of request timestamps
-    - API tracking: Updated from response headers (authoritative)
-    - Returns API values when available, falls back to local estimates
-    """
-
-    def __init__(
-        self,
-        requests_per_minute: int = RATE_LIMIT_PER_MINUTE,
-        requests_per_day: int = RATE_LIMIT_PER_DAY,
-    ) -> None:
-        self._per_minute = requests_per_minute
-        self._per_day = requests_per_day
-        self._minute_timestamps: list[float] = []
-        self._day_timestamps: list[float] = []
-        self._lock = asyncio.Lock()
-
-        # Updated from API response headers (more accurate than local tracking)
-        self._api_remaining_minute: int | None = None
-        self._api_remaining_day: int | None = None
-        self._api_reset_minute: float | None = None
-        self._api_reset_day: float | None = None
-
-    async def acquire(self) -> None:
-        """Wait until a request can be made within rate limits.
-
-        Rate Limit Algorithm:
-        1. Clean expired timestamps (>60s for minute, >24h for day)
-        2. Check per-minute limit: wait if at capacity
-        3. Check per-day limit: wait if at capacity (max 1 hour)
-        4. Record request timestamp
-
-        Waiting Strategy:
-        - Minute limit: Wait exactly until oldest request expires from window
-        - Day limit: Wait up to 1 hour (prevents indefinite blocking)
-
-        Thread Safety:
-        - Acquires lock before any timestamp operations
-        - Ensures atomic check-and-record operations
-        """
-        async with self._lock:
-            now = time.time()
-
-            self._minute_timestamps = [
-                t for t in self._minute_timestamps if now - t < SECONDS_PER_MINUTE
-            ]
-            self._day_timestamps = [
-                t for t in self._day_timestamps if now - t < SECONDS_PER_DAY
-            ]
-
-            if len(self._minute_timestamps) >= self._per_minute:
-                wait_time = SECONDS_PER_MINUTE - (now - self._minute_timestamps[0])
-                if wait_time > 0:
-                    _LOGGER.debug("Rate limit: waiting %.1fs for minute limit", wait_time)
-                    await asyncio.sleep(wait_time)
-                    now = time.time()
-                    self._minute_timestamps = [
-                        t for t in self._minute_timestamps if now - t < SECONDS_PER_MINUTE
-                    ]
-
-            if len(self._day_timestamps) >= self._per_day:
-                wait_time = SECONDS_PER_DAY - (now - self._day_timestamps[0])
-                if wait_time > 0:
-                    _LOGGER.warning(
-                        "Daily rate limit reached. Waiting up to 1 hour. "
-                        "Consider increasing poll interval."
-                    )
-                    await asyncio.sleep(min(wait_time, MAX_RATE_LIMIT_WAIT))
-                    now = time.time()
-
-            self._minute_timestamps.append(now)
-            self._day_timestamps.append(now)
-
-    def update_from_headers(self, headers: dict[str, str]) -> None:
-        if HEADER_RATE_LIMIT_REMAINING in headers:
-            self._api_remaining_minute = int(headers[HEADER_RATE_LIMIT_REMAINING])
-        if HEADER_RATE_LIMIT_RESET in headers:
-            self._api_reset_minute = float(headers[HEADER_RATE_LIMIT_RESET])
-        if HEADER_API_RATE_LIMIT_REMAINING in headers:
-            self._api_remaining_day = int(headers[HEADER_API_RATE_LIMIT_REMAINING])
-        if HEADER_API_RATE_LIMIT_RESET in headers:
-            self._api_reset_day = float(headers[HEADER_API_RATE_LIMIT_RESET])
-
-    @property
-    def remaining_minute(self) -> int:
-        if self._api_remaining_minute is not None:
-            return self._api_remaining_minute
-        return self._per_minute - len(self._minute_timestamps)
-
-    @property
-    def remaining_day(self) -> int:
-        if self._api_remaining_day is not None:
-            return self._api_remaining_day
-        return self._per_day - len(self._day_timestamps)
-
-    @property
-    def reset_minute(self) -> float | None:
-        return self._api_reset_minute
-
-    @property
-    def reset_day(self) -> float | None:
-        return self._api_reset_day
 
 
 class GoveeApiClient:
@@ -222,27 +92,35 @@ class GoveeApiClient:
                         data = {"message": await response.text()}
 
                     if response.status == 401:
+                        self._rate_limiter.record_failure()
                         raise GoveeAuthError()
                     if response.status == 429:
+                        self._rate_limiter.record_failure()
                         retry_after = response.headers.get("Retry-After")
                         raise GoveeRateLimitError(
                             retry_after=float(retry_after) if retry_after else None
                         )
                     if response.status >= 400:
+                        self._rate_limiter.record_failure()
                         message = data.get("message", f"HTTP {response.status}")
                         raise GoveeApiError(message, code=response.status)
 
                     if data.get("code") and data.get("code") != 200:
+                        self._rate_limiter.record_failure()
                         raise GoveeApiError(
                             data.get("message", "Unknown error"),
                             code=data.get("code"),
                         )
 
+                    # Request succeeded
+                    self._rate_limiter.record_success()
                     return cast(dict[str, Any], data)
 
         except asyncio.TimeoutError as err:
+            self._rate_limiter.record_failure()
             raise GoveeConnectionError("Request timed out") from err
         except aiohttp.ClientError as err:
+            self._rate_limiter.record_failure()
             raise GoveeConnectionError(str(err)) from err
 
     async def get_devices(self) -> list[dict[str, Any]]:

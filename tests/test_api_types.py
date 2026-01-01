@@ -12,10 +12,6 @@ from custom_components.govee.api.requests import (
     ControlRequestInnerPayload,
     ControlRequestPayload,
     SceneRequestPayload,
-    OnOffValue,
-    BrightnessValue,
-    ColorRGBValue,
-    ColorTempValue,
     SceneValue,
     SegmentColorValue,
     SegmentBrightnessValue,
@@ -23,7 +19,6 @@ from custom_components.govee.api.requests import (
 )
 from custom_components.govee.api.responses import (
     DeviceDict,
-    DevicesResponsePayload,
     DeviceStatePayload,
     ControlResponsePayload,
     SceneCapabilityDict,
@@ -114,61 +109,36 @@ class TestApiRequestTypes:
         }
         assert payload["requestId"] == "test-request-id"
 
-    def test_on_off_value(self):
-        """Test OnOffValue TypedDict."""
-        value: OnOffValue = {"value": 1}
-        assert value["value"] == 1
-
-    def test_brightness_value(self):
-        """Test BrightnessValue TypedDict."""
-        value: BrightnessValue = {"value": 100}
-        assert value["value"] == 100
-
-    def test_color_rgb_value(self):
-        """Test ColorRGBValue TypedDict."""
-        value: ColorRGBValue = {"value": {"r": 255, "g": 128, "b": 64}}
-        assert value["value"]["r"] == 255
-
-    def test_color_temp_value(self):
-        """Test ColorTempValue TypedDict."""
-        value: ColorTempValue = {"value": 4500}
-        assert value["value"] == 4500
-
     def test_scene_value(self):
         """Test SceneValue TypedDict."""
-        value: SceneValue = {"value": {"id": 1, "name": "Movie"}}
-        assert value["value"]["id"] == 1
+        value: SceneValue = {"id": 1, "name": "Movie"}
+        assert value["id"] == 1
 
     def test_segment_color_value(self):
         """Test SegmentColorValue TypedDict."""
         value: SegmentColorValue = {
-            "value": {
-                "segment": [0, 1, 2],
-                "rgb": 16711680,  # Red
-            }
+            "segment": [0, 1, 2],
+            "rgb": 16711680,  # Red
         }
-        assert value["value"]["segment"] == [0, 1, 2]
+        assert value["segment"] == [0, 1, 2]
 
     def test_segment_brightness_value(self):
         """Test SegmentBrightnessValue TypedDict."""
         value: SegmentBrightnessValue = {
-            "value": {
-                "segment": [0, 1],
-                "brightness": 50,
-            }
+            "segment": [0, 1],
+            "brightness": 50,
         }
-        assert value["value"]["brightness"] == 50
+        assert value["brightness"] == 50
 
     def test_music_mode_value(self):
         """Test MusicModeValue TypedDict."""
         value: MusicModeValue = {
-            "value": {
-                "musicMode": 1,
-                "sensitivity": 80,
-                "autoColor": 1,
-            }
+            "musicMode": "Energic",
+            "sensitivity": 80,
+            "autoColor": 1,
+            "color": None,
         }
-        assert value["value"]["musicMode"] == 1
+        assert value["musicMode"] == "Energic"
 
 
 class TestApiResponseTypes:
@@ -185,58 +155,40 @@ class TestApiResponseTypes:
         }
         assert device["deviceName"] == "Living Room Light"
 
-    def test_devices_response_payload(self):
-        """Test DevicesResponsePayload TypedDict."""
-        payload: DevicesResponsePayload = {"data": []}
-        assert payload["data"] == []
-
     def test_device_state_payload(self):
         """Test DeviceStatePayload TypedDict."""
         payload: DeviceStatePayload = {
-            "sku": "H6160",
-            "device": "AA:BB:CC:DD:EE:FF:GG:HH",
             "capabilities": [],
         }
-        assert payload["sku"] == "H6160"
+        assert payload["capabilities"] == []
 
     def test_control_response_payload(self):
-        """Test ControlResponsePayload TypedDict."""
-        payload: ControlResponsePayload = {
-            "sku": "H6160",
-            "device": "AA:BB:CC:DD:EE:FF:GG:HH",
-            "capability": {
-                "type": "devices.capabilities.on_off",
-                "instance": "powerSwitch",
-                "value": 1,
-            },
-        }
-        assert payload["sku"] == "H6160"
+        """Test ControlResponsePayload TypedDict (empty)."""
+        payload: ControlResponsePayload = {}
+        assert payload == {}
 
     def test_scene_capability_dict(self):
         """Test SceneCapabilityDict TypedDict."""
         scene: SceneCapabilityDict = {
-            "name": "Movie",
-            "value": {"id": 1, "name": "Movie"},
+            "type": "devices.capabilities.dynamic_scene",
+            "instance": "lightScene",
+            "parameters": {},
         }
-        assert scene["name"] == "Movie"
+        assert scene["instance"] == "lightScene"
 
     def test_dynamic_scenes_payload(self):
         """Test DynamicScenesPayload TypedDict."""
         payload: DynamicScenesPayload = {
-            "sku": "H6160",
-            "device": "AA:BB:CC:DD:EE:FF:GG:HH",
             "capabilities": [],
         }
-        assert payload["sku"] == "H6160"
+        assert payload["capabilities"] == []
 
     def test_diy_scenes_payload(self):
         """Test DIYScenesPayload TypedDict."""
         payload: DIYScenesPayload = {
-            "sku": "H6160",
-            "device": "AA:BB:CC:DD:EE:FF:GG:HH",
             "capabilities": [],
         }
-        assert payload["sku"] == "H6160"
+        assert payload["capabilities"] == []
 
     def test_api_response_base(self):
         """Test ApiResponseBase TypedDict."""
@@ -261,8 +213,6 @@ class TestApiResponseTypes:
             "code": 200,
             "message": "success",
             "payload": {
-                "sku": "H6160",
-                "device": "AA:BB:CC:DD:EE:FF:GG:HH",
                 "capabilities": [],
             },
         }
@@ -273,15 +223,7 @@ class TestApiResponseTypes:
         response: ControlResponse = {
             "code": 200,
             "message": "success",
-            "payload": {
-                "sku": "H6160",
-                "device": "AA:BB:CC:DD:EE:FF:GG:HH",
-                "capability": {
-                    "type": "devices.capabilities.on_off",
-                    "instance": "powerSwitch",
-                    "value": 1,
-                },
-            },
+            "payload": {},
         }
         assert response["code"] == 200
 
@@ -291,8 +233,6 @@ class TestApiResponseTypes:
             "code": 200,
             "message": "success",
             "payload": {
-                "sku": "H6160",
-                "device": "AA:BB:CC:DD:EE:FF:GG:HH",
                 "capabilities": [],
             },
         }
@@ -304,8 +244,6 @@ class TestApiResponseTypes:
             "code": 200,
             "message": "success",
             "payload": {
-                "sku": "H6160",
-                "device": "AA:BB:CC:DD:EE:FF:GG:HH",
                 "capabilities": [],
             },
         }
