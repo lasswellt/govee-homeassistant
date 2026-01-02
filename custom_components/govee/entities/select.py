@@ -85,14 +85,22 @@ class GoveeSceneSelect(GoveeEntity, SelectEntity):
                     return name
             elif self._scene_type == "snapshot":
                 if isinstance(scene.value, dict):
-                    scene_id = scene.value.get("id") or scene.value.get("paramId")
+                    scene_id = (
+                        scene.value.get("id")
+                        or scene.value.get("paramId")
+                        or str(scene.value)
+                    )
                     if f"snapshot_{scene_id}" == state.current_scene:
                         return name
                 elif f"snapshot_{scene.value}" == state.current_scene:
                     return name
             else:
                 if isinstance(scene.value, dict):
-                    scene_id = scene.value.get("id") or scene.value.get("paramId")
+                    scene_id = (
+                        scene.value.get("id")
+                        or scene.value.get("paramId")
+                        or str(scene.value)
+                    )
                     if str(scene_id) == state.current_scene:
                         return name
                 elif str(scene.value) == state.current_scene:
