@@ -117,6 +117,17 @@ class GoveeDevice:
     def supports_snapshots(self) -> bool:
         return self.has_capability(CAPABILITY_DYNAMIC_SCENE, INSTANCE_SNAPSHOT)
 
+    def get_snapshot_options(self) -> list[dict[str, Any]]:
+        """Get snapshot options from device capabilities.
+
+        Snapshots are stored directly in the device's capabilities from the
+        /user/devices endpoint, not from a separate API call.
+        """
+        cap = self.get_capability(CAPABILITY_DYNAMIC_SCENE, INSTANCE_SNAPSHOT)
+        if cap and cap.parameters and cap.parameters.options:
+            return cap.parameters.options
+        return []
+
     @property
     def supports_oscillation_toggle(self) -> bool:
         return self.has_capability(CAPABILITY_TOGGLE, INSTANCE_OSCILLATION_TOGGLE)

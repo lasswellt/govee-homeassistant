@@ -7,7 +7,6 @@ ENDPOINT_DEVICE_STATE = "device/state"
 ENDPOINT_DEVICE_CONTROL = "device/control"
 ENDPOINT_DYNAMIC_SCENES = "device/scenes"
 ENDPOINT_DIY_SCENES = "device/diy-scenes"
-ENDPOINT_SNAPSHOTS = "device/snapshots"
 
 RATE_LIMIT_PER_MINUTE = 100
 RATE_LIMIT_PER_DAY = 10000

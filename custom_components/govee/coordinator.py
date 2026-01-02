@@ -475,13 +475,30 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
     async def async_get_snapshots(
         self, device_id: str, refresh: bool = False
     ) -> list[SceneOption]:
-        return await self._async_get_scenes_cached(
-            device_id,
-            self._snapshot_cache,
-            self.client.get_snapshots,
-            "snapshot",
-            refresh,
-        )
+        """Get snapshots from device capabilities.
+
+        Unlike dynamic and DIY scenes which have separate API endpoints,
+        snapshots are embedded in the device's capabilities from /user/devices.
+        """
+        if not refresh and device_id in self._snapshot_cache:
+            return self._snapshot_cache[device_id]
+
+        device = self.devices.get(device_id)
+        if not device:
+            return []
+
+        raw_snapshots = device.get_snapshot_options()
+        scenes = [SceneOption.from_api(s) for s in raw_snapshots]
+        self._snapshot_cache[device_id] = scenes
+
+        if scenes:
+            _LOGGER.debug(
+                "Found %d snapshots for %s from device capabilities",
+                len(scenes),
+                device.device_name,
+            )
+
+        return scenes
 
     def invalidate_scene_cache(self, device_id: str | None = None) -> None:
         """Invalidate scene cache for one or all devices.
