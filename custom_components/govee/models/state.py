@@ -53,7 +53,7 @@ class GoveeDeviceState:
     mode: str | None = None
 
     # MQTT event data storage (for sensor devices with event capabilities)
-    mqtt_events: dict[str, dict] | None = None
+    mqtt_events: dict[str, dict[str, Any]] | None = None
 
     @classmethod
     def from_api(cls, device_id: str, data: dict[str, Any]) -> GoveeDeviceState:

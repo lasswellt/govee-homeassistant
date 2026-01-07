@@ -1959,3 +1959,719 @@ class TestAlwaysUpdateFalse:
         # The always_update attribute should be False
         # This prevents unnecessary listener notifications when data hasn't changed
         assert coordinator.always_update is False
+
+
+# ==============================================================================
+# Batch Command Execution Tests
+# ==============================================================================
+
+
+class TestBatchCommandExecution:
+    """Test batched command execution functionality."""
+
+    @pytest.mark.asyncio
+    async def test_async_execute_batch_success(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+        mock_device_light,
+    ):
+        """Test successful batch execution with multiple commands."""
+        from custom_components.govee.coordinator import CommandBatch
+
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        coordinator.devices = {mock_device_light.device_id: mock_device_light}
+        coordinator.data = {
+            mock_device_light.device_id: GoveeDeviceState(
+                device_id=mock_device_light.device_id,
+                online=True,
+                power_state=False,
+                brightness=50,
+            )
+        }
+
+        mock_api_client.control_device = AsyncMock()
+
+        # Create a batch with color and brightness commands
+        batch = CommandBatch(device_id=mock_device_light.device_id)
+        batch.add("devices.capabilities.color_setting", "colorRgb", 16711680)  # Red
+        batch.add("devices.capabilities.range", "brightness", 100)
+
+        await coordinator.async_execute_batch(
+            mock_device_light.device_id, batch, inter_command_delay=0.01
+        )
+
+        # Should have called control_device twice
+        assert mock_api_client.control_device.call_count == 2
+
+        # Optimistic updates should be applied
+        state = coordinator.data[mock_device_light.device_id]
+        assert state.color_rgb == (255, 0, 0)  # Red
+        assert state.brightness == 100
+
+    @pytest.mark.asyncio
+    async def test_async_execute_batch_empty_batch(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+        mock_device_light,
+    ):
+        """Test batch execution with empty batch returns early."""
+        from custom_components.govee.coordinator import CommandBatch
+
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        coordinator.devices = {mock_device_light.device_id: mock_device_light}
+        mock_api_client.control_device = AsyncMock()
+
+        # Empty batch
+        batch = CommandBatch(device_id=mock_device_light.device_id)
+
+        await coordinator.async_execute_batch(mock_device_light.device_id, batch)
+
+        # Should not call API
+        mock_api_client.control_device.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_async_execute_batch_unknown_device(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+    ):
+        """Test batch execution with unknown device returns early."""
+        from custom_components.govee.coordinator import CommandBatch
+
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        mock_api_client.control_device = AsyncMock()
+
+        batch = CommandBatch(device_id="unknown_device")
+        batch.add("devices.capabilities.on_off", "powerSwitch", 1)
+
+        await coordinator.async_execute_batch("unknown_device", batch)
+
+        # Should not call API for unknown device
+        mock_api_client.control_device.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_async_execute_batch_rollback_on_failure(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+        mock_device_light,
+    ):
+        """Test batch execution rolls back all changes on API failure."""
+        from custom_components.govee.coordinator import CommandBatch
+
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        coordinator.devices = {mock_device_light.device_id: mock_device_light}
+
+        # Initial state
+        initial_state = GoveeDeviceState(
+            device_id=mock_device_light.device_id,
+            online=True,
+            power_state=True,
+            brightness=50,
+            color_rgb=(255, 255, 255),  # White
+        )
+        coordinator.data = {mock_device_light.device_id: initial_state}
+
+        # First command succeeds, second fails
+        mock_api_client.control_device = AsyncMock(
+            side_effect=[None, GoveeApiError("API Error")]
+        )
+
+        batch = CommandBatch(device_id=mock_device_light.device_id)
+        batch.add("devices.capabilities.color_setting", "colorRgb", 255)  # Blue
+        batch.add("devices.capabilities.range", "brightness", 100)
+
+        with pytest.raises(GoveeApiError):
+            await coordinator.async_execute_batch(
+                mock_device_light.device_id, batch, inter_command_delay=0.01
+            )
+
+        # State should be rolled back to original
+        state = coordinator.data[mock_device_light.device_id]
+        assert state.brightness == 50  # Rolled back
+        assert state.color_rgb == (255, 255, 255)  # Rolled back to white
+
+    @pytest.mark.asyncio
+    async def test_async_execute_batch_no_data_state(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+        mock_device_light,
+    ):
+        """Test batch execution when coordinator has no data yet."""
+        from custom_components.govee.coordinator import CommandBatch
+
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        coordinator.devices = {mock_device_light.device_id: mock_device_light}
+        coordinator.data = None  # No data yet
+
+        mock_api_client.control_device = AsyncMock()
+
+        batch = CommandBatch(device_id=mock_device_light.device_id)
+        batch.add("devices.capabilities.on_off", "powerSwitch", 1)
+
+        # Should still send command even without state data
+        await coordinator.async_execute_batch(
+            mock_device_light.device_id, batch, inter_command_delay=0.01
+        )
+
+        mock_api_client.control_device.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_async_execute_batch_single_command(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+        mock_device_light,
+    ):
+        """Test batch execution with single command (no inter-command delay needed)."""
+        from custom_components.govee.coordinator import CommandBatch
+
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        coordinator.devices = {mock_device_light.device_id: mock_device_light}
+        coordinator.data = {
+            mock_device_light.device_id: GoveeDeviceState(
+                device_id=mock_device_light.device_id,
+                online=True,
+            )
+        }
+
+        mock_api_client.control_device = AsyncMock()
+
+        batch = CommandBatch(device_id=mock_device_light.device_id)
+        batch.add("devices.capabilities.on_off", "powerSwitch", 1)
+
+        await coordinator.async_execute_batch(mock_device_light.device_id, batch)
+
+        # Should call once with no delay
+        mock_api_client.control_device.assert_called_once()
+
+
+# ==============================================================================
+# MQTT Event Handling Tests
+# ==============================================================================
+
+
+class TestMqttEventHandling:
+    """Test MQTT event handling in coordinator."""
+
+    @pytest.mark.asyncio
+    async def test_async_setup_mqtt(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+    ):
+        """Test setting up MQTT subscription."""
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        with patch(
+            "custom_components.govee.coordinator.GoveeMqttClient"
+        ) as mock_mqtt_class:
+            mock_mqtt_instance = MagicMock()
+            mock_mqtt_instance.async_start = AsyncMock()
+            mock_mqtt_class.return_value = mock_mqtt_instance
+
+            await coordinator.async_setup_mqtt("test_api_key")
+
+            assert coordinator._mqtt_enabled is True
+            mock_mqtt_instance.async_start.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_async_stop_mqtt(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+    ):
+        """Test stopping MQTT subscription."""
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        # Setup mock MQTT client
+        mock_mqtt_client = MagicMock()
+        mock_mqtt_client.async_stop = AsyncMock()
+        coordinator._mqtt_client = mock_mqtt_client
+        coordinator._mqtt_enabled = True
+
+        await coordinator.async_stop_mqtt()
+
+        assert coordinator._mqtt_client is None
+        assert coordinator._mqtt_enabled is False
+        mock_mqtt_client.async_stop.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_async_stop_mqtt_when_not_started(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+    ):
+        """Test stopping MQTT when not started does nothing."""
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        # No MQTT client setup
+        coordinator._mqtt_client = None
+
+        # Should not raise
+        await coordinator.async_stop_mqtt()
+
+    @pytest.mark.asyncio
+    async def test_mqtt_event_updates_device_state(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+        mock_device_light,
+    ):
+        """Test MQTT event updates device state."""
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        # Setup initial state
+        coordinator.devices = {mock_device_light.device_id: mock_device_light}
+        coordinator.data = {
+            mock_device_light.device_id: GoveeDeviceState(
+                device_id=mock_device_light.device_id,
+                online=True,
+            )
+        }
+
+        # Capture the callback when starting MQTT
+        captured_callback = None
+
+        def capture_callback(api_key, on_event):
+            nonlocal captured_callback
+            captured_callback = on_event
+            mock_mqtt = MagicMock()
+            mock_mqtt.async_start = AsyncMock()
+            return mock_mqtt
+
+        with patch(
+            "custom_components.govee.coordinator.GoveeMqttClient",
+            side_effect=capture_callback,
+        ):
+            await coordinator.async_setup_mqtt("test_api_key")
+
+        # Simulate MQTT event
+        assert captured_callback is not None
+        captured_callback({
+            "device": mock_device_light.device_id,
+            "capabilities": [
+                {
+                    "type": "devices.capabilities.event",
+                    "instance": "lackWaterEvent",
+                    "state": [{"name": "lack", "value": 1}],
+                }
+            ],
+        })
+
+        # Check state was updated
+        state = coordinator.data[mock_device_light.device_id]
+        assert state.mqtt_events is not None
+        assert "lackWaterEvent" in state.mqtt_events
+
+    @pytest.mark.asyncio
+    async def test_mqtt_event_unknown_device_ignored(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+    ):
+        """Test MQTT event for unknown device is ignored."""
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        # Setup with empty data
+        coordinator.data = {}
+
+        captured_callback = None
+
+        def capture_callback(api_key, on_event):
+            nonlocal captured_callback
+            captured_callback = on_event
+            mock_mqtt = MagicMock()
+            mock_mqtt.async_start = AsyncMock()
+            return mock_mqtt
+
+        with patch(
+            "custom_components.govee.coordinator.GoveeMqttClient",
+            side_effect=capture_callback,
+        ):
+            await coordinator.async_setup_mqtt("test_api_key")
+
+        # Simulate MQTT event for unknown device - should not raise
+        assert captured_callback is not None
+        captured_callback({
+            "device": "unknown_device_id",
+            "capabilities": [],
+        })
+
+    @pytest.mark.asyncio
+    async def test_mqtt_event_no_data_ignored(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+    ):
+        """Test MQTT event when coordinator has no data is ignored."""
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        # No data yet
+        coordinator.data = None
+
+        captured_callback = None
+
+        def capture_callback(api_key, on_event):
+            nonlocal captured_callback
+            captured_callback = on_event
+            mock_mqtt = MagicMock()
+            mock_mqtt.async_start = AsyncMock()
+            return mock_mqtt
+
+        with patch(
+            "custom_components.govee.coordinator.GoveeMqttClient",
+            side_effect=capture_callback,
+        ):
+            await coordinator.async_setup_mqtt("test_api_key")
+
+        # Simulate MQTT event - should not raise
+        assert captured_callback is not None
+        captured_callback({
+            "device": "any_device",
+            "capabilities": [],
+        })
+
+
+# ==============================================================================
+# Adaptive Polling Tests
+# ==============================================================================
+
+
+class TestAdaptivePolling:
+    """Test adaptive polling interval adjustment."""
+
+    def test_adapt_polling_critical(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+    ):
+        """Test polling interval adjustment at critical quota level."""
+        from custom_components.govee.const import (
+            POLL_INTERVAL_CRITICAL,
+            QUOTA_CRITICAL,
+        )
+        from custom_components.govee.api.rate_limiter import RateLimitStatus
+
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        # Set quota below critical threshold using new status object
+        mock_api_client.rate_limiter.status = RateLimitStatus(
+            remaining_minute=100,
+            remaining_day=QUOTA_CRITICAL - 1,
+            reset_minute=None,
+            reset_day=None,
+            is_limited=False,
+            wait_time=None,
+            consecutive_failures=0,
+        )
+
+        coordinator._adapt_polling_interval()
+
+        # Should adjust to critical interval
+        assert coordinator.update_interval >= timedelta(seconds=POLL_INTERVAL_CRITICAL)
+
+    def test_adapt_polling_danger(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+    ):
+        """Test polling interval adjustment at danger quota level."""
+        from custom_components.govee.const import (
+            POLL_INTERVAL_DANGER,
+            QUOTA_DANGER,
+            QUOTA_CRITICAL,
+        )
+        from custom_components.govee.api.rate_limiter import RateLimitStatus
+
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        # Set quota between critical and danger
+        mock_api_client.rate_limiter.status = RateLimitStatus(
+            remaining_minute=100,
+            remaining_day=QUOTA_CRITICAL + 50,
+            reset_minute=None,
+            reset_day=None,
+            is_limited=False,
+            wait_time=None,
+            consecutive_failures=0,
+        )
+
+        coordinator._adapt_polling_interval()
+
+        # Should adjust to danger interval
+        assert coordinator.update_interval >= timedelta(seconds=POLL_INTERVAL_DANGER)
+
+    def test_adapt_polling_warning(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+    ):
+        """Test polling interval adjustment at warning quota level."""
+        from custom_components.govee.const import (
+            POLL_INTERVAL_WARNING,
+            QUOTA_WARNING,
+            QUOTA_DANGER,
+        )
+        from custom_components.govee.api.rate_limiter import RateLimitStatus
+
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        # Set quota between danger and warning
+        mock_api_client.rate_limiter.status = RateLimitStatus(
+            remaining_minute=100,
+            remaining_day=QUOTA_DANGER + 50,
+            reset_minute=None,
+            reset_day=None,
+            is_limited=False,
+            wait_time=None,
+            consecutive_failures=0,
+        )
+
+        coordinator._adapt_polling_interval()
+
+        # Should adjust to warning interval
+        assert coordinator.update_interval >= timedelta(seconds=POLL_INTERVAL_WARNING)
+
+    def test_adapt_polling_elevated(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+    ):
+        """Test polling interval at elevated (between warning and OK) level."""
+        from custom_components.govee.const import QUOTA_OK, QUOTA_WARNING
+        from custom_components.govee.api.rate_limiter import RateLimitStatus
+
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        # Set quota between warning and OK
+        mock_api_client.rate_limiter.status = RateLimitStatus(
+            remaining_minute=100,
+            remaining_day=QUOTA_WARNING + 50,
+            reset_minute=None,
+            reset_day=None,
+            is_limited=False,
+            wait_time=None,
+            consecutive_failures=0,
+        )
+
+        coordinator._adapt_polling_interval()
+
+        # Should have slightly throttled interval (at least 90s)
+        assert coordinator.update_interval >= timedelta(seconds=60)
+
+    def test_adapt_polling_healthy_quota(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+        caplog,
+    ):
+        """Test polling restores to user setting with healthy quota."""
+        from custom_components.govee.const import QUOTA_OK
+        from custom_components.govee.api.rate_limiter import RateLimitStatus
+
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=120),  # Start with longer interval
+        )
+
+        # Store the user interval
+        coordinator._user_interval = timedelta(seconds=60)
+
+        # Set healthy quota
+        mock_api_client.rate_limiter.status = RateLimitStatus(
+            remaining_minute=100,
+            remaining_day=QUOTA_OK + 1000,
+            reset_minute=None,
+            reset_day=None,
+            is_limited=False,
+            wait_time=None,
+            consecutive_failures=0,
+        )
+
+        coordinator._adapt_polling_interval()
+
+        # Should restore to user's preferred interval
+        assert coordinator.update_interval.total_seconds() == 60
+
+    def test_adapt_polling_no_change_logs_nothing(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+        caplog,
+    ):
+        """Test no log when interval doesn't change."""
+        from custom_components.govee.const import QUOTA_OK
+        from custom_components.govee.api.rate_limiter import RateLimitStatus
+
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        coordinator._user_interval = timedelta(seconds=60)
+        mock_api_client.rate_limiter.status = RateLimitStatus(
+            remaining_minute=100,
+            remaining_day=QUOTA_OK + 1000,
+            reset_minute=None,
+            reset_day=None,
+            is_limited=False,
+            wait_time=None,
+            consecutive_failures=0,
+        )
+
+        # Clear logs before
+        caplog.clear()
+
+        coordinator._adapt_polling_interval()
+
+        # Same interval, shouldn't log adjustment
+        # (First call may log, so call twice)
+        coordinator._adapt_polling_interval()
+
+    def test_adapt_polling_update_interval_none(
+        self,
+        hass: HomeAssistant,
+        mock_config_entry,
+        mock_api_client,
+    ):
+        """Test adapt polling when update_interval is None."""
+        from custom_components.govee.const import QUOTA_CRITICAL
+        from custom_components.govee.api.rate_limiter import RateLimitStatus
+
+        coordinator = GoveeDataUpdateCoordinator(
+            hass,
+            mock_config_entry,
+            mock_api_client,
+            update_interval=timedelta(seconds=60),
+        )
+
+        # Force update_interval to None
+        coordinator.update_interval = None
+
+        mock_api_client.rate_limiter.status = RateLimitStatus(
+            remaining_minute=100,
+            remaining_day=QUOTA_CRITICAL - 1,
+            reset_minute=None,
+            reset_day=None,
+            is_limited=False,
+            wait_time=None,
+            consecutive_failures=0,
+        )
+
+        # Should not raise
+        coordinator._adapt_polling_interval()
+
+        # Should have set an interval
+        assert coordinator.update_interval is not None

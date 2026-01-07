@@ -13,7 +13,13 @@ from homeassistant.components.light import (  # type: ignore[attr-defined]
 )
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from ..coordinator import GoveeDataUpdateCoordinator
+from ..api.const import (
+    CAPABILITY_SEGMENT_COLOR,
+    INSTANCE_SEGMENTED_BRIGHTNESS,
+    INSTANCE_SEGMENTED_COLOR,
+)
+from ..const import CONF_INTER_COMMAND_DELAY, DEFAULT_INTER_COMMAND_DELAY
+from ..coordinator import CommandBatch, GoveeDataUpdateCoordinator
 from ..entity_descriptions import SEGMENT_LIGHT_DESCRIPTION
 from ..models import GoveeDevice
 from .base import GoveeEntity
@@ -84,6 +90,11 @@ class GoveeSegmentLight(GoveeEntity, LightEntity, RestoreEntity):
         return True
 
     async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn on the segment with batched command execution.
+
+        Commands are batched and executed with delays to prevent flickering.
+        Order: Color FIRST → Brightness LAST (validated best practice)
+        """
         rgb_color: tuple[int, int, int] | None = kwargs.get(ATTR_RGB_COLOR)
         brightness: int | None = kwargs.get(ATTR_BRIGHTNESS)
 
@@ -94,27 +105,36 @@ class GoveeSegmentLight(GoveeEntity, LightEntity, RestoreEntity):
         else:
             target_rgb = (255, 255, 255)
 
-        # Set color using segment color API
-        await self.coordinator.async_set_segment_color(
-            self._device.device_id,
-            self._device.sku,
-            self._segment_index,
-            target_rgb,
+        batch = CommandBatch(device_id=self._device.device_id)
+
+        # VALIDATED ORDER: Color FIRST → Brightness LAST
+        r, g, b = target_rgb
+        batch.add(
+            CAPABILITY_SEGMENT_COLOR,
+            INSTANCE_SEGMENTED_COLOR,
+            {"segment": [self._segment_index], "rgb": (r << 16) + (g << 8) + b},
         )
 
-        # Set brightness using native segment brightness API (0-100 scale)
         if brightness is not None:
             brightness_percent = round((brightness / 255.0) * 100)
-            await self.coordinator.async_set_segment_brightness(
-                self._device.device_id,
-                self._device.sku,
-                self._segment_index,
-                brightness_percent,
+            batch.add(
+                CAPABILITY_SEGMENT_COLOR,
+                INSTANCE_SEGMENTED_BRIGHTNESS,
+                {"segment": [self._segment_index], "brightness": brightness_percent},
             )
             self._optimistic_brightness = brightness
 
+        # Update optimistic state before batch execution
         self._optimistic_on = True
         self._optimistic_rgb = target_rgb
+
+        # Get configurable delay from options (default 500ms)
+        delay_ms = self.coordinator.config_entry.options.get(
+            CONF_INTER_COMMAND_DELAY, DEFAULT_INTER_COMMAND_DELAY
+        )
+        await self.coordinator.async_execute_batch(
+            self._device.device_id, batch, delay_ms / 1000.0
+        )
 
         if self.device_state is not None:
             self.device_state.apply_segment_update(self._segment_index, target_rgb)

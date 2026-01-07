@@ -19,8 +19,10 @@ from .api import GoveeApiClient, GoveeApiError, GoveeAuthError
 from .const import (
     CONFIG_ENTRY_VERSION,
     CONF_ENABLE_GROUP_DEVICES,
+    CONF_INTER_COMMAND_DELAY,
     CONF_OFFLINE_IS_OFF,
     CONF_USE_ASSUMED_STATE,
+    DEFAULT_INTER_COMMAND_DELAY,
     DEFAULT_POLL_INTERVAL,
     DOMAIN,
 )
@@ -184,6 +186,12 @@ class GoveeOptionsFlowHandler(config_entries.OptionsFlow):
                         self.config_entry.data.get(CONF_DELAY, DEFAULT_POLL_INTERVAL),
                     ),
                 ): cv.positive_int,
+                vol.Optional(
+                    CONF_INTER_COMMAND_DELAY,
+                    default=self.config_entry.options.get(
+                        CONF_INTER_COMMAND_DELAY, DEFAULT_INTER_COMMAND_DELAY
+                    ),
+                ): vol.All(vol.Coerce(int), vol.Range(min=100, max=2000)),
                 vol.Required(
                     CONF_USE_ASSUMED_STATE,
                     default=self.config_entry.options.get(CONF_USE_ASSUMED_STATE, True),

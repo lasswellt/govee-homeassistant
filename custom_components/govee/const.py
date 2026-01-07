@@ -8,6 +8,7 @@ CONF_ENABLE_GROUP_DEVICES = "enable_group_devices"
 CONF_OFFLINE_IS_OFF = "offline_is_off"
 CONF_POLL_INTERVAL = "delay"
 CONF_USE_ASSUMED_STATE = "use_assumed_state"
+CONF_INTER_COMMAND_DELAY = "inter_command_delay"
 
 HA_BRIGHTNESS_MAX = 255
 API_BRIGHTNESS_MAX = 100
@@ -16,6 +17,7 @@ COLOR_TEMP_KELVIN_MIN = 2000
 COLOR_TEMP_KELVIN_MAX = 9000
 
 DEFAULT_POLL_INTERVAL = 60  # Increased from 30 to reduce API usage
+DEFAULT_INTER_COMMAND_DELAY = 500  # milliseconds between sequential commands
 
 # Adaptive polling thresholds based on daily quota (10,000/day)
 # When remaining quota falls below these, polling interval is increased

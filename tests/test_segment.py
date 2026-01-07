@@ -79,9 +79,13 @@ def mock_segment_coordinator(hass: HomeAssistant) -> MagicMock:
     coordinator.hass = hass
     coordinator.async_set_segment_color = AsyncMock()
     coordinator.async_set_segment_brightness = AsyncMock()
+    coordinator.async_execute_batch = AsyncMock()
     coordinator.last_update_success = True
     coordinator.data = {}
     coordinator.async_add_listener = MagicMock(return_value=lambda: None)
+    # Add config_entry with options for delay setting
+    coordinator.config_entry = MagicMock()
+    coordinator.config_entry.options = {}
     return coordinator
 
 
@@ -188,7 +192,7 @@ class TestSegmentLightState:
 
 
 class TestSegmentLightTurnOn:
-    """Tests for segment light turn_on."""
+    """Tests for segment light turn_on using batched command execution."""
 
     async def test_turn_on_default_color(
         self,
@@ -203,12 +207,18 @@ class TestSegmentLightTurnOn:
         with patch.object(segment_light, "async_write_ha_state"):
             await segment_light.async_turn_on()
 
-        mock_segment_coordinator.async_set_segment_color.assert_called_once_with(
-            mock_segment_device.device_id,
-            mock_segment_device.sku,
-            0,  # segment_index
-            (255, 255, 255),  # default white
-        )
+        # Verify batch execution was called
+        mock_segment_coordinator.async_execute_batch.assert_called_once()
+        call_args = mock_segment_coordinator.async_execute_batch.call_args
+        device_id, batch, delay = call_args[0]
+
+        assert device_id == mock_segment_device.device_id
+        assert len(batch.commands) == 1  # Color only, no brightness
+        # Verify color command with white (255, 255, 255)
+        color_cmd = batch.commands[0]
+        assert color_cmd.value["segment"] == [0]
+        assert color_cmd.value["rgb"] == (255 << 16) + (255 << 8) + 255
+
         assert segment_light._optimistic_on is True
         assert segment_light._optimistic_rgb == (255, 255, 255)
 
@@ -225,12 +235,15 @@ class TestSegmentLightTurnOn:
         with patch.object(segment_light, "async_write_ha_state"):
             await segment_light.async_turn_on(**{ATTR_RGB_COLOR: (255, 0, 128)})
 
-        mock_segment_coordinator.async_set_segment_color.assert_called_once_with(
-            mock_segment_device.device_id,
-            mock_segment_device.sku,
-            0,
-            (255, 0, 128),
-        )
+        mock_segment_coordinator.async_execute_batch.assert_called_once()
+        call_args = mock_segment_coordinator.async_execute_batch.call_args
+        device_id, batch, delay = call_args[0]
+
+        assert device_id == mock_segment_device.device_id
+        # Verify color command with (255, 0, 128)
+        color_cmd = batch.commands[0]
+        assert color_cmd.value["rgb"] == (255 << 16) + (0 << 8) + 128
+
         assert segment_light._optimistic_on is True
         assert segment_light._optimistic_rgb == (255, 0, 128)
 
@@ -248,12 +261,13 @@ class TestSegmentLightTurnOn:
         with patch.object(segment_light, "async_write_ha_state"):
             await segment_light.async_turn_on()
 
-        mock_segment_coordinator.async_set_segment_color.assert_called_once_with(
-            mock_segment_device.device_id,
-            mock_segment_device.sku,
-            0,
-            (100, 150, 200),
-        )
+        mock_segment_coordinator.async_execute_batch.assert_called_once()
+        call_args = mock_segment_coordinator.async_execute_batch.call_args
+        _, batch, _ = call_args[0]
+
+        # Verify color command uses previous color
+        color_cmd = batch.commands[0]
+        assert color_cmd.value["rgb"] == (100 << 16) + (150 << 8) + 200
 
     async def test_turn_on_with_brightness_uses_native_api(
         self,
@@ -262,27 +276,28 @@ class TestSegmentLightTurnOn:
         mock_segment_coordinator: MagicMock,
         mock_segment_device: GoveeDevice,
     ) -> None:
-        """Test turn_on with brightness uses native brightness API."""
+        """Test turn_on with brightness uses native brightness API via batch."""
         segment_light.hass = hass
 
         # Turn on with 50% brightness (128/255)
         with patch.object(segment_light, "async_write_ha_state"):
             await segment_light.async_turn_on(**{ATTR_BRIGHTNESS: 128})
 
-        # Color should be sent unscaled (white by default)
-        mock_segment_coordinator.async_set_segment_color.assert_called_once_with(
-            mock_segment_device.device_id,
-            mock_segment_device.sku,
-            0,
-            (255, 255, 255),
-        )
-        # Brightness should be sent via native API (0-100 scale)
-        mock_segment_coordinator.async_set_segment_brightness.assert_called_once_with(
-            mock_segment_device.device_id,
-            mock_segment_device.sku,
-            0,
-            50,  # 128/255 * 100 = ~50%
-        )
+        mock_segment_coordinator.async_execute_batch.assert_called_once()
+        call_args = mock_segment_coordinator.async_execute_batch.call_args
+        _, batch, _ = call_args[0]
+
+        # Should have 2 commands: color then brightness
+        assert len(batch.commands) == 2
+
+        # Color command (white by default)
+        color_cmd = batch.commands[0]
+        assert color_cmd.value["rgb"] == (255 << 16) + (255 << 8) + 255
+
+        # Brightness command (0-100 scale)
+        brightness_cmd = batch.commands[1]
+        assert brightness_cmd.value["brightness"] == 50  # 128/255 * 100 = ~50%
+
         assert segment_light._optimistic_brightness == 128
 
     async def test_turn_on_with_rgb_and_brightness(
@@ -302,20 +317,20 @@ class TestSegmentLightTurnOn:
                 ATTR_BRIGHTNESS: 128,
             })
 
-        # Color should be sent unscaled via color API
-        mock_segment_coordinator.async_set_segment_color.assert_called_once_with(
-            mock_segment_device.device_id,
-            mock_segment_device.sku,
-            0,
-            (200, 100, 50),
-        )
-        # Brightness should be sent via native brightness API
-        mock_segment_coordinator.async_set_segment_brightness.assert_called_once_with(
-            mock_segment_device.device_id,
-            mock_segment_device.sku,
-            0,
-            50,  # 128/255 * 100 = ~50%
-        )
+        mock_segment_coordinator.async_execute_batch.assert_called_once()
+        call_args = mock_segment_coordinator.async_execute_batch.call_args
+        _, batch, _ = call_args[0]
+
+        # Should have 2 commands: color then brightness
+        assert len(batch.commands) == 2
+
+        # Color command with (200, 100, 50)
+        color_cmd = batch.commands[0]
+        assert color_cmd.value["rgb"] == (200 << 16) + (100 << 8) + 50
+
+        # Brightness command
+        brightness_cmd = batch.commands[1]
+        assert brightness_cmd.value["brightness"] == 50
 
     async def test_turn_on_uses_white_when_previous_was_black(
         self,
@@ -330,8 +345,13 @@ class TestSegmentLightTurnOn:
         with patch.object(segment_light, "async_write_ha_state"):
             await segment_light.async_turn_on()
 
-        call_args = mock_segment_coordinator.async_set_segment_color.call_args
-        assert call_args[0][3] == (255, 255, 255)
+        mock_segment_coordinator.async_execute_batch.assert_called_once()
+        call_args = mock_segment_coordinator.async_execute_batch.call_args
+        _, batch, _ = call_args[0]
+
+        # Should use white since previous was black
+        color_cmd = batch.commands[0]
+        assert color_cmd.value["rgb"] == (255 << 16) + (255 << 8) + 255
 
 
 class TestSegmentLightTurnOff:

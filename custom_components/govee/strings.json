@@ -37,9 +37,13 @@
         "data": {
           "api_key": "API Key (requires restart)",
           "delay": "Poll Interval in seconds (requires restart)",
+          "inter_command_delay": "Delay between commands in milliseconds (100-2000)",
           "use_assumed_state": "Use assumed state (shows separate on/off buttons)",
           "offline_is_off": "Show offline devices as off",
           "enable_group_devices": "Enable group devices (experimental)"
+        },
+        "data_description": {
+          "inter_command_delay": "Time to wait between API commands when setting multiple attributes. Prevents flickering on RGBIC devices. Default: 500ms."
         },
         "title": "Options",
         "description": "Configure the Govee integration. For details, see the [README](https://github.com/LaggAt/hacs-govee/blob/master/README.md)."

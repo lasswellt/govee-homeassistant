@@ -763,7 +763,7 @@ class TestTurnOnOff:
 
 
 class TestBrightnessControl:
-    """Test brightness control functionality."""
+    """Test brightness control functionality using batched command execution."""
 
     @pytest.mark.asyncio
     async def test_async_turn_on_with_brightness(
@@ -772,8 +772,8 @@ class TestBrightnessControl:
         mock_device_light,
         mock_config_entry,
     ):
-        """Test async_turn_on sets brightness."""
-        mock_coordinator.async_control_device = AsyncMock()
+        """Test async_turn_on sets brightness via batch execution."""
+        mock_coordinator.async_execute_batch = AsyncMock()
         entity = GoveeLightEntity(mock_coordinator, mock_device_light, mock_config_entry)
 
         # Set brightness to 128 (HA range 0-255)
@@ -781,12 +781,15 @@ class TestBrightnessControl:
 
         # Should convert to API range (0-100): 128/255 * 100 = 50
         expected_brightness = round(128 * 100 / 255)
-        mock_coordinator.async_control_device.assert_called_once_with(
-            mock_device_light.device_id,
-            CAPABILITY_RANGE,
-            INSTANCE_BRIGHTNESS,
-            expected_brightness,
-        )
+        mock_coordinator.async_execute_batch.assert_called_once()
+        call_args = mock_coordinator.async_execute_batch.call_args
+        device_id, batch, delay = call_args[0]
+
+        assert device_id == mock_device_light.device_id
+        assert len(batch.commands) == 1
+        assert batch.commands[0].capability_type == CAPABILITY_RANGE
+        assert batch.commands[0].instance == INSTANCE_BRIGHTNESS
+        assert batch.commands[0].value == expected_brightness
 
     @pytest.mark.asyncio
     async def test_brightness_clamping_to_device_range(
@@ -796,19 +799,18 @@ class TestBrightnessControl:
         mock_config_entry,
     ):
         """Test brightness is clamped to device range."""
-        mock_coordinator.async_control_device = AsyncMock()
+        mock_coordinator.async_execute_batch = AsyncMock()
         entity = GoveeLightEntity(mock_coordinator, mock_device_light, mock_config_entry)
 
         # Set brightness to 255 (max HA range)
         await entity.async_turn_on(brightness=255)
 
         # Should clamp to device max (100)
-        mock_coordinator.async_control_device.assert_called_once_with(
-            mock_device_light.device_id,
-            CAPABILITY_RANGE,
-            INSTANCE_BRIGHTNESS,
-            100,  # Device max
-        )
+        mock_coordinator.async_execute_batch.assert_called_once()
+        call_args = mock_coordinator.async_execute_batch.call_args
+        _, batch, _ = call_args[0]
+
+        assert batch.commands[0].value == 100  # Device max
 
     @pytest.mark.asyncio
     async def test_brightness_error_handling(
@@ -818,17 +820,15 @@ class TestBrightnessControl:
         mock_config_entry,
         caplog,
     ):
-        """Test brightness control handles errors."""
-        mock_coordinator.async_control_device = AsyncMock(
+        """Test brightness control handles errors via batch execution."""
+        mock_coordinator.async_execute_batch = AsyncMock(
             side_effect=GoveeApiError("API error")
         )
         entity = GoveeLightEntity(mock_coordinator, mock_device_light, mock_config_entry)
 
-        await entity.async_turn_on(brightness=128)
-
-        # Should log error but not raise
-        assert "Failed to set brightness" in caplog.text
-        assert "API error" in caplog.text
+        # The exception should propagate from batch execution
+        with pytest.raises(GoveeApiError):
+            await entity.async_turn_on(brightness=128)
 
 
 # ==============================================================================
@@ -837,7 +837,7 @@ class TestBrightnessControl:
 
 
 class TestRGBColorControl:
-    """Test RGB color control functionality."""
+    """Test RGB color control functionality using batched command execution."""
 
     @pytest.mark.asyncio
     async def test_async_turn_on_with_rgb_color(
@@ -846,20 +846,23 @@ class TestRGBColorControl:
         mock_device_light,
         mock_config_entry,
     ):
-        """Test async_turn_on sets RGB color."""
-        mock_coordinator.async_control_device = AsyncMock()
+        """Test async_turn_on sets RGB color via batch execution."""
+        mock_coordinator.async_execute_batch = AsyncMock()
         entity = GoveeLightEntity(mock_coordinator, mock_device_light, mock_config_entry)
 
         await entity.async_turn_on(rgb_color=(255, 128, 64))
 
         # Should convert to int: (255 << 16) + (128 << 8) + 64 = 16744512
         expected_color = (255 << 16) + (128 << 8) + 64
-        mock_coordinator.async_control_device.assert_called_once_with(
-            mock_device_light.device_id,
-            CAPABILITY_COLOR_SETTING,
-            INSTANCE_COLOR_RGB,
-            expected_color,
-        )
+        mock_coordinator.async_execute_batch.assert_called_once()
+        call_args = mock_coordinator.async_execute_batch.call_args
+        device_id, batch, delay = call_args[0]
+
+        assert device_id == mock_device_light.device_id
+        assert len(batch.commands) == 1
+        assert batch.commands[0].capability_type == CAPABILITY_COLOR_SETTING
+        assert batch.commands[0].instance == INSTANCE_COLOR_RGB
+        assert batch.commands[0].value == expected_color
 
     @pytest.mark.asyncio
     async def test_rgb_color_conversion_red(
@@ -869,18 +872,17 @@ class TestRGBColorControl:
         mock_config_entry,
     ):
         """Test RGB color conversion for red."""
-        mock_coordinator.async_control_device = AsyncMock()
+        mock_coordinator.async_execute_batch = AsyncMock()
         entity = GoveeLightEntity(mock_coordinator, mock_device_light, mock_config_entry)
 
         await entity.async_turn_on(rgb_color=(255, 0, 0))
 
         expected_color = (255 << 16)  # 16711680
-        mock_coordinator.async_control_device.assert_called_once_with(
-            mock_device_light.device_id,
-            CAPABILITY_COLOR_SETTING,
-            INSTANCE_COLOR_RGB,
-            expected_color,
-        )
+        mock_coordinator.async_execute_batch.assert_called_once()
+        call_args = mock_coordinator.async_execute_batch.call_args
+        _, batch, _ = call_args[0]
+
+        assert batch.commands[0].value == expected_color
 
     @pytest.mark.asyncio
     async def test_rgb_color_error_handling(
@@ -890,17 +892,15 @@ class TestRGBColorControl:
         mock_config_entry,
         caplog,
     ):
-        """Test RGB color control handles errors."""
-        mock_coordinator.async_control_device = AsyncMock(
+        """Test RGB color control handles errors via batch execution."""
+        mock_coordinator.async_execute_batch = AsyncMock(
             side_effect=GoveeApiError("API error")
         )
         entity = GoveeLightEntity(mock_coordinator, mock_device_light, mock_config_entry)
 
-        await entity.async_turn_on(rgb_color=(255, 128, 64))
-
-        # Should log error but not raise
-        assert "Failed to set color" in caplog.text
-        assert "API error" in caplog.text
+        # The exception should propagate from batch execution
+        with pytest.raises(GoveeApiError):
+            await entity.async_turn_on(rgb_color=(255, 128, 64))
 
 
 # ==============================================================================
@@ -909,7 +909,7 @@ class TestRGBColorControl:
 
 
 class TestColorTemperatureControl:
-    """Test color temperature control functionality."""
+    """Test color temperature control functionality using batched command execution."""
 
     @pytest.mark.asyncio
     async def test_async_turn_on_with_color_temp(
@@ -918,18 +918,21 @@ class TestColorTemperatureControl:
         mock_device_light,
         mock_config_entry,
     ):
-        """Test async_turn_on sets color temperature."""
-        mock_coordinator.async_control_device = AsyncMock()
+        """Test async_turn_on sets color temperature via batch execution."""
+        mock_coordinator.async_execute_batch = AsyncMock()
         entity = GoveeLightEntity(mock_coordinator, mock_device_light, mock_config_entry)
 
         await entity.async_turn_on(color_temp_kelvin=4000)
 
-        mock_coordinator.async_control_device.assert_called_once_with(
-            mock_device_light.device_id,
-            CAPABILITY_COLOR_SETTING,
-            INSTANCE_COLOR_TEMP,
-            4000,
-        )
+        mock_coordinator.async_execute_batch.assert_called_once()
+        call_args = mock_coordinator.async_execute_batch.call_args
+        device_id, batch, delay = call_args[0]
+
+        assert device_id == mock_device_light.device_id
+        assert len(batch.commands) == 1
+        assert batch.commands[0].capability_type == CAPABILITY_COLOR_SETTING
+        assert batch.commands[0].instance == INSTANCE_COLOR_TEMP
+        assert batch.commands[0].value == 4000
 
     @pytest.mark.asyncio
     async def test_color_temp_clamping_to_min(
@@ -939,19 +942,18 @@ class TestColorTemperatureControl:
         mock_config_entry,
     ):
         """Test color temp is clamped to minimum."""
-        mock_coordinator.async_control_device = AsyncMock()
+        mock_coordinator.async_execute_batch = AsyncMock()
         entity = GoveeLightEntity(mock_coordinator, mock_device_light, mock_config_entry)
 
         # Try to set below minimum
         await entity.async_turn_on(color_temp_kelvin=1000)
 
         # Should clamp to min (2000K)
-        mock_coordinator.async_control_device.assert_called_once_with(
-            mock_device_light.device_id,
-            CAPABILITY_COLOR_SETTING,
-            INSTANCE_COLOR_TEMP,
-            COLOR_TEMP_KELVIN_MIN,
-        )
+        mock_coordinator.async_execute_batch.assert_called_once()
+        call_args = mock_coordinator.async_execute_batch.call_args
+        _, batch, _ = call_args[0]
+
+        assert batch.commands[0].value == COLOR_TEMP_KELVIN_MIN
 
     @pytest.mark.asyncio
     async def test_color_temp_clamping_to_max(
@@ -961,19 +963,18 @@ class TestColorTemperatureControl:
         mock_config_entry,
     ):
         """Test color temp is clamped to maximum."""
-        mock_coordinator.async_control_device = AsyncMock()
+        mock_coordinator.async_execute_batch = AsyncMock()
         entity = GoveeLightEntity(mock_coordinator, mock_device_light, mock_config_entry)
 
         # Try to set above maximum
         await entity.async_turn_on(color_temp_kelvin=10000)
 
         # Should clamp to max (9000K)
-        mock_coordinator.async_control_device.assert_called_once_with(
-            mock_device_light.device_id,
-            CAPABILITY_COLOR_SETTING,
-            INSTANCE_COLOR_TEMP,
-            COLOR_TEMP_KELVIN_MAX,
-        )
+        mock_coordinator.async_execute_batch.assert_called_once()
+        call_args = mock_coordinator.async_execute_batch.call_args
+        _, batch, _ = call_args[0]
+
+        assert batch.commands[0].value == COLOR_TEMP_KELVIN_MAX
 
     @pytest.mark.asyncio
     async def test_color_temp_error_handling(
@@ -983,17 +984,15 @@ class TestColorTemperatureControl:
         mock_config_entry,
         caplog,
     ):
-        """Test color temp control handles errors."""
-        mock_coordinator.async_control_device = AsyncMock(
+        """Test color temp control handles errors via batch execution."""
+        mock_coordinator.async_execute_batch = AsyncMock(
             side_effect=GoveeApiError("API error")
         )
         entity = GoveeLightEntity(mock_coordinator, mock_device_light, mock_config_entry)
 
-        await entity.async_turn_on(color_temp_kelvin=4000)
-
-        # Should log error but not raise
-        assert "Failed to set color temperature" in caplog.text
-        assert "API error" in caplog.text
+        # The exception should propagate from batch execution
+        with pytest.raises(GoveeApiError):
+            await entity.async_turn_on(color_temp_kelvin=4000)
 
 
 # ==============================================================================
@@ -1311,7 +1310,7 @@ class TestMusicMode:
 
 
 class TestMultipleAttributes:
-    """Test setting multiple attributes at once."""
+    """Test setting multiple attributes at once using batched execution."""
 
     @pytest.mark.asyncio
     async def test_async_turn_on_with_brightness_and_color(
@@ -1320,8 +1319,8 @@ class TestMultipleAttributes:
         mock_device_light,
         mock_config_entry,
     ):
-        """Test async_turn_on sets both brightness and color."""
-        mock_coordinator.async_control_device = AsyncMock()
+        """Test async_turn_on batches brightness and color commands."""
+        mock_coordinator.async_execute_batch = AsyncMock()
         entity = GoveeLightEntity(mock_coordinator, mock_device_light, mock_config_entry)
 
         await entity.async_turn_on(
@@ -1329,8 +1328,18 @@ class TestMultipleAttributes:
             rgb_color=(255, 128, 64),
         )
 
-        # Should call both brightness and color commands
-        assert mock_coordinator.async_control_device.call_count == 2
+        # Should call batch execution once with 2 commands (color first, brightness last)
+        mock_coordinator.async_execute_batch.assert_called_once()
+        call_args = mock_coordinator.async_execute_batch.call_args
+        _, batch, _ = call_args[0]
+
+        assert len(batch.commands) == 2
+        # Color should be first (validated order)
+        assert batch.commands[0].capability_type == CAPABILITY_COLOR_SETTING
+        assert batch.commands[0].instance == INSTANCE_COLOR_RGB
+        # Brightness should be last
+        assert batch.commands[1].capability_type == CAPABILITY_RANGE
+        assert batch.commands[1].instance == INSTANCE_BRIGHTNESS
 
     @pytest.mark.asyncio
     async def test_effect_takes_precedence(
@@ -1353,7 +1362,7 @@ class TestMultipleAttributes:
             rgb_color=(255, 0, 0),
         )
 
-        # Should only call effect command, not brightness/color
+        # Should only call effect command (bypasses batching), not brightness/color
         assert mock_coordinator.async_control_device.call_count == 1
         call_args = mock_coordinator.async_control_device.call_args
         assert call_args[0][1] == CAPABILITY_DYNAMIC_SCENE

@@ -5,6 +5,7 @@ import asyncio
 import logging
 import math
 import time
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from collections.abc import Callable, Coroutine
 from typing import Any
@@ -32,6 +33,27 @@ from .models import GoveeConfigEntry, GoveeDevice, GoveeDeviceState, SceneOption
 from .mqtt import GoveeMqttClient
 
 _LOGGER = logging.getLogger(__name__)
+
+
+@dataclass
+class PendingCommand:
+    """A command queued for batch execution."""
+
+    capability_type: str
+    instance: str
+    value: Any
+
+
+@dataclass
+class CommandBatch:
+    """Collects commands for batched execution with single state notification."""
+
+    device_id: str
+    commands: list[PendingCommand] = field(default_factory=list)
+
+    def add(self, capability_type: str, instance: str, value: Any) -> None:
+        """Add a command to the batch."""
+        self.commands.append(PendingCommand(capability_type, instance, value))
 
 
 class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
@@ -407,6 +429,66 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
                 )
             raise
 
+    async def async_execute_batch(
+        self,
+        device_id: str,
+        batch: CommandBatch,
+        inter_command_delay: float = 0.5,
+    ) -> None:
+        """Execute a batch of commands with single state update.
+
+        This prevents UI flickering by:
+        1. Applying ALL optimistic updates at once
+        2. Notifying Home Assistant once (single UI update)
+        3. Sending commands sequentially with delays
+        4. Rolling back ALL changes on any failure
+
+        Args:
+            device_id: The device to control
+            batch: CommandBatch containing all commands to execute
+            inter_command_delay: Seconds between API calls (default 0.5s)
+        """
+        device = self.devices.get(device_id)
+        if not device or not batch.commands:
+            return
+
+        # Capture state for potential rollback
+        previous_state: GoveeDeviceState | None = None
+        if self.data and device_id in self.data:
+            previous_state = GoveeDeviceState.from_state(self.data[device_id])
+
+            # Apply ALL optimistic updates at once before sending any commands
+            for cmd in batch.commands:
+                self.data[device_id].apply_optimistic_update(cmd.instance, cmd.value)
+
+            # Single notification to Home Assistant (prevents UI flickering)
+            self.async_set_updated_data(self.data)
+
+        try:
+            # Send commands sequentially with delays
+            for i, cmd in enumerate(batch.commands):
+                await self.client.control_device(
+                    device_id,
+                    device.sku,
+                    cmd.capability_type,
+                    cmd.instance,
+                    cmd.value,
+                )
+                # Add delay between commands (not after the last one)
+                if i < len(batch.commands) - 1:
+                    await asyncio.sleep(inter_command_delay)
+
+        except GoveeApiError:
+            # Rollback ALL optimistic updates on any failure
+            if previous_state and self.data and device_id in self.data:
+                self.data[device_id] = previous_state
+                self.async_set_updated_data(self.data)
+                _LOGGER.debug(
+                    "Rolled back all optimistic updates for %s after batch failure",
+                    device_id,
+                )
+            raise
+
     async def async_set_segment_color(
         self,
         device_id: str,
@@ -586,7 +668,7 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
             api_key: Govee API key used for MQTT authentication.
         """
 
-        def on_mqtt_event(event: dict) -> None:
+        def on_mqtt_event(event: dict[str, Any]) -> None:
             """Handle MQTT event by updating device state."""
             device_id = event.get("device")
             if not device_id or not self.data:
@@ -663,36 +745,41 @@ class GoveeDataUpdateCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceStat
         if hours_left > 0 and remaining > 0:
             sustainable_per_hour = remaining / hours_left
             # Calculate minimum safe interval: 3600s/hour / calls_per_hour
-            time_based_min = (
+            time_based_min: float = (
                 max(POLL_INTERVAL_MIN, int(3600 / sustainable_per_hour))
                 if sustainable_per_hour > 0
                 else POLL_INTERVAL_CRITICAL
             )
         else:
-            time_based_min = POLL_INTERVAL_CRITICAL
+            time_based_min = float(POLL_INTERVAL_CRITICAL)
 
         # Apply tiered slowdown based on remaining quota
-        user_seconds = self._user_interval.total_seconds()
+        user_seconds: float = self._user_interval.total_seconds()
+        new_interval: float
+        severity: str | None
 
         if remaining < QUOTA_CRITICAL:
-            new_interval = max(time_based_min, POLL_INTERVAL_CRITICAL)
+            new_interval = float(max(time_based_min, POLL_INTERVAL_CRITICAL))
             severity = "CRITICAL"
         elif remaining < QUOTA_DANGER:
-            new_interval = max(time_based_min, POLL_INTERVAL_DANGER)
+            new_interval = float(max(time_based_min, POLL_INTERVAL_DANGER))
             severity = "danger"
         elif remaining < QUOTA_WARNING:
-            new_interval = max(time_based_min, POLL_INTERVAL_WARNING)
+            new_interval = float(max(time_based_min, POLL_INTERVAL_WARNING))
             severity = "warning"
         elif remaining < QUOTA_OK:
             # Slightly throttled but not aggressively
-            new_interval = max(time_based_min, user_seconds, 90)
+            new_interval = max(time_based_min, user_seconds, 90.0)
             severity = "elevated"
         else:
             # Quota is healthy, use user's preferred interval
             new_interval = user_seconds
             severity = None
 
-        current_seconds = self.update_interval.total_seconds()
+        if self.update_interval is None:
+            current_seconds = 0.0
+        else:
+            current_seconds = self.update_interval.total_seconds()
 
         # Only log and update if interval actually changed
         if abs(new_interval - current_seconds) >= 1:

@@ -17,7 +17,7 @@ import asyncio
 import json
 import logging
 import ssl
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from .const import (
     MQTT_BROKER,
@@ -28,7 +28,7 @@ from .const import (
 )
 
 if TYPE_CHECKING:
-    pass
+    import aiomqtt
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ class GoveeMqttClient:
     def __init__(
         self,
         api_key: str,
-        on_event: Callable[[dict], None],
+        on_event: Callable[[dict[str, Any]], None],
     ) -> None:
         """Initialize the MQTT client.
 
@@ -57,7 +57,7 @@ class GoveeMqttClient:
         self._api_key = api_key
         self._on_event = on_event
         self._running = False
-        self._task: asyncio.Task | None = None
+        self._task: asyncio.Task[None] | None = None
         self._connected = False
         self._max_backoff_count = 0
 
@@ -136,12 +136,12 @@ class GoveeMqttClient:
 
                     async for message in client.messages:
                         if not self._running:
-                            break
+                            break  # type: ignore[unreachable]
                         await self._handle_message(message)
 
             except asyncio.CancelledError:
                 _LOGGER.debug("MQTT connection loop cancelled")
-                break
+                raise
 
             except Exception as err:
                 self._connected = False
@@ -182,7 +182,7 @@ class GoveeMqttClient:
 
         self._connected = False
 
-    async def _handle_message(self, message) -> None:
+    async def _handle_message(self, message: aiomqtt.Message) -> None:
         """Handle incoming MQTT message.
 
         Parses the JSON payload and invokes the event callback.
@@ -191,11 +191,13 @@ class GoveeMqttClient:
             message: aiomqtt Message object with payload.
         """
         try:
-            payload = message.payload
-            if isinstance(payload, bytes):
-                payload = payload.decode()
+            raw_payload = message.payload
+            # aiomqtt.Message.payload is always bytes, decode to string
+            payload_str: str = raw_payload.decode() if isinstance(
+                raw_payload, bytes
+            ) else str(raw_payload)
 
-            event = json.loads(payload)
+            event: dict[str, Any] = json.loads(payload_str)
             _LOGGER.debug(
                 "MQTT event received for device %s: %s",
                 event.get("device"),

@@ -297,3 +297,144 @@ class TestMqttConstants:
         assert MQTT_RECONNECT_BASE == 5
         assert MQTT_RECONNECT_MAX == 300
         assert MQTT_RECONNECT_MAX > MQTT_RECONNECT_BASE
+
+
+class TestMqttConnectionLoop:
+    """Test MQTT connection loop behavior with aiomqtt."""
+
+    @pytest.mark.asyncio
+    async def test_handle_message_non_bytes_payload(self):
+        """Test handling message with non-bytes payload."""
+        events_received = []
+
+        def capture_event(event):
+            events_received.append(event)
+
+        client = GoveeMqttClient(api_key="test_key", on_event=capture_event)
+
+        # Mock message with string payload (edge case)
+        mock_message = MagicMock()
+        mock_message.payload = '{"device": "test_device", "capabilities": []}'
+
+        await client._handle_message(mock_message)
+
+        assert len(events_received) == 1
+        assert events_received[0]["device"] == "test_device"
+
+
+class TestMqttMessagePayloadVariants:
+    """Test various MQTT message payload formats."""
+
+    @pytest.mark.asyncio
+    async def test_handle_message_complex_event(self):
+        """Test handling complex MQTT event with multiple capabilities."""
+        events_received = []
+
+        def capture_event(event):
+            events_received.append(event)
+
+        client = GoveeMqttClient(api_key="test_key", on_event=capture_event)
+
+        mock_message = MagicMock()
+        mock_message.payload = json.dumps({
+            "sku": "H7172",
+            "device": "AA:BB:CC:DD:EE:FF",
+            "deviceName": "Ice Maker",
+            "capabilities": [
+                {
+                    "type": "devices.capabilities.event",
+                    "instance": "lackWaterEvent",
+                    "state": [{"name": "lack", "value": 1, "message": "Lack of Water"}],
+                },
+                {
+                    "type": "devices.capabilities.event",
+                    "instance": "iceFullEvent",
+                    "state": [{"name": "full", "value": 0}],
+                },
+            ],
+        }).encode()
+
+        await client._handle_message(mock_message)
+
+        assert len(events_received) == 1
+        event = events_received[0]
+        assert len(event["capabilities"]) == 2
+        assert event["capabilities"][0]["instance"] == "lackWaterEvent"
+        assert event["capabilities"][1]["instance"] == "iceFullEvent"
+
+    @pytest.mark.asyncio
+    async def test_handle_message_empty_capabilities(self):
+        """Test handling message with empty capabilities list."""
+        events_received = []
+
+        def capture_event(event):
+            events_received.append(event)
+
+        client = GoveeMqttClient(api_key="test_key", on_event=capture_event)
+
+        mock_message = MagicMock()
+        mock_message.payload = b'{"device": "test", "capabilities": []}'
+
+        await client._handle_message(mock_message)
+
+        assert len(events_received) == 1
+        assert events_received[0]["capabilities"] == []
+
+    @pytest.mark.asyncio
+    async def test_handle_message_unicode_content(self):
+        """Test handling message with unicode content."""
+        events_received = []
+
+        def capture_event(event):
+            events_received.append(event)
+
+        client = GoveeMqttClient(api_key="test_key", on_event=capture_event)
+
+        mock_message = MagicMock()
+        mock_message.payload = '{"device": "test", "deviceName": "灯光"}'.encode('utf-8')
+
+        await client._handle_message(mock_message)
+
+        assert len(events_received) == 1
+        assert events_received[0]["deviceName"] == "灯光"
+
+
+class TestMqttClientLifecycle:
+    """Test MQTT client lifecycle edge cases."""
+
+    @pytest.mark.asyncio
+    async def test_stop_without_start(self):
+        """Test stopping client that was never started."""
+        callback = MagicMock()
+        client = GoveeMqttClient(api_key="test_key", on_event=callback)
+
+        # Should not raise
+        await client.async_stop()
+
+        assert client._running is False
+        assert client._task is None
+
+    @pytest.mark.asyncio
+    async def test_stop_clears_connected_state(self):
+        """Test stopping client clears connected state."""
+        callback = MagicMock()
+        client = GoveeMqttClient(api_key="test_key", on_event=callback)
+
+        # Manually set connected for testing
+        client._connected = True
+        client._running = True
+
+        await client.async_stop()
+
+        assert client.connected is False
+
+    @pytest.mark.asyncio
+    async def test_start_sets_running_flag(self):
+        """Test start sets running flag before creating task."""
+        callback = MagicMock()
+        client = GoveeMqttClient(api_key="test_key", on_event=callback)
+
+        with patch.object(client, "_connection_loop", new_callable=AsyncMock):
+            await client.async_start()
+            assert client._running is True
+            await client.async_stop()

@@ -35,11 +35,13 @@ from ..api.const import (
 from ..api.exceptions import GoveeApiError
 from ..const import (
     API_BRIGHTNESS_MAX,
+    CONF_INTER_COMMAND_DELAY,
     CONF_OFFLINE_IS_OFF,
     CONF_USE_ASSUMED_STATE,
+    DEFAULT_INTER_COMMAND_DELAY,
     HA_BRIGHTNESS_MAX,
 )
-from ..coordinator import GoveeDataUpdateCoordinator
+from ..coordinator import CommandBatch, GoveeDataUpdateCoordinator
 from ..entity_descriptions import LIGHT_DESCRIPTIONS
 from ..models import GoveeDevice
 from ..models.config import GoveeConfigEntry
@@ -248,35 +250,61 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
         return result
 
     async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn on the light with batched command execution.
+
+        Commands are batched and executed with delays to prevent flickering.
+        Order: Color/ColorTemp FIRST → Brightness LAST (validated best practice)
+        """
         _LOGGER.debug(
             "async_turn_on for %s, kwargs: %s",
             self._device.device_name,
             kwargs,
         )
 
+        # Effects are mutually exclusive with other attributes - bypass batching
         if ATTR_EFFECT in kwargs:
             await self._async_set_effect(kwargs[ATTR_EFFECT])
             return
 
+        batch = CommandBatch(device_id=self._device_id)
+
+        # VALIDATED ORDER: Color/ColorTemp FIRST → Brightness LAST
+        # Reason: Brightness before color causes revert issues (govee2mqtt #258)
+        # No explicit power-on needed - Govee auto-turns-on with color/brightness
+
         if ATTR_RGB_COLOR in kwargs:
-            await self._async_set_color_rgb(kwargs[ATTR_RGB_COLOR])
+            r, g, b = kwargs[ATTR_RGB_COLOR]
+            color_int = (r << 16) + (g << 8) + b
+            batch.add(CAPABILITY_COLOR_SETTING, INSTANCE_COLOR_RGB, color_int)
 
         if ATTR_COLOR_TEMP_KELVIN in kwargs:
-            await self._async_set_color_temp(kwargs[ATTR_COLOR_TEMP_KELVIN])
+            temp_kelvin = kwargs[ATTR_COLOR_TEMP_KELVIN]
+            min_kelvin = self._attr_min_color_temp_kelvin or 2000
+            max_kelvin = self._attr_max_color_temp_kelvin or 9000
+            temp_kelvin = max(min_kelvin, min(max_kelvin, temp_kelvin))
+            batch.add(CAPABILITY_COLOR_SETTING, INSTANCE_COLOR_TEMP, temp_kelvin)
 
         if ATTR_BRIGHTNESS in kwargs:
-            await self._async_set_brightness(kwargs[ATTR_BRIGHTNESS])
+            api_brightness = round(
+                kwargs[ATTR_BRIGHTNESS] * API_BRIGHTNESS_MAX / HA_BRIGHTNESS_MAX
+            )
+            min_val, max_val = self._device.get_brightness_range()
+            api_brightness = max(min_val, min(max_val, api_brightness))
+            batch.add(CAPABILITY_RANGE, INSTANCE_BRIGHTNESS, api_brightness)
 
-        if not any(
-            attr in kwargs
-            for attr in [
-                ATTR_RGB_COLOR,
-                ATTR_COLOR_TEMP_KELVIN,
-                ATTR_BRIGHTNESS,
-                ATTR_EFFECT,
-            ]
-        ):
-            await self._async_turn_on_off(True)
+        # If we have batched commands, execute them together
+        if batch.commands:
+            # Get configurable delay from options (default 500ms)
+            delay_ms = self._entry.options.get(
+                CONF_INTER_COMMAND_DELAY, DEFAULT_INTER_COMMAND_DELAY
+            )
+            await self.coordinator.async_execute_batch(
+                self._device_id, batch, delay_ms / 1000.0
+            )
+            return
+
+        # No color/brightness attributes - just turn on
+        await self._async_turn_on_off(True)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         _LOGGER.debug("async_turn_off for %s", self._device.device_name)
