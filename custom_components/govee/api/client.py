@@ -37,7 +37,7 @@ class GoveeApiClient:
         self._api_key = api_key
         self._session = session
         self._owns_session = session is None
-        self._rate_limiter = RateLimiter()
+        self._rate_limiter = RateLimiter(enabled=False)  # TODO: Re-enable after testing
 
     async def __aenter__(self) -> GoveeApiClient:
         if self._session is None:

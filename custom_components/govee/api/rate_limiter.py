@@ -76,11 +76,13 @@ class RateLimiter:
         requests_per_day: int = RATE_LIMIT_PER_DAY,
         backoff_base: float = DEFAULT_BACKOFF_BASE,
         backoff_max: float = DEFAULT_BACKOFF_MAX,
+        enabled: bool = True,
     ) -> None:
         self._per_minute = requests_per_minute
         self._per_day = requests_per_day
         self._backoff_base = backoff_base
         self._backoff_max = backoff_max
+        self._enabled = enabled
 
         self._minute_timestamps: list[float] = []
         self._day_timestamps: list[float] = []
@@ -114,6 +116,9 @@ class RateLimiter:
         - Acquires lock before any timestamp operations
         - Ensures atomic check-and-record operations
         """
+        if not self._enabled:
+            return
+
         async with self._lock:
             # Apply exponential backoff for consecutive failures
             if self._consecutive_failures > 0:
