@@ -234,7 +234,7 @@ class GoveeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_entry: config_entries.ConfigEntry,
     ) -> GoveeOptionsFlow:
         """Get options flow handler."""
-        return GoveeOptionsFlow(config_entry)
+        return GoveeOptionsFlow()
 
 
 class GoveeOptionsFlow(config_entries.OptionsFlow):
@@ -243,10 +243,6 @@ class GoveeOptionsFlow(config_entries.OptionsFlow):
     Only poll_interval is configurable here.
     Credentials require reconfiguration via reauth.
     """
-
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        """Initialize options flow."""
-        self.config_entry = config_entry
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
