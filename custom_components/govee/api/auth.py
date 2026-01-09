@@ -50,8 +50,15 @@ def _extract_p12_credentials(p12_base64: str) -> tuple[str, str]:
         raise GoveeApiError("Empty P12 data received from Govee API")
 
     try:
+        # Fix base64 padding if needed (Govee may omit trailing = characters)
+        # Base64 strings must have length divisible by 4
+        padded = p12_base64
+        padding_needed = len(padded) % 4
+        if padding_needed:
+            padded += "=" * (4 - padding_needed)
+
         # Decode base64 to get raw P12 bytes
-        p12_data = base64.b64decode(p12_base64)
+        p12_data = base64.b64decode(padded)
 
         # Parse PKCS#12 container (Govee uses no password)
         private_key, certificate, _ = pkcs12.load_key_and_certificates(p12_data, None)
