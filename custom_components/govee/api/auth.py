@@ -136,13 +136,21 @@ class GoveeAuthClient:
 
                 client_data = data.get("client", {})
 
+                # Debug: log available keys in response
+                _LOGGER.debug(
+                    "Login response keys: data=%s, client=%s",
+                    list(data.keys()),
+                    list(client_data.keys()) if client_data else "empty",
+                )
+
                 # Extract AWS IoT credentials
+                # Note: Govee uses "A" for certificate and "B" for private key
                 credentials = GoveeIotCredentials(
                     token=client_data.get("token", ""),
                     refresh_token=client_data.get("refreshToken", ""),
                     account_topic=client_data.get("topic", ""),
-                    iot_cert=client_data.get("certificate", ""),
-                    iot_key=client_data.get("privateKey", ""),
+                    iot_cert=client_data.get("A", ""),  # Certificate is in field "A"
+                    iot_key=client_data.get("B", ""),   # Private key is in field "B"
                     iot_ca=client_data.get("caCertificate"),
                     client_id=client_id,
                     endpoint=client_data.get("endpoint", "aqm3wd1qlc3dy-ats.iot.us-east-1.amazonaws.com"),
