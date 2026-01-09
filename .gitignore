@@ -145,3 +145,7 @@ custom_components/hacs
 
 # Local test scripts
 test_api_validation.py
+
+# Log files and captures
+logs/
+*.pcap
