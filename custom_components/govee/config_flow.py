@@ -24,7 +24,6 @@ from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
-    section,
     TextSelector,
     TextSelectorConfig,
     TextSelectorType,
@@ -245,24 +244,19 @@ class GoveeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class GoveeOptionsFlow(config_entries.OptionsFlow):
-    """Handle Govee options flow with organized sections."""
+    """Handle Govee options flow."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Handle options flow with sections."""
+        """Handle options flow."""
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            # Extract credentials from sections
-            polling = user_input.get("polling", {})
-            behavior = user_input.get("behavior", {})
-            credentials = user_input.get("credentials", {})
-
-            # Validate credentials if provided
-            new_api_key = credentials.get(CONF_API_KEY, "").strip()
-            new_email = credentials.get(CONF_EMAIL, "").strip() or None
-            new_password = credentials.get(CONF_PASSWORD, "").strip() or None
+            # Extract values from flat input
+            new_api_key = user_input.get(CONF_API_KEY, "").strip()
+            new_email = user_input.get(CONF_EMAIL, "").strip() or None
+            new_password = user_input.get(CONF_PASSWORD, "").strip() or None
 
             # Use existing values if not provided
             if not new_api_key:
@@ -294,13 +288,13 @@ class GoveeOptionsFlow(config_entries.OptionsFlow):
                     _LOGGER.warning("Unexpected error validating credentials: %s", err)
 
             if not errors:
-                # Build flattened options dict
+                # Build options dict
                 new_options = {
-                    CONF_POLL_INTERVAL: polling.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
-                    CONF_INTER_COMMAND_DELAY: polling.get(CONF_INTER_COMMAND_DELAY, DEFAULT_INTER_COMMAND_DELAY),
-                    CONF_USE_ASSUMED_STATE: behavior.get(CONF_USE_ASSUMED_STATE, True),
-                    CONF_OFFLINE_IS_OFF: behavior.get(CONF_OFFLINE_IS_OFF, False),
-                    CONF_ENABLE_GROUP_DEVICES: behavior.get(CONF_ENABLE_GROUP_DEVICES, False),
+                    CONF_POLL_INTERVAL: user_input.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
+                    CONF_INTER_COMMAND_DELAY: user_input.get(CONF_INTER_COMMAND_DELAY, DEFAULT_INTER_COMMAND_DELAY),
+                    CONF_USE_ASSUMED_STATE: user_input.get(CONF_USE_ASSUMED_STATE, True),
+                    CONF_OFFLINE_IS_OFF: user_input.get(CONF_OFFLINE_IS_OFF, False),
+                    CONF_ENABLE_GROUP_DEVICES: user_input.get(CONF_ENABLE_GROUP_DEVICES, False),
                 }
 
                 # Update entry.data if credentials changed
@@ -331,81 +325,62 @@ class GoveeOptionsFlow(config_entries.OptionsFlow):
         options = self.config_entry.options
         data = self.config_entry.data
 
-        # Build schema with sections
+        # Build flat schema
         schema = vol.Schema(
             {
-                # Polling section
-                vol.Required("polling"): section(
-                    vol.Schema(
-                        {
-                            vol.Optional(
-                                CONF_POLL_INTERVAL,
-                                default=options.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
-                            ): NumberSelector(
-                                NumberSelectorConfig(
-                                    min=MIN_POLL_INTERVAL,
-                                    max=MAX_POLL_INTERVAL,
-                                    step=5,
-                                    mode=NumberSelectorMode.SLIDER,
-                                )
-                            ),
-                            vol.Optional(
-                                CONF_INTER_COMMAND_DELAY,
-                                default=options.get(CONF_INTER_COMMAND_DELAY, DEFAULT_INTER_COMMAND_DELAY),
-                            ): NumberSelector(
-                                NumberSelectorConfig(
-                                    min=100,
-                                    max=2000,
-                                    step=100,
-                                    mode=NumberSelectorMode.SLIDER,
-                                )
-                            ),
-                        }
-                    ),
+                # Polling settings
+                vol.Optional(
+                    CONF_POLL_INTERVAL,
+                    default=options.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=MIN_POLL_INTERVAL,
+                        max=MAX_POLL_INTERVAL,
+                        step=5,
+                        mode=NumberSelectorMode.SLIDER,
+                    )
                 ),
-                # Behavior section
-                vol.Required("behavior"): section(
-                    vol.Schema(
-                        {
-                            vol.Required(
-                                CONF_USE_ASSUMED_STATE,
-                                default=options.get(CONF_USE_ASSUMED_STATE, True),
-                            ): BooleanSelector(),
-                            vol.Required(
-                                CONF_OFFLINE_IS_OFF,
-                                default=options.get(CONF_OFFLINE_IS_OFF, False),
-                            ): BooleanSelector(),
-                            vol.Required(
-                                CONF_ENABLE_GROUP_DEVICES,
-                                default=options.get(CONF_ENABLE_GROUP_DEVICES, False),
-                            ): BooleanSelector(),
-                        }
-                    ),
+                vol.Optional(
+                    CONF_INTER_COMMAND_DELAY,
+                    default=options.get(CONF_INTER_COMMAND_DELAY, DEFAULT_INTER_COMMAND_DELAY),
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=100,
+                        max=2000,
+                        step=100,
+                        mode=NumberSelectorMode.SLIDER,
+                    )
                 ),
-                # Credentials section (collapsed by default)
-                vol.Required("credentials"): section(
-                    vol.Schema(
-                        {
-                            vol.Optional(
-                                CONF_API_KEY,
-                                description={"suggested_value": data.get(CONF_API_KEY, "")},
-                            ): TextSelector(
-                                TextSelectorConfig(type=TextSelectorType.PASSWORD)
-                            ),
-                            vol.Optional(
-                                CONF_EMAIL,
-                                description={"suggested_value": data.get(CONF_EMAIL, "")},
-                            ): TextSelector(
-                                TextSelectorConfig(type=TextSelectorType.EMAIL)
-                            ),
-                            vol.Optional(
-                                CONF_PASSWORD,
-                            ): TextSelector(
-                                TextSelectorConfig(type=TextSelectorType.PASSWORD)
-                            ),
-                        }
-                    ),
-                    {"collapsed": True},
+                # Behavior settings
+                vol.Required(
+                    CONF_USE_ASSUMED_STATE,
+                    default=options.get(CONF_USE_ASSUMED_STATE, True),
+                ): BooleanSelector(),
+                vol.Required(
+                    CONF_OFFLINE_IS_OFF,
+                    default=options.get(CONF_OFFLINE_IS_OFF, False),
+                ): BooleanSelector(),
+                vol.Required(
+                    CONF_ENABLE_GROUP_DEVICES,
+                    default=options.get(CONF_ENABLE_GROUP_DEVICES, False),
+                ): BooleanSelector(),
+                # Credentials (optional - leave blank to keep existing)
+                vol.Optional(
+                    CONF_API_KEY,
+                    description={"suggested_value": data.get(CONF_API_KEY, "")},
+                ): TextSelector(
+                    TextSelectorConfig(type=TextSelectorType.PASSWORD)
+                ),
+                vol.Optional(
+                    CONF_EMAIL,
+                    description={"suggested_value": data.get(CONF_EMAIL, "")},
+                ): TextSelector(
+                    TextSelectorConfig(type=TextSelectorType.EMAIL)
+                ),
+                vol.Optional(
+                    CONF_PASSWORD,
+                ): TextSelector(
+                    TextSelectorConfig(type=TextSelectorType.PASSWORD)
                 ),
             }
         )

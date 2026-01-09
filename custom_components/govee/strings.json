@@ -35,39 +35,25 @@
     },
     "step": {
       "init": {
-        "sections": {
-          "polling": {
-            "name": "Polling Settings",
-            "description": "Configure how often device states are refreshed"
-          },
-          "behavior": {
-            "name": "Behavior",
-            "description": "Configure integration behavior"
-          },
-          "credentials": {
-            "name": "Credentials",
-            "description": "Update API key or Govee account for real-time updates"
-          }
-        },
         "data": {
           "delay": "Poll interval (seconds)",
           "inter_command_delay": "Command delay (ms)",
           "use_assumed_state": "Use assumed state",
           "offline_is_off": "Show offline devices as off",
           "enable_group_devices": "Enable group devices",
-          "api_key": "API Key",
-          "email": "Govee Account Email",
-          "password": "Govee Account Password"
+          "api_key": "API Key (leave blank to keep current)",
+          "email": "Govee Email (leave blank to keep current)",
+          "password": "Govee Password (leave blank to keep current)"
         },
         "data_description": {
-          "delay": "How often to poll device states from Govee API (30-300 seconds)",
-          "inter_command_delay": "Delay between sequential API commands. Prevents flickering on RGBIC devices (100-2000ms)",
-          "use_assumed_state": "Show separate on/off buttons in UI. Useful when device state is unreliable",
-          "offline_is_off": "Treat offline/unavailable devices as 'off' instead of 'unavailable'",
-          "enable_group_devices": "Enable Govee Home app group devices (experimental, limited API support)",
-          "api_key": "Your Govee API key from the Govee Home app",
-          "email": "Email for Govee account (enables real-time MQTT updates)",
-          "password": "Password for Govee account"
+          "delay": "How often to poll device states (30-300 seconds)",
+          "inter_command_delay": "Delay between API commands. Prevents flickering (100-2000ms)",
+          "use_assumed_state": "Show separate on/off buttons when state is unreliable",
+          "offline_is_off": "Treat offline devices as 'off' instead of 'unavailable'",
+          "enable_group_devices": "Enable Govee app group devices (experimental)",
+          "api_key": "Your Govee API key",
+          "email": "Govee account email (enables real-time MQTT)",
+          "password": "Govee account password"
         },
         "title": "Govee Options"
       }
