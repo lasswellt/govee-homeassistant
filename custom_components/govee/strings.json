@@ -29,24 +29,47 @@
   },
   "options": {
     "error": {
-      "cannot_connect": "Cannot connect. Is the API-Key correct and the internet connection working?",
+      "cannot_connect": "Cannot connect. Is the API key correct and the internet connection working?",
+      "invalid_auth": "Invalid email or password for Govee account.",
       "unknown": "Unknown Error."
     },
     "step": {
-      "user": {
+      "init": {
+        "sections": {
+          "polling": {
+            "name": "Polling Settings",
+            "description": "Configure how often device states are refreshed"
+          },
+          "behavior": {
+            "name": "Behavior",
+            "description": "Configure integration behavior"
+          },
+          "credentials": {
+            "name": "Credentials",
+            "description": "Update API key or Govee account for real-time updates"
+          }
+        },
         "data": {
-          "api_key": "API Key (requires restart)",
-          "delay": "Poll Interval in seconds (requires restart)",
-          "inter_command_delay": "Delay between commands in milliseconds (100-2000)",
-          "use_assumed_state": "Use assumed state (shows separate on/off buttons)",
+          "delay": "Poll interval (seconds)",
+          "inter_command_delay": "Command delay (ms)",
+          "use_assumed_state": "Use assumed state",
           "offline_is_off": "Show offline devices as off",
-          "enable_group_devices": "Enable group devices (experimental)"
+          "enable_group_devices": "Enable group devices",
+          "api_key": "API Key",
+          "email": "Govee Account Email",
+          "password": "Govee Account Password"
         },
         "data_description": {
-          "inter_command_delay": "Time to wait between API commands when setting multiple attributes. Prevents flickering on RGBIC devices. Default: 500ms."
+          "delay": "How often to poll device states from Govee API (30-300 seconds)",
+          "inter_command_delay": "Delay between sequential API commands. Prevents flickering on RGBIC devices (100-2000ms)",
+          "use_assumed_state": "Show separate on/off buttons in UI. Useful when device state is unreliable",
+          "offline_is_off": "Treat offline/unavailable devices as 'off' instead of 'unavailable'",
+          "enable_group_devices": "Enable Govee Home app group devices (experimental, limited API support)",
+          "api_key": "Your Govee API key from the Govee Home app",
+          "email": "Email for Govee account (enables real-time MQTT updates)",
+          "password": "Password for Govee account"
         },
-        "title": "Options",
-        "description": "Configure the Govee integration. For details, see the [README](https://github.com/LaggAt/hacs-govee/blob/master/README.md)."
+        "title": "Govee Options"
       }
     }
   },

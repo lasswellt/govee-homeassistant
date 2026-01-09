@@ -24,6 +24,7 @@ from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
+    section,
     TextSelector,
     TextSelectorConfig,
     TextSelectorType,
@@ -244,73 +245,166 @@ class GoveeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class GoveeOptionsFlow(config_entries.OptionsFlow):
-    """Handle Govee options flow.
-
-    Configurable settings:
-    - Poll interval
-    - Inter-command delay
-    - Use assumed state
-    - Offline is off
-    - Enable group devices
-
-    Credentials require reconfiguration via reauth.
-    """
+    """Handle Govee options flow with organized sections."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Redirect to user step."""
-        return await self.async_step_user()
+        """Handle options flow with sections."""
+        errors: dict[str, str] = {}
 
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Handle options flow."""
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            # Extract credentials from sections
+            polling = user_input.get("polling", {})
+            behavior = user_input.get("behavior", {})
+            credentials = user_input.get("credentials", {})
 
-        # Get current values from options
+            # Validate credentials if provided
+            new_api_key = credentials.get(CONF_API_KEY, "").strip()
+            new_email = credentials.get(CONF_EMAIL, "").strip() or None
+            new_password = credentials.get(CONF_PASSWORD, "").strip() or None
+
+            # Use existing values if not provided
+            if not new_api_key:
+                new_api_key = self.config_entry.data.get(CONF_API_KEY, "")
+
+            # Validate API key if changed
+            current_api_key = self.config_entry.data.get(CONF_API_KEY, "")
+            if new_api_key and new_api_key != current_api_key:
+                session = async_get_clientsession(self.hass)
+                client = GoveeApiClient(new_api_key, session=session)
+                try:
+                    await client.get_devices()
+                except GoveeAuthError:
+                    errors["base"] = "cannot_connect"
+                except GoveeApiError:
+                    errors["base"] = "cannot_connect"
+
+            # Validate Govee account if both email and password provided
+            if new_email and new_password and not errors:
+                session = async_get_clientsession(self.hass)
+                try:
+                    await validate_govee_credentials(new_email, new_password, session)
+                except GoveeAuthError:
+                    errors["base"] = "invalid_auth"
+                except Exception:
+                    pass  # Non-critical, MQTT just won't work
+
+            if not errors:
+                # Build flattened options dict
+                new_options = {
+                    CONF_POLL_INTERVAL: polling.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
+                    CONF_INTER_COMMAND_DELAY: polling.get(CONF_INTER_COMMAND_DELAY, DEFAULT_INTER_COMMAND_DELAY),
+                    CONF_USE_ASSUMED_STATE: behavior.get(CONF_USE_ASSUMED_STATE, True),
+                    CONF_OFFLINE_IS_OFF: behavior.get(CONF_OFFLINE_IS_OFF, False),
+                    CONF_ENABLE_GROUP_DEVICES: behavior.get(CONF_ENABLE_GROUP_DEVICES, False),
+                }
+
+                # Update entry.data if credentials changed
+                new_data = dict(self.config_entry.data)
+                data_changed = False
+
+                if new_api_key and new_api_key != current_api_key:
+                    new_data[CONF_API_KEY] = new_api_key
+                    data_changed = True
+
+                if new_email is not None:
+                    new_data[CONF_EMAIL] = new_email
+                    data_changed = True
+
+                if new_password is not None:
+                    new_data[CONF_PASSWORD] = new_password
+                    data_changed = True
+
+                if data_changed:
+                    self.hass.config_entries.async_update_entry(
+                        self.config_entry,
+                        data=new_data,
+                    )
+
+                return self.async_create_entry(title="", data=new_options)
+
+        # Get current values
         options = self.config_entry.options
+        data = self.config_entry.data
 
+        # Build schema with sections
         schema = vol.Schema(
             {
-                vol.Optional(
-                    CONF_POLL_INTERVAL,
-                    default=options.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
-                ): NumberSelector(
-                    NumberSelectorConfig(
-                        min=MIN_POLL_INTERVAL,
-                        max=MAX_POLL_INTERVAL,
-                        step=1,
-                        mode=NumberSelectorMode.SLIDER,
-                        unit_of_measurement="seconds",
-                    )
+                # Polling section
+                vol.Required("polling"): section(
+                    vol.Schema(
+                        {
+                            vol.Optional(
+                                CONF_POLL_INTERVAL,
+                                default=options.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
+                            ): NumberSelector(
+                                NumberSelectorConfig(
+                                    min=MIN_POLL_INTERVAL,
+                                    max=MAX_POLL_INTERVAL,
+                                    step=5,
+                                    mode=NumberSelectorMode.SLIDER,
+                                )
+                            ),
+                            vol.Optional(
+                                CONF_INTER_COMMAND_DELAY,
+                                default=options.get(CONF_INTER_COMMAND_DELAY, DEFAULT_INTER_COMMAND_DELAY),
+                            ): NumberSelector(
+                                NumberSelectorConfig(
+                                    min=100,
+                                    max=2000,
+                                    step=100,
+                                    mode=NumberSelectorMode.SLIDER,
+                                )
+                            ),
+                        }
+                    ),
                 ),
-                vol.Optional(
-                    CONF_INTER_COMMAND_DELAY,
-                    default=options.get(CONF_INTER_COMMAND_DELAY, DEFAULT_INTER_COMMAND_DELAY),
-                ): NumberSelector(
-                    NumberSelectorConfig(
-                        min=100,
-                        max=2000,
-                        step=100,
-                        mode=NumberSelectorMode.SLIDER,
-                        unit_of_measurement="ms",
-                    )
+                # Behavior section
+                vol.Required("behavior"): section(
+                    vol.Schema(
+                        {
+                            vol.Required(
+                                CONF_USE_ASSUMED_STATE,
+                                default=options.get(CONF_USE_ASSUMED_STATE, True),
+                            ): BooleanSelector(),
+                            vol.Required(
+                                CONF_OFFLINE_IS_OFF,
+                                default=options.get(CONF_OFFLINE_IS_OFF, False),
+                            ): BooleanSelector(),
+                            vol.Required(
+                                CONF_ENABLE_GROUP_DEVICES,
+                                default=options.get(CONF_ENABLE_GROUP_DEVICES, False),
+                            ): BooleanSelector(),
+                        }
+                    ),
                 ),
-                vol.Required(
-                    CONF_USE_ASSUMED_STATE,
-                    default=options.get(CONF_USE_ASSUMED_STATE, True),
-                ): BooleanSelector(),
-                vol.Required(
-                    CONF_OFFLINE_IS_OFF,
-                    default=options.get(CONF_OFFLINE_IS_OFF, False),
-                ): BooleanSelector(),
-                vol.Required(
-                    CONF_ENABLE_GROUP_DEVICES,
-                    default=options.get(CONF_ENABLE_GROUP_DEVICES, False),
-                ): BooleanSelector(),
+                # Credentials section (collapsed by default)
+                vol.Required("credentials"): section(
+                    vol.Schema(
+                        {
+                            vol.Optional(
+                                CONF_API_KEY,
+                                description={"suggested_value": data.get(CONF_API_KEY, "")},
+                            ): TextSelector(
+                                TextSelectorConfig(type=TextSelectorType.PASSWORD)
+                            ),
+                            vol.Optional(
+                                CONF_EMAIL,
+                                description={"suggested_value": data.get(CONF_EMAIL, "")},
+                            ): TextSelector(
+                                TextSelectorConfig(type=TextSelectorType.EMAIL)
+                            ),
+                            vol.Optional(
+                                CONF_PASSWORD,
+                            ): TextSelector(
+                                TextSelectorConfig(type=TextSelectorType.PASSWORD)
+                            ),
+                        }
+                    ),
+                    {"collapsed": True},
+                ),
             }
         )
 
-        return self.async_show_form(step_id="user", data_schema=schema)
+        return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
