@@ -23,6 +23,33 @@ GOVEE_LOGIN_URL = "https://app2.govee.com/account/rest/account/v1/login"
 GOVEE_CLIENT_TYPE = "1"  # Android client type
 
 
+def _format_pem(data: str, pem_type: str = "CERTIFICATE") -> str:
+    """Format raw certificate/key data as PEM if needed.
+
+    Govee API may return certificates without PEM headers.
+    SSL libraries require proper PEM format with headers and line wrapping.
+
+    Args:
+        data: Raw certificate or key data (may be base64 or already PEM)
+        pem_type: PEM type header (e.g., "CERTIFICATE", "RSA PRIVATE KEY")
+
+    Returns:
+        Properly formatted PEM string
+    """
+    if not data:
+        return ""
+
+    # Already PEM formatted
+    if data.strip().startswith("-----BEGIN"):
+        return data
+
+    # Remove any whitespace and wrap at 64 chars (PEM requirement)
+    clean = data.replace("\n", "").replace("\r", "").replace(" ", "")
+    lines = [clean[i:i + 64] for i in range(0, len(clean), 64)]
+
+    return f"-----BEGIN {pem_type}-----\n" + "\n".join(lines) + f"\n-----END {pem_type}-----\n"
+
+
 @dataclass
 class GoveeIotCredentials:
     """Credentials for AWS IoT MQTT connection."""
@@ -145,12 +172,16 @@ class GoveeAuthClient:
 
                 # Extract AWS IoT credentials
                 # Note: Govee uses "A" for certificate and "B" for private key
+                # Format as PEM if not already (Govee may return raw base64)
+                raw_cert = client_data.get("A", "")
+                raw_key = client_data.get("B", "")
+
                 credentials = GoveeIotCredentials(
                     token=client_data.get("token", ""),
                     refresh_token=client_data.get("refreshToken", ""),
                     account_topic=client_data.get("topic", ""),
-                    iot_cert=client_data.get("A", ""),  # Certificate is in field "A"
-                    iot_key=client_data.get("B", ""),   # Private key is in field "B"
+                    iot_cert=_format_pem(raw_cert, "CERTIFICATE"),
+                    iot_key=_format_pem(raw_key, "RSA PRIVATE KEY"),
                     iot_ca=client_data.get("caCertificate"),
                     client_id=client_id,
                     endpoint=client_data.get("endpoint", "aqm3wd1qlc3dy-ats.iot.us-east-1.amazonaws.com"),
