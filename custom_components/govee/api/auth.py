@@ -359,25 +359,43 @@ class GoveeAuthClient:
                 # This returns the P12 certificate and password needed for AWS IoT
                 iot_data = await self.get_iot_key(token)
 
-                # Extract AWS IoT credentials from P12/PFX container
-                # The IoT key endpoint returns p12 (base64 PKCS#12) and p12Pass/p12_pass
-                p12_base64 = iot_data.get("p12", "")
-                # Try both camelCase and snake_case for password field
-                p12_password = iot_data.get("p12Pass") or iot_data.get("p12_pass", "")
+                # Extract AWS IoT credentials
+                # The API can return credentials in two formats:
+                # 1. Direct PEM: certificatePem + privateKey fields
+                # 2. P12 container: p12 + p12Pass fields
                 iot_endpoint = iot_data.get("endpoint", "aqm3wd1qlc3dy-ats.iot.us-east-1.amazonaws.com")
 
-                if not p12_base64:
-                    _LOGGER.error("IoT key response missing p12 field")
-                    raise GoveeApiError("No P12 certificate in IoT key response")
+                # Check for direct PEM format first (certificatePem + privateKey)
+                cert_pem = iot_data.get("certificatePem", "")
+                key_pem = iot_data.get("privateKey", "")
 
-                _LOGGER.debug(
-                    "IoT credentials received: p12_length=%d, has_password=%s, endpoint=%s",
-                    len(p12_base64),
-                    bool(p12_password),
-                    iot_endpoint,
-                )
+                if cert_pem and key_pem:
+                    _LOGGER.debug(
+                        "IoT credentials received (PEM format): cert_length=%d, key_length=%d, endpoint=%s",
+                        len(cert_pem),
+                        len(key_pem),
+                        iot_endpoint,
+                    )
+                else:
+                    # Fall back to P12 container format
+                    p12_base64 = iot_data.get("p12", "")
+                    p12_password = iot_data.get("p12Pass") or iot_data.get("p12_pass", "")
 
-                cert_pem, key_pem = _extract_p12_credentials(p12_base64, p12_password)
+                    if not p12_base64:
+                        _LOGGER.error(
+                            "IoT key response missing credentials. Available keys: %s",
+                            list(iot_data.keys()) if isinstance(iot_data, dict) else "none",
+                        )
+                        raise GoveeApiError("No certificate data in IoT key response")
+
+                    _LOGGER.debug(
+                        "IoT credentials received (P12 format): p12_length=%d, has_password=%s, endpoint=%s",
+                        len(p12_base64),
+                        bool(p12_password),
+                        iot_endpoint,
+                    )
+
+                    cert_pem, key_pem = _extract_p12_credentials(p12_base64, p12_password)
 
                 credentials = GoveeIotCredentials(
                     token=token,
