@@ -20,6 +20,7 @@ from homeassistant.const import CONF_API_KEY, CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
+    BooleanSelector,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
@@ -38,11 +39,16 @@ from .api import (
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "govee"
-CONF_POLL_INTERVAL = "poll_interval"
+CONF_POLL_INTERVAL = "delay"  # Match strings.json key
+CONF_INTER_COMMAND_DELAY = "inter_command_delay"
+CONF_USE_ASSUMED_STATE = "use_assumed_state"
+CONF_OFFLINE_IS_OFF = "offline_is_off"
+CONF_ENABLE_GROUP_DEVICES = "enable_group_devices"
 
 DEFAULT_POLL_INTERVAL = 60
 MIN_POLL_INTERVAL = 30
 MAX_POLL_INTERVAL = 300
+DEFAULT_INTER_COMMAND_DELAY = 500
 
 
 class GoveeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -240,24 +246,38 @@ class GoveeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class GoveeOptionsFlow(config_entries.OptionsFlow):
     """Handle Govee options flow.
 
-    Only poll_interval is configurable here.
+    Configurable settings:
+    - Poll interval
+    - Inter-command delay
+    - Use assumed state
+    - Offline is off
+    - Enable group devices
+
     Credentials require reconfiguration via reauth.
     """
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        """Redirect to user step."""
+        return await self.async_step_user()
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         """Handle options flow."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        current_interval = self.config_entry.options.get(
-            CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL
-        )
+        # Get current values from options
+        options = self.config_entry.options
 
         schema = vol.Schema(
             {
-                vol.Optional(CONF_POLL_INTERVAL, default=current_interval): NumberSelector(
+                vol.Optional(
+                    CONF_POLL_INTERVAL,
+                    default=options.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL),
+                ): NumberSelector(
                     NumberSelectorConfig(
                         min=MIN_POLL_INTERVAL,
                         max=MAX_POLL_INTERVAL,
@@ -266,7 +286,31 @@ class GoveeOptionsFlow(config_entries.OptionsFlow):
                         unit_of_measurement="seconds",
                     )
                 ),
+                vol.Optional(
+                    CONF_INTER_COMMAND_DELAY,
+                    default=options.get(CONF_INTER_COMMAND_DELAY, DEFAULT_INTER_COMMAND_DELAY),
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=100,
+                        max=2000,
+                        step=100,
+                        mode=NumberSelectorMode.SLIDER,
+                        unit_of_measurement="ms",
+                    )
+                ),
+                vol.Required(
+                    CONF_USE_ASSUMED_STATE,
+                    default=options.get(CONF_USE_ASSUMED_STATE, True),
+                ): BooleanSelector(),
+                vol.Required(
+                    CONF_OFFLINE_IS_OFF,
+                    default=options.get(CONF_OFFLINE_IS_OFF, False),
+                ): BooleanSelector(),
+                vol.Required(
+                    CONF_ENABLE_GROUP_DEVICES,
+                    default=options.get(CONF_ENABLE_GROUP_DEVICES, False),
+                ): BooleanSelector(),
             }
         )
 
-        return self.async_show_form(step_id="init", data_schema=schema)
+        return self.async_show_form(step_id="user", data_schema=schema)

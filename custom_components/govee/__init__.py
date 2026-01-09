@@ -26,7 +26,7 @@ from .models import GoveeConfigEntry, GoveeRuntimeData
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "govee"
-CONF_POLL_INTERVAL = "poll_interval"
+CONF_POLL_INTERVAL = "delay"  # Match strings.json key
 DEFAULT_POLL_INTERVAL = 60
 
 PLATFORMS = [Platform.LIGHT]
@@ -136,8 +136,19 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             CONF_EMAIL: entry.data.get(CONF_EMAIL),
             CONF_PASSWORD: entry.data.get(CONF_PASSWORD),
         }
+        # Preserve all options, handling both old "poll_interval" and "delay" keys
+        poll_interval = (
+            entry.options.get("delay")
+            or entry.options.get("poll_interval")
+            or entry.data.get("delay", DEFAULT_POLL_INTERVAL)
+        )
         new_options = {
-            CONF_POLL_INTERVAL: entry.options.get(CONF_POLL_INTERVAL, entry.data.get("delay", DEFAULT_POLL_INTERVAL)),
+            CONF_POLL_INTERVAL: poll_interval,
+            # Preserve other options with their defaults
+            "inter_command_delay": entry.options.get("inter_command_delay", 500),
+            "use_assumed_state": entry.options.get("use_assumed_state", True),
+            "offline_is_off": entry.options.get("offline_is_off", False),
+            "enable_group_devices": entry.options.get("enable_group_devices", False),
         }
 
         hass.config_entries.async_update_entry(
