@@ -21,6 +21,14 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
+# Import aiomqtt at module level to avoid blocking in event loop
+try:
+    import aiomqtt
+
+    AIOMQTT_AVAILABLE = True
+except ImportError:
+    AIOMQTT_AVAILABLE = False
+
 if TYPE_CHECKING:
     from .api.auth import GoveeIotCredentials
 
@@ -109,13 +117,14 @@ class GoveeAwsIotClient:
         self._connected = False
         _LOGGER.info("AWS IoT MQTT client stopped")
 
-    def _create_ssl_context(self) -> ssl.SSLContext:
-        """Create SSL context with certificate files.
+    def _create_ssl_context_sync(self) -> ssl.SSLContext:
+        """Create SSL context with certificate files (synchronous).
 
         Writes certificate/key to temporary files for SSL context loading.
         aiomqtt requires file paths, not in-memory certificates.
 
         Note: Cleans up temp directory on failure to prevent resource leaks.
+        This method is blocking and should be run in an executor.
         """
         # Clean up any existing temp directory first
         if self._temp_dir:
@@ -163,11 +172,18 @@ class GoveeAwsIotClient:
                     pass
             raise
 
+    async def _create_ssl_context(self) -> ssl.SSLContext:
+        """Create SSL context with certificate files (async wrapper).
+
+        Runs blocking SSL context creation in an executor to avoid
+        blocking the event loop.
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._create_ssl_context_sync)
+
     async def _connection_loop(self) -> None:
         """Maintain AWS IoT MQTT connection with exponential backoff."""
-        try:
-            import aiomqtt
-        except ImportError:
+        if not AIOMQTT_AVAILABLE:
             _LOGGER.warning(
                 "aiomqtt library not available - AWS IoT MQTT disabled. "
                 "Install with: pip install aiomqtt"
@@ -179,12 +195,13 @@ class GoveeAwsIotClient:
 
         while self._running:
             try:
-                ssl_context = self._create_ssl_context()
+                ssl_context = await self._create_ssl_context()
 
+                # aiomqtt 2.0+ uses 'identifier' instead of 'client_id'
                 async with aiomqtt.Client(
                     hostname=self._credentials.endpoint,
                     port=AWS_IOT_PORT,
-                    client_id=self._credentials.client_id,
+                    identifier=self._credentials.client_id,
                     tls_context=ssl_context,
                     keepalive=AWS_IOT_KEEPALIVE,
                 ) as client:
