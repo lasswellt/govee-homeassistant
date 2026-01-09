@@ -251,11 +251,19 @@ class GoveeAuthClient:
                     list(data.keys()) if isinstance(data, dict) else type(data).__name__,
                 )
 
+                # The IoT key response wraps the actual data in a "data" field
+                iot_data = data.get("data", {}) if isinstance(data, dict) else {}
+
+                _LOGGER.debug(
+                    "IoT key data keys: %s",
+                    list(iot_data.keys()) if isinstance(iot_data, dict) else type(iot_data).__name__,
+                )
+
                 # Log details about IoT key response (without sensitive data)
-                if isinstance(data, dict):
-                    p12_len = len(data.get("p12", "")) if data.get("p12") else 0
-                    has_pass = bool(data.get("p12_pass"))
-                    endpoint = data.get("endpoint", "not provided")
+                if isinstance(iot_data, dict):
+                    p12_len = len(iot_data.get("p12", "")) if iot_data.get("p12") else 0
+                    has_pass = bool(iot_data.get("p12Pass") or iot_data.get("p12_pass"))
+                    endpoint = iot_data.get("endpoint", "not provided")
                     _LOGGER.debug(
                         "IoT key details: p12_length=%d, has_password=%s, endpoint=%s",
                         p12_len,
@@ -263,7 +271,7 @@ class GoveeAuthClient:
                         endpoint,
                     )
 
-                return data
+                return iot_data
 
         except aiohttp.ClientError as err:
             raise GoveeApiError(f"Connection error getting IoT key: {err}") from err
@@ -352,9 +360,10 @@ class GoveeAuthClient:
                 iot_data = await self.get_iot_key(token)
 
                 # Extract AWS IoT credentials from P12/PFX container
-                # The IoT key endpoint returns p12 (base64 PKCS#12) and p12_pass
+                # The IoT key endpoint returns p12 (base64 PKCS#12) and p12Pass/p12_pass
                 p12_base64 = iot_data.get("p12", "")
-                p12_password = iot_data.get("p12_pass", "")
+                # Try both camelCase and snake_case for password field
+                p12_password = iot_data.get("p12Pass") or iot_data.get("p12_pass", "")
                 iot_endpoint = iot_data.get("endpoint", "aqm3wd1qlc3dy-ats.iot.us-east-1.amazonaws.com")
 
                 if not p12_base64:
