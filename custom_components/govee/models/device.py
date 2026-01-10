@@ -264,11 +264,14 @@ class GoveeDevice:
         device_type = data.get("type", "devices.types.light")
 
         # Check for group device types
+        # Groups can be identified by:
+        # 1. Explicit group device types
+        # 2. Numeric-only device IDs (no colons like MAC addresses)
         is_group = device_type in (
             "devices.types.group",
             "devices.types.same_mode_group",
             "devices.types.scenic_group",
-        )
+        ) or (device_id.isdigit())
 
         # Parse capabilities
         raw_caps = data.get("capabilities", [])
