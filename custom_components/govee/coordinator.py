@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -81,7 +82,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=asyncio.timedelta(seconds=poll_interval),
+            update_interval=timedelta(seconds=poll_interval),
         )
 
         self._config_entry = config_entry
