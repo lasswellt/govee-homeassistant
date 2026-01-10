@@ -11,6 +11,6 @@
   "issue_tracker": "https://github.com/lasswellt/hacs-govee/issues",
   "requirements": ["aiomqtt>=2.0.0"],
   "ssdp": [],
-  "version": "2026.01.21",
+  "version": "2026.01.22",
   "zeroconf": []
 }
