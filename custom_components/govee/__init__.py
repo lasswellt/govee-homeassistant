@@ -170,14 +170,31 @@ async def _async_cleanup_orphaned_entities(
     """
     entity_registry = er.async_get(hass)
 
+    # Suffixes used by various entity types
+    entity_suffixes = (
+        "_scene_select",
+        "_diy_scene_select",
+        "_refresh_scenes",
+        "_night_light",
+    )
+
     # Get all entity entries for this config entry
     entries_to_remove = []
     for entity_entry in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
-        # Extract device_id from unique_id (format: "device_id" or "device_id_segment_X")
+        # Extract device_id from unique_id
         unique_id = entity_entry.unique_id
         if unique_id:
+            device_id = unique_id
+
             # Handle segment entities (e.g., "AA:BB:CC:DD_segment_0")
-            device_id = unique_id.split("_segment_")[0] if "_segment_" in unique_id else unique_id
+            if "_segment_" in device_id:
+                device_id = device_id.split("_segment_")[0]
+
+            # Handle other entity suffixes
+            for suffix in entity_suffixes:
+                if device_id.endswith(suffix):
+                    device_id = device_id[: -len(suffix)]
+                    break
 
             # Check if this device is still discovered
             if device_id not in coordinator.devices:

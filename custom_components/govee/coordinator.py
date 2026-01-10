@@ -324,6 +324,14 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         Returns:
             GoveeDeviceState or Exception on error.
         """
+        # Skip API call for group devices - state fetch always fails with 400
+        if device.is_group:
+            existing = self._states.get(device_id)
+            if existing:
+                existing.online = True  # Group devices are always "available"
+                return existing
+            return GoveeDeviceState.create_empty(device_id)
+
         try:
             state = await self._api_client.get_device_state(device_id, device.sku)
 
