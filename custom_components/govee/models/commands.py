@@ -57,18 +57,12 @@ class DeviceCommand(ABC):
         """Convert to Govee API command payload.
 
         Returns:
-            Dict matching Govee API /device/control format.
+            Dict matching Govee API v2.0 /device/control format.
         """
         return {
-            "type": "devices.capabilities.request",
-            "instance": "default",
-            "capabilities": [
-                {
-                    "type": self.capability_type,
-                    "instance": self.instance,
-                    "value": self.get_value(),
-                }
-            ],
+            "type": self.capability_type,
+            "instance": self.instance,
+            "value": self.get_value(),
         }
 
 

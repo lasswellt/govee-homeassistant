@@ -296,8 +296,9 @@ class TestCommands:
         assert cmd.power_on is True
         assert cmd.get_value() == 1
         payload = cmd.to_api_payload()
-        assert payload["type"] == "devices.capabilities.request"
-        assert payload["capabilities"][0]["value"] == 1
+        assert payload["type"] == "devices.capabilities.on_off"
+        assert payload["instance"] == "powerSwitch"
+        assert payload["value"] == 1
 
     def test_power_command_off(self):
         """Test power off command."""

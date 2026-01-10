@@ -225,14 +225,13 @@ class TestCommandPayloads:
     """Test command payload generation."""
 
     def test_power_command_payload(self):
-        """Test power command payload structure."""
+        """Test power command payload structure matches Govee API v2.0."""
         cmd = PowerCommand(power_on=True)
         payload = cmd.to_api_payload()
 
-        assert payload["type"] == "devices.capabilities.request"
-        assert "capabilities" in payload
-        assert len(payload["capabilities"]) == 1
-        assert payload["capabilities"][0]["value"] == 1
+        assert payload["type"] == "devices.capabilities.on_off"
+        assert payload["instance"] == "powerSwitch"
+        assert payload["value"] == 1
 
     def test_power_off_command_payload(self):
         """Test power off command payload."""
