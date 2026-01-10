@@ -397,6 +397,16 @@ class GoveeAuthClient:
 
                     cert_pem, key_pem = _extract_p12_credentials(p12_base64, p12_password)
 
+                # Build MQTT client ID in format expected by AWS IoT: AP/{accountId}/{uuid}
+                account_id = client_data.get("accountId", "")
+                mqtt_client_id = f"AP/{account_id}/{client_id}" if account_id else client_id
+
+                _LOGGER.debug(
+                    "MQTT client ID: %s (account_id=%s)",
+                    mqtt_client_id[:30] + "..." if len(mqtt_client_id) > 30 else mqtt_client_id,
+                    account_id[:16] + "..." if account_id and len(account_id) > 16 else account_id,
+                )
+
                 credentials = GoveeIotCredentials(
                     token=token,
                     refresh_token=client_data.get("refreshToken", ""),
@@ -404,7 +414,7 @@ class GoveeAuthClient:
                     iot_cert=cert_pem,
                     iot_key=key_pem,
                     iot_ca=client_data.get("caCertificate"),
-                    client_id=client_id,
+                    client_id=mqtt_client_id,
                     endpoint=iot_endpoint,
                 )
 

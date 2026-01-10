@@ -36,7 +36,7 @@ _LOGGER = logging.getLogger(__name__)
 
 # AWS IoT connection settings
 AWS_IOT_PORT = 8883
-AWS_IOT_KEEPALIVE = 60
+AWS_IOT_KEEPALIVE = 120
 RECONNECT_BASE = 5
 RECONNECT_MAX = 300
 
@@ -238,13 +238,22 @@ class GoveeAwsIotClient:
             try:
                 ssl_context = await self._create_ssl_context()
 
+                _LOGGER.debug(
+                    "Attempting AWS IoT connection: endpoint=%s, port=%d, client_id=%s",
+                    self._credentials.endpoint,
+                    AWS_IOT_PORT,
+                    self._credentials.client_id[:16] + "..." if self._credentials.client_id else "none",
+                )
+
                 # aiomqtt 2.0+ uses 'identifier' instead of 'client_id'
+                # timeout parameter sets connection timeout (default may be too short)
                 async with aiomqtt.Client(
                     hostname=self._credentials.endpoint,
                     port=AWS_IOT_PORT,
                     identifier=self._credentials.client_id,
                     tls_context=ssl_context,
                     keepalive=AWS_IOT_KEEPALIVE,
+                    timeout=60,  # Connection timeout in seconds
                 ) as client:
                     self._connected = True
                     self._max_backoff_count = 0
@@ -272,11 +281,21 @@ class GoveeAwsIotClient:
                 self._connected = False
 
                 if self._running:
+                    # Log detailed error info for debugging connection issues
                     _LOGGER.warning(
-                        "AWS IoT connection error: %s. Reconnecting in %ds",
+                        "AWS IoT connection error (%s): %s. Reconnecting in %ds",
+                        type(err).__name__,
                         err,
                         reconnect_interval,
                     )
+                    # For timeout errors, suggest potential causes
+                    if "timed out" in str(err).lower() or "timeout" in type(err).__name__.lower():
+                        _LOGGER.debug(
+                            "Timeout troubleshooting: Check 1) Firewall allows port %d, "
+                            "2) Endpoint DNS resolves: %s, 3) Network has internet access",
+                            AWS_IOT_PORT,
+                            self._credentials.endpoint,
+                        )
                     await asyncio.sleep(reconnect_interval)
                     reconnect_interval = min(reconnect_interval * 2, RECONNECT_MAX)
 
