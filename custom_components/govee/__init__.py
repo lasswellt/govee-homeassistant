@@ -38,9 +38,10 @@ from .services import async_setup_services, async_unload_services
 _LOGGER = logging.getLogger(__name__)
 
 # Platforms to set up
+# Order determines entity display order in device view
 PLATFORMS: list[Platform] = [
-    Platform.LIGHT,
-    Platform.SELECT,  # Scene dropdowns
+    Platform.SELECT,  # Scene dropdowns - show first
+    Platform.LIGHT,  # Main light + segments
     Platform.SWITCH,
     Platform.SENSOR,
     Platform.BUTTON,
