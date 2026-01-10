@@ -325,9 +325,15 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             state = await self._api_client.get_device_state(device_id, device.sku)
 
             # Preserve optimistic state for scenes (API doesn't return active scene)
+            # But clear scene if device was turned off
             existing_state = self._states.get(device_id)
             if existing_state and existing_state.active_scene:
-                state.active_scene = existing_state.active_scene
+                if state.power_state:
+                    # Device is still on, preserve the scene
+                    state.active_scene = existing_state.active_scene
+                else:
+                    # Device is off, clear the scene
+                    _LOGGER.debug("Clearing scene for %s (device turned off)", device_id)
 
             return state
 
