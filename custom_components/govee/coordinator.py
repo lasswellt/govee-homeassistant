@@ -26,7 +26,10 @@ if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
 
     from .api.auth import GoveeIotCredentials
-    from .mqtt_iot import GoveeAwsIotClient
+
+# Import at module level to avoid blocking I/O in event loop
+# (importlib_metadata does file operations when aiomqtt is imported)
+from .mqtt_iot import GoveeAwsIotClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -149,8 +152,6 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         Args:
             credentials: IoT credentials from Govee login API
         """
-        from .mqtt_iot import GoveeAwsIotClient
-
         def on_state_update(device_id: str, state: dict[str, Any]) -> None:
             """Handle real-time state update from AWS IoT.
 
