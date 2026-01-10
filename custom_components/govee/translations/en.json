@@ -131,7 +131,6 @@
   "issues": {
     "auth_failed": {
       "title": "Govee authentication failed",
-      "fixable": true,
       "description": "The API key for {entry_title} is no longer valid. The integration cannot communicate with Govee until you re-authenticate."
     },
     "rate_limited": {
