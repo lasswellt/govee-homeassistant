@@ -241,7 +241,8 @@ class GoveeDIYSceneSelectEntity(CoordinatorEntity["GoveeCoordinator"], SelectEnt
         options = [SCENE_NONE]
 
         for scene_data in scenes:
-            scene_id = scene_data.get("value", {}).get("id", 0)
+            # DIY scenes: value is an int (scene ID), not a dict like regular scenes
+            scene_id = scene_data.get("value", 0)
             scene_name = scene_data.get("name", f"DIY {scene_id}")
 
             # Handle duplicate names by appending ID
