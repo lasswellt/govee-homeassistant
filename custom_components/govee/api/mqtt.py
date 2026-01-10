@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 # Import aiomqtt at module level to avoid blocking in event loop
 try:
-    import aiomqtt
+    import aiomqtt  # type: ignore[import-not-found]
 
     AIOMQTT_AVAILABLE = True
 except ImportError:

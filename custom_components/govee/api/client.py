@@ -10,7 +10,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
-from aiohttp_retry import ExponentialRetry, RetryClient
+from aiohttp_retry import ExponentialRetry, RetryClient  # type: ignore[import-not-found]
 
 from ..models.device import GoveeDevice
 from ..models.state import GoveeDeviceState
@@ -170,7 +170,7 @@ class GoveeApiClient:
         self._update_rate_limits(response.headers)
 
         try:
-            data = await response.json()
+            data: dict[str, Any] = await response.json()
         except aiohttp.ContentTypeError:
             text = await response.text()
             raise GoveeApiError(f"Invalid JSON response: {text[:200]}")
