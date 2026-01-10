@@ -19,10 +19,16 @@ from .api.auth import GoveeAuthClient
 from .const import (
     CONF_API_KEY,
     CONF_EMAIL,
+    CONF_ENABLE_DIY_SCENES,
     CONF_ENABLE_GROUPS,
+    CONF_ENABLE_SCENES,
+    CONF_ENABLE_SEGMENTS,
     CONF_PASSWORD,
     CONF_POLL_INTERVAL,
+    DEFAULT_ENABLE_DIY_SCENES,
     DEFAULT_ENABLE_GROUPS,
+    DEFAULT_ENABLE_SCENES,
+    DEFAULT_ENABLE_SEGMENTS,
     DEFAULT_POLL_INTERVAL,
     DOMAIN,
 )
@@ -42,6 +48,10 @@ PLATFORMS: list[Platform] = [
 
 # Type alias for runtime data
 type GoveeConfigEntry = ConfigEntry[GoveeCoordinator]
+
+# Keys for storing cached data in hass.data[DOMAIN]
+_KEY_IOT_CREDENTIALS = "iot_credentials"
+_KEY_IOT_LOGIN_FAILED = "iot_login_failed"
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: GoveeConfigEntry) -> bool:
@@ -64,20 +74,55 @@ async def async_setup_entry(hass: HomeAssistant, entry: GoveeConfigEntry) -> boo
     api_client = GoveeApiClient(api_key)
 
     # Optionally get IoT credentials for MQTT
+    # Credentials are cached to avoid repeated login attempts on reload
     iot_credentials: GoveeIotCredentials | None = None
     email = entry.data.get(CONF_EMAIL)
     password = entry.data.get(CONF_PASSWORD)
 
     if email and password:
-        try:
-            async with GoveeAuthClient() as auth_client:
-                iot_credentials = await auth_client.login(email, password)
-                _LOGGER.info("MQTT credentials obtained for real-time updates")
-        except GoveeAuthError as err:
-            _LOGGER.warning("Failed to get MQTT credentials: %s", err)
-            # Continue without MQTT - not a fatal error
-        except Exception as err:
-            _LOGGER.warning("MQTT setup failed: %s", err)
+        # Initialize domain data if needed
+        if DOMAIN not in hass.data:
+            hass.data[DOMAIN] = {}
+
+        # Check for cached credentials or previous login failure
+        cached_creds = hass.data[DOMAIN].get(_KEY_IOT_CREDENTIALS, {}).get(entry.entry_id)
+        login_failed = hass.data[DOMAIN].get(_KEY_IOT_LOGIN_FAILED, {}).get(entry.entry_id)
+
+        if cached_creds:
+            # Reuse cached credentials
+            iot_credentials = cached_creds
+            _LOGGER.debug("Using cached MQTT credentials")
+        elif login_failed:
+            # Skip login attempt - previous failure recorded
+            _LOGGER.debug(
+                "Skipping MQTT login - previous attempt failed: %s. "
+                "Reconfigure integration to retry.",
+                login_failed,
+            )
+        else:
+            # Attempt fresh login
+            try:
+                async with GoveeAuthClient() as auth_client:
+                    iot_credentials = await auth_client.login(email, password)
+                    _LOGGER.info("MQTT credentials obtained for real-time updates")
+
+                    # Cache successful credentials
+                    if _KEY_IOT_CREDENTIALS not in hass.data[DOMAIN]:
+                        hass.data[DOMAIN][_KEY_IOT_CREDENTIALS] = {}
+                    hass.data[DOMAIN][_KEY_IOT_CREDENTIALS][entry.entry_id] = iot_credentials
+
+            except GoveeAuthError as err:
+                _LOGGER.warning("Failed to get MQTT credentials: %s", err)
+                # Record failure to prevent repeated attempts
+                if _KEY_IOT_LOGIN_FAILED not in hass.data[DOMAIN]:
+                    hass.data[DOMAIN][_KEY_IOT_LOGIN_FAILED] = {}
+                hass.data[DOMAIN][_KEY_IOT_LOGIN_FAILED][entry.entry_id] = str(err)
+            except Exception as err:
+                _LOGGER.warning("MQTT setup failed: %s", err)
+                # Record failure to prevent repeated attempts
+                if _KEY_IOT_LOGIN_FAILED not in hass.data[DOMAIN]:
+                    hass.data[DOMAIN][_KEY_IOT_LOGIN_FAILED] = {}
+                hass.data[DOMAIN][_KEY_IOT_LOGIN_FAILED][entry.entry_id] = str(err)
 
     # Get options
     options = entry.options
@@ -164,11 +209,22 @@ async def _async_cleanup_orphaned_entities(
     entry: ConfigEntry,
     coordinator: GoveeCoordinator,
 ) -> None:
-    """Remove entity registry entries for devices no longer discovered.
+    """Remove entity registry entries for devices no longer discovered or features disabled.
 
-    This handles cleanup when group devices are disabled or devices are removed.
+    This handles cleanup when:
+    - Devices are removed from the Govee account
+    - Group devices are disabled via enable_groups option
+    - Segment entities are disabled via enable_segments option
+    - Scene entities are disabled via enable_scenes option
+    - DIY scene entities are disabled via enable_diy_scenes option
     """
     entity_registry = er.async_get(hass)
+
+    # Get current options
+    options = entry.options
+    enable_segments = options.get(CONF_ENABLE_SEGMENTS, DEFAULT_ENABLE_SEGMENTS)
+    enable_scenes = options.get(CONF_ENABLE_SCENES, DEFAULT_ENABLE_SCENES)
+    enable_diy_scenes = options.get(CONF_ENABLE_DIY_SCENES, DEFAULT_ENABLE_DIY_SCENES)
 
     # Suffixes used by various entity types
     entity_suffixes = (
@@ -183,27 +239,65 @@ async def _async_cleanup_orphaned_entities(
     for entity_entry in er.async_entries_for_config_entry(entity_registry, entry.entry_id):
         # Extract device_id from unique_id
         unique_id = entity_entry.unique_id
-        if unique_id:
+        if not unique_id:
+            continue
+
+        should_remove = False
+        removal_reason = ""
+
+        # Check for segment entities that should be removed
+        if "_segment_" in unique_id:
+            if not enable_segments:
+                should_remove = True
+                removal_reason = "segments disabled"
+            else:
+                # Check if parent device exists
+                device_id = unique_id.split("_segment_")[0]
+                if device_id not in coordinator.devices:
+                    should_remove = True
+                    removal_reason = f"device {device_id} not discovered"
+
+        # Check for scene select entities that should be removed
+        elif unique_id.endswith("_scene_select"):
+            if not enable_scenes:
+                should_remove = True
+                removal_reason = "scenes disabled"
+            else:
+                device_id = unique_id[: -len("_scene_select")]
+                if device_id not in coordinator.devices:
+                    should_remove = True
+                    removal_reason = f"device {device_id} not discovered"
+
+        # Check for DIY scene select entities that should be removed
+        elif unique_id.endswith("_diy_scene_select"):
+            if not enable_diy_scenes:
+                should_remove = True
+                removal_reason = "DIY scenes disabled"
+            else:
+                device_id = unique_id[: -len("_diy_scene_select")]
+                if device_id not in coordinator.devices:
+                    should_remove = True
+                    removal_reason = f"device {device_id} not discovered"
+
+        # Check other entity types for device existence
+        else:
             device_id = unique_id
-
-            # Handle segment entities (e.g., "AA:BB:CC:DD_segment_0")
-            if "_segment_" in device_id:
-                device_id = device_id.split("_segment_")[0]
-
-            # Handle other entity suffixes
             for suffix in entity_suffixes:
                 if device_id.endswith(suffix):
                     device_id = device_id[: -len(suffix)]
                     break
 
-            # Check if this device is still discovered
             if device_id not in coordinator.devices:
-                entries_to_remove.append(entity_entry)
-                _LOGGER.debug(
-                    "Marking orphaned entity for removal: %s (device %s not discovered)",
-                    entity_entry.entity_id,
-                    device_id,
-                )
+                should_remove = True
+                removal_reason = f"device {device_id} not discovered"
+
+        if should_remove:
+            entries_to_remove.append(entity_entry)
+            _LOGGER.debug(
+                "Marking orphaned entity for removal: %s (%s)",
+                entity_entry.entity_id,
+                removal_reason,
+            )
 
     # Remove orphaned entries
     for entity_entry in entries_to_remove:

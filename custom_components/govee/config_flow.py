@@ -158,6 +158,24 @@ class GoveeConfigFlow(ConfigFlow, domain=DOMAIN):
             },
         )
 
+    def _clear_mqtt_cache(self, entry_id: str) -> None:
+        """Clear cached MQTT credentials and login failure for an entry.
+
+        This allows a fresh login attempt after reconfigure.
+        """
+        if DOMAIN not in self.hass.data:
+            return
+
+        # Clear cached credentials
+        if "iot_credentials" in self.hass.data[DOMAIN]:
+            self.hass.data[DOMAIN]["iot_credentials"].pop(entry_id, None)
+
+        # Clear login failure flag
+        if "iot_login_failed" in self.hass.data[DOMAIN]:
+            self.hass.data[DOMAIN]["iot_login_failed"].pop(entry_id, None)
+
+        _LOGGER.debug("Cleared MQTT cache for entry %s", entry_id)
+
     def _create_entry(self) -> ConfigFlowResult:
         """Create the config entry."""
         data: dict[str, Any] = {
@@ -276,6 +294,9 @@ class GoveeConfigFlow(ConfigFlow, domain=DOMAIN):
                     new_data.pop(CONF_PASSWORD, None)
 
                 if not errors:
+                    # Clear cached MQTT credentials/failure to allow fresh login attempt
+                    self._clear_mqtt_cache(reconfigure_entry.entry_id)
+
                     return self.async_update_reload_and_abort(
                         reconfigure_entry,
                         data_updates=new_data,
