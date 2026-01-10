@@ -198,6 +198,27 @@ RGBIC segment count is in `fields[].elementRange.max + 1`:
 segment_count = element_range["max"] + 1
 ```
 
+## API Limitations & State Handling
+
+### Scene State
+- **Limitation**: API doesn't reliably return active scene
+- **Solution**: Preserve scene via optimistic state
+- **Clear when**: Device is turned off (scene is no longer active)
+- **Implementation**: `coordinator.py` preserves `active_scene` on API poll if device is ON
+
+### Segment Colors
+- **Limitation**: API returns empty strings for segment colors
+- **Solution**: Segment entities use local optimistic state + `RestoreEntity`
+- **Clear when**: Never (persists across restarts via HA state machine)
+- **Implementation**: `platforms/segment.py` does NOT subscribe to coordinator updates
+
+### Pattern
+For API values that aren't reliably returned:
+1. Use optimistic state from commands
+2. Use `RestoreEntity` to persist across HA restarts
+3. Don't overwrite with API responses
+4. Clear on appropriate events (e.g., power off for scenes)
+
 ## Debug Logging Patterns
 
 Add debug logging when:

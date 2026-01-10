@@ -63,7 +63,11 @@ class GoveeSegmentEntity(LightEntity, RestoreEntity):
     """Govee segment light entity.
 
     Represents a single segment of an RGBIC LED strip.
-    Uses optimistic state since API doesn't return per-segment state.
+
+    API Limitation: Govee API returns empty strings for segment colors.
+    We use purely optimistic/local state that persists via RestoreEntity.
+    This entity intentionally does NOT subscribe to coordinator updates
+    to prevent API responses from overwriting local state.
     """
 
     _attr_has_entity_name = True
