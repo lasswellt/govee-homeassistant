@@ -1,6 +1,6 @@
 {
   "domain": "govee",
-  "name": "Govee",
+  "name": "Govee Cloud Integration",
   "codeowners": ["@lasswellt"],
   "config_flow": true,
   "dependencies": [],
@@ -9,6 +9,7 @@
   "integration_type": "hub",
   "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/lasswellt/hacs-govee/issues",
+  "loggers": ["aiohttp", "aiomqtt"],
   "requirements": [
     "aiohttp-retry>=2.8.3",
     "aiomqtt>=2.0.0",
