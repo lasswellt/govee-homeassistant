@@ -314,7 +314,7 @@ class GoveeAwsIotClient:
     async def _handle_message(self, message: Any) -> None:
         """Handle incoming AWS IoT MQTT message.
 
-        Message format from PCAP analysis:
+        Message format from PCAP analysis (state updates):
         {
             "device": "XX:XX:XX:XX:XX:XX:XX:XX",
             "sku": "H6072",
@@ -325,6 +325,8 @@ class GoveeAwsIotClient:
                 "colorTemInKelvin": 0
             }
         }
+
+        Command responses and other messages are silently ignored.
         """
         try:
             raw_payload = message.payload
@@ -332,11 +334,21 @@ class GoveeAwsIotClient:
 
             data = json.loads(payload_str)
 
+            # Ignore command messages (our own publishes or responses)
+            if "msg" in data:
+                _LOGGER.debug("Ignoring command/response message")
+                return
+
             device_id = data.get("device")
             state = data.get("state", {})
 
+            # Only process messages with device ID and state
             if not device_id:
-                _LOGGER.debug("AWS IoT message missing device ID")
+                _LOGGER.debug("AWS IoT message missing device ID, ignoring")
+                return
+
+            if not state:
+                _LOGGER.debug("AWS IoT message missing state for %s, ignoring", device_id)
                 return
 
             _LOGGER.debug(
@@ -377,12 +389,14 @@ class GoveeAwsIotClient:
             _LOGGER.warning("Cannot publish ptReal: MQTT not connected")
             return False
 
-        # Build ptReal payload
+        # Build ptReal payload with device targeting
         payload = {
             "msg": {
                 "cmd": "ptReal",
                 "data": {
                     "command": [ble_packet_base64],
+                    "device": device_id,
+                    "sku": sku,
                 },
                 "cmdVersion": 0,
                 "transaction": f"v_{int(time.time() * 1000)}",
@@ -390,14 +404,15 @@ class GoveeAwsIotClient:
             }
         }
 
-        # Publish to account topic (same as subscription topic)
-        topic = self._credentials.account_topic
+        # Build device-specific topic for commands
+        # Format: GD/{device_id} for device commands (vs GA/{account} for account-level)
+        device_topic = f"GD/{device_id}"
 
         try:
-            await self._client.publish(topic, json.dumps(payload))
+            await self._client.publish(device_topic, json.dumps(payload))
             _LOGGER.debug(
                 "Published ptReal to %s for device %s (sku=%s)",
-                topic[:30] + "...",
+                device_topic,
                 device_id,
                 sku,
             )
