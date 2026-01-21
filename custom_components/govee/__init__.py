@@ -244,6 +244,7 @@ async def _async_cleanup_orphaned_entities(
         "_scene_select",
         "_diy_scene_select",
         "_diy_style_select",
+        "_hdmi_source_select",
         "_refresh_scenes",
         "_night_light",
         "_music_mode",

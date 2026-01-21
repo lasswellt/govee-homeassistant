@@ -25,7 +25,8 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import GoveeCoordinator
-from .models import DIYSceneCommand, GoveeDevice, SceneCommand
+from .models import DIYSceneCommand, GoveeDevice, ModeCommand, SceneCommand
+from .models.device import INSTANCE_HDMI_SOURCE
 
 # DIY Style options for select entity
 DIY_STYLE_OPTIONS = list(DIY_STYLE_NAMES.keys())
@@ -102,6 +103,19 @@ async def async_setup_entry(
                     )
                 )
                 _LOGGER.debug("Created DIY style select entity for %s", device.name)
+
+        # HDMI source selector (for devices like AI Sync Box H6604)
+        if device.supports_hdmi_source:
+            hdmi_options = device.get_hdmi_source_options()
+            if hdmi_options:
+                entities.append(
+                    GoveeHdmiSourceSelectEntity(
+                        coordinator=coordinator,
+                        device=device,
+                        options=hdmi_options,
+                    )
+                )
+                _LOGGER.debug("Created HDMI source select entity for %s", device.name)
 
     async_add_entities(entities)
     _LOGGER.debug("Set up %d Govee scene select entities", len(entities))
@@ -433,6 +447,117 @@ class GoveeDIYStyleSelectEntity(CoordinatorEntity["GoveeCoordinator"], SelectEnt
         else:
             _LOGGER.warning(
                 "Failed to set DIY style '%s' on %s",
+                option,
+                self._device.name,
+            )
+
+
+class GoveeHdmiSourceSelectEntity(CoordinatorEntity["GoveeCoordinator"], SelectEntity):
+    """Govee HDMI source select entity.
+
+    Provides a dropdown to select HDMI input source on devices like
+    the Govee AI Sync Box (H6604).
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "govee_hdmi_source_select"
+    _attr_icon = "mdi:hdmi-port"
+
+    def __init__(
+        self,
+        coordinator: GoveeCoordinator,
+        device: GoveeDevice,
+        options: list[dict[str, Any]],
+    ) -> None:
+        """Initialize the HDMI source select entity.
+
+        Args:
+            coordinator: Govee data coordinator.
+            device: Device this select belongs to.
+            options: List of HDMI source options from capability parameters.
+        """
+        super().__init__(coordinator)
+
+        self._device = device
+        self._device_id = device.device_id
+
+        # Build option mapping: display name -> value
+        self._option_map: dict[str, int] = {}
+        option_names: list[str] = []
+
+        for opt in options:
+            name = opt.get("name", "")
+            value = opt.get("value")
+            if name and value is not None:
+                self._option_map[name] = value
+                option_names.append(name)
+
+        self._attr_options = option_names
+
+        # Unique ID
+        self._attr_unique_id = f"{device.device_id}_hdmi_source_select"
+
+        # Entity name
+        self._attr_name = "HDMI Source"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._device.device_id)},
+            name=self._device.name,
+            manufacturer="Govee",
+            model=self._device.sku,
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        state = self.coordinator.get_state(self._device_id)
+        if state is None:
+            return False
+        return state.online or self._device.is_group
+
+    @property
+    def current_option(self) -> str | None:
+        """Return current selected option from state."""
+        state = self.coordinator.get_state(self._device_id)
+        if state and state.hdmi_source is not None:
+            # Find option name matching the current value
+            for name, value in self._option_map.items():
+                if value == state.hdmi_source:
+                    return name
+        # Return first option as default if available
+        return self._attr_options[0] if self._attr_options else None
+
+    async def async_select_option(self, option: str) -> None:
+        """Handle HDMI source selection."""
+        value = self._option_map.get(option)
+        if value is None:
+            _LOGGER.warning("Unknown HDMI source option: %s", option)
+            return
+
+        command = ModeCommand(
+            mode_instance=INSTANCE_HDMI_SOURCE,
+            value=value,
+        )
+
+        success = await self.coordinator.async_control_device(
+            self._device_id,
+            command,
+        )
+
+        if success:
+            self.async_write_ha_state()
+            _LOGGER.debug(
+                "Set HDMI source '%s' (value=%d) on %s",
+                option,
+                value,
+                self._device.name,
+            )
+        else:
+            _LOGGER.warning(
+                "Failed to set HDMI source '%s' on %s",
                 option,
                 self._device.name,
             )

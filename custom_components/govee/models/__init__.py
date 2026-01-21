@@ -9,6 +9,7 @@ from .commands import (
     ColorTempCommand,
     DeviceCommand,
     DIYSceneCommand,
+    ModeCommand,
     OscillationCommand,
     PowerCommand,
     SceneCommand,
@@ -47,5 +48,6 @@ __all__ = [
     "ToggleCommand",
     "OscillationCommand",
     "WorkModeCommand",
+    "ModeCommand",
     "create_night_light_command",
 ]

@@ -21,6 +21,7 @@ CAPABILITY_MUSIC_MODE = "devices.capabilities.music_setting"
 CAPABILITY_TOGGLE = "devices.capabilities.toggle"
 CAPABILITY_WORK_MODE = "devices.capabilities.work_mode"
 CAPABILITY_PROPERTY = "devices.capabilities.property"
+CAPABILITY_MODE = "devices.capabilities.mode"
 
 # Device type constants
 DEVICE_TYPE_LIGHT = "devices.types.light"
@@ -42,6 +43,7 @@ INSTANCE_GRADUAL_ON = "gradientToggle"
 INSTANCE_TIMER = "timer"
 INSTANCE_OSCILLATION = "oscillationToggle"
 INSTANCE_WORK_MODE = "workMode"
+INSTANCE_HDMI_SOURCE = "hdmiSource"
 
 
 @dataclass(frozen=True)
@@ -196,6 +198,11 @@ class GoveeCapability:
         return self.type == CAPABILITY_WORK_MODE and self.instance == INSTANCE_WORK_MODE
 
     @property
+    def is_hdmi_source(self) -> bool:
+        """Check if this is an HDMI source mode capability."""
+        return self.type == CAPABILITY_MODE and self.instance == INSTANCE_HDMI_SOURCE
+
+    @property
     def brightness_range(self) -> tuple[int, int]:
         """Get brightness min/max range. Default (0, 100)."""
         if not self.is_brightness:
@@ -290,6 +297,18 @@ class GoveeDevice:
     def supports_work_mode(self) -> bool:
         """Check if device supports work mode (fans)."""
         return any(cap.is_work_mode for cap in self.capabilities)
+
+    @property
+    def supports_hdmi_source(self) -> bool:
+        """Check if device supports HDMI source selection."""
+        return any(cap.is_hdmi_source for cap in self.capabilities)
+
+    def get_hdmi_source_options(self) -> list[dict[str, Any]]:
+        """Get available HDMI source options from capability parameters."""
+        for cap in self.capabilities:
+            if cap.is_hdmi_source:
+                return cap.parameters.get("options", [])
+        return []
 
     @property
     def is_light_device(self) -> bool:

@@ -13,6 +13,7 @@ from typing import Any
 from .device import (
     CAPABILITY_COLOR_SETTING,
     CAPABILITY_DYNAMIC_SCENE,
+    CAPABILITY_MODE,
     CAPABILITY_ON_OFF,
     CAPABILITY_RANGE,
     CAPABILITY_SEGMENT_COLOR,
@@ -276,3 +277,27 @@ class WorkModeCommand(DeviceCommand):
 
     def get_value(self) -> dict[str, int]:
         return {"workMode": self.work_mode, "modeValue": self.mode_value}
+
+
+@dataclass(frozen=True)
+class ModeCommand(DeviceCommand):
+    """Command to set a mode value (e.g., HDMI source).
+
+    This is a generic command for mode-type capabilities that take
+    an integer value. Used for HDMI source selection on devices
+    like the Govee AI Sync Box (H6604).
+    """
+
+    mode_instance: str  # e.g., "hdmiSource"
+    value: int  # e.g., 1, 2, 3, 4 for HDMI ports
+
+    @property
+    def capability_type(self) -> str:
+        return CAPABILITY_MODE
+
+    @property
+    def instance(self) -> str:
+        return self.mode_instance
+
+    def get_value(self) -> int:
+        return self.value

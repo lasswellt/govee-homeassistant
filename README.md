@@ -60,6 +60,7 @@ Enter your API key. Want instant updates? Add your Govee email/password for MQTT
 | **LED Lights & Strips** | On/off, brightness, RGB, color temp |
 | **RGBIC Strips** | All the above + per-segment colors |
 | **Fans** | On/off, speed (Low/Medium/High), oscillation, preset modes |
+| **HDMI Sync Boxes** | On/off, HDMI input selection (1-4) |
 
 > **Note:** Cloud-enabled devices only. Bluetooth-only devices need a different integration.
 
@@ -81,7 +82,65 @@ No credentials? Polling works fine (every 60 seconds by default).
 | Slow updates | Enable MQTT or reduce poll interval in options |
 | Rate limit errors | Increase poll interval (Govee allows 100 req/min) |
 
-Need debug logs? Add `custom_components.govee: debug` to your logger config.
+---
+
+## Debug Logging
+
+When troubleshooting issues, enable debug logging to capture detailed information about what the integration is doing.
+
+### Enable Debug Logging
+
+**Option 1: From the Integration (Recommended)**
+1. Go to **Settings** → **Devices & Services**
+2. Find the **Govee** integration card
+3. Click the **three dots menu** (⋮) on the integration card
+4. Select **Enable debug logging**
+5. Reproduce the issue (turn on a light, trigger the error, etc.)
+6. Return to the integration card, click the three dots menu again
+7. Select **Disable debug logging**
+8. Your browser will download a log file automatically
+
+**Option 2: Via configuration.yaml**
+
+For issues during startup or if you need persistent debug logging, add to your `configuration.yaml` and restart:
+
+```yaml
+logger:
+  default: info
+  logs:
+    custom_components.govee: debug
+```
+
+### Viewing Logs
+
+- Go to **Settings** → **System** → **Logs**
+- Click **Load Full Logs** to see everything
+- Use the search box to filter for "govee"
+
+See [Home Assistant Logger docs](https://www.home-assistant.io/integrations/logger/) for more details.
+
+### Gathering Logs for Issues
+
+When opening an issue, include relevant log entries. Here's what to capture:
+
+1. **Enable debug logging** (see above)
+2. **Reproduce the issue** (turn on/off a device, change a scene, etc.)
+3. **Copy the relevant log entries**
+
+**What to include:**
+- Logs from when Home Assistant starts (shows device discovery)
+- Logs from when the issue occurs
+- Any error messages or tracebacks
+
+**Example log snippet to include:**
+```
+2024-01-15 10:30:45 DEBUG (MainThread) [custom_components.govee.coordinator] Device: Living Room Light (AA:BB:CC:DD:EE:FF:00:11) type=devices.types.light
+2024-01-15 10:30:45 DEBUG (MainThread) [custom_components.govee.coordinator]   Capability: type=devices.capabilities.on_off instance=powerSwitch
+```
+
+**Before posting**, redact sensitive information:
+- Replace device IDs with `XX:XX:XX:XX:XX:XX:XX:XX`
+- Remove any email addresses or account IDs
 
 ---
 

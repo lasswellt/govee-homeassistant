@@ -17,6 +17,7 @@ from custom_components.govee.models import (
     SegmentColorCommand,
     OscillationCommand,
     WorkModeCommand,
+    ModeCommand,
 )
 from custom_components.govee.models.device import (
     CAPABILITY_ON_OFF,
@@ -25,6 +26,7 @@ from custom_components.govee.models.device import (
     CAPABILITY_DYNAMIC_SCENE,
     CAPABILITY_TOGGLE,
     CAPABILITY_WORK_MODE,
+    CAPABILITY_MODE,
     INSTANCE_POWER,
     INSTANCE_BRIGHTNESS,
     INSTANCE_COLOR_RGB,
@@ -32,6 +34,7 @@ from custom_components.govee.models.device import (
     INSTANCE_SCENE,
     INSTANCE_OSCILLATION,
     INSTANCE_WORK_MODE,
+    INSTANCE_HDMI_SOURCE,
 )
 
 
@@ -140,6 +143,21 @@ class TestGoveeCapability:
         cap = GoveeCapability(type=CAPABILITY_WORK_MODE, instance=INSTANCE_WORK_MODE, parameters={})
         assert cap.is_work_mode is True
 
+    def test_is_hdmi_source(self):
+        """Test HDMI source mode capability detection."""
+        cap = GoveeCapability(
+            type=CAPABILITY_MODE,
+            instance=INSTANCE_HDMI_SOURCE,
+            parameters={
+                "options": [
+                    {"name": "HDMI 1", "value": 1},
+                    {"name": "HDMI 2", "value": 2},
+                ],
+            },
+        )
+        assert cap.is_hdmi_source is True
+        assert cap.is_work_mode is False
+
     def test_immutable(self):
         """Test that GoveeCapability is immutable (frozen)."""
         cap = GoveeCapability(type=CAPABILITY_ON_OFF, instance=INSTANCE_POWER, parameters={})
@@ -220,6 +238,24 @@ class TestGoveeDevice:
         """Test that fan devices are not detected as lights."""
         assert mock_fan_device.is_light_device is False
         assert mock_fan_device.supports_power is True
+
+    def test_supports_hdmi_source(self, mock_hdmi_device):
+        """Test HDMI source support detection."""
+        assert mock_hdmi_device.supports_hdmi_source is True
+
+    def test_get_hdmi_source_options(self, mock_hdmi_device):
+        """Test getting HDMI source options from device."""
+        options = mock_hdmi_device.get_hdmi_source_options()
+        assert len(options) == 4
+        assert options[0]["name"] == "HDMI 1"
+        assert options[0]["value"] == 1
+        assert options[3]["name"] == "HDMI 4"
+        assert options[3]["value"] == 4
+
+    def test_get_hdmi_source_options_no_support(self, mock_light_device):
+        """Test getting HDMI source options from device without HDMI support."""
+        options = mock_light_device.get_hdmi_source_options()
+        assert options == []
 
     def test_from_api_response(self, api_device_response):
         """Test creating device from API response."""
@@ -366,6 +402,34 @@ class TestGoveeDeviceState:
         assert state.mode_value == 3
         assert state.source == "optimistic"
 
+    def test_hdmi_source_state_field(self):
+        """Test HDMI source state field."""
+        state = GoveeDeviceState.create_empty("test_id")
+        assert state.hdmi_source is None
+
+    def test_update_hdmi_source_from_api(self):
+        """Test updating HDMI source from API response."""
+        state = GoveeDeviceState.create_empty("test_id")
+        api_response = {
+            "capabilities": [
+                {
+                    "type": "devices.capabilities.mode",
+                    "instance": "hdmiSource",
+                    "state": {"value": 2},
+                },
+            ],
+        }
+        state.update_from_api(api_response)
+        assert state.hdmi_source == 2
+        assert state.source == "api"
+
+    def test_optimistic_hdmi_source(self):
+        """Test optimistic HDMI source update."""
+        state = GoveeDeviceState.create_empty("test_id")
+        state.apply_optimistic_hdmi_source(3)
+        assert state.hdmi_source == 3
+        assert state.source == "optimistic"
+
 
 # ==============================================================================
 # Command Tests
@@ -460,3 +524,20 @@ class TestCommands:
         value = cmd.get_value()
         assert value["workMode"] == 3
         assert value["modeValue"] == 0
+
+    def test_mode_command_hdmi_source(self):
+        """Test mode command for HDMI source selection."""
+        cmd = ModeCommand(mode_instance="hdmiSource", value=2)
+        assert cmd.mode_instance == "hdmiSource"
+        assert cmd.value == 2
+        assert cmd.get_value() == 2
+        payload = cmd.to_api_payload()
+        assert payload["type"] == "devices.capabilities.mode"
+        assert payload["instance"] == "hdmiSource"
+        assert payload["value"] == 2
+
+    def test_mode_command_immutable(self):
+        """Test that ModeCommand is immutable."""
+        cmd = ModeCommand(mode_instance="hdmiSource", value=1)
+        with pytest.raises(AttributeError):
+            cmd.value = 2

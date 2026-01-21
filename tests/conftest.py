@@ -21,6 +21,7 @@ from custom_components.govee.models import (
 from custom_components.govee.models.device import (
     CAPABILITY_COLOR_SETTING,
     CAPABILITY_DYNAMIC_SCENE,
+    CAPABILITY_MODE,
     CAPABILITY_ON_OFF,
     CAPABILITY_RANGE,
     CAPABILITY_SEGMENT_COLOR,
@@ -29,6 +30,7 @@ from custom_components.govee.models.device import (
     INSTANCE_BRIGHTNESS,
     INSTANCE_COLOR_RGB,
     INSTANCE_COLOR_TEMP,
+    INSTANCE_HDMI_SOURCE,
     INSTANCE_OSCILLATION,
     INSTANCE_POWER,
     INSTANCE_SCENE,
@@ -410,6 +412,107 @@ def api_fan_state_response() -> dict[str, Any]:
                 "type": CAPABILITY_WORK_MODE,
                 "instance": INSTANCE_WORK_MODE,
                 "state": {"value": {"workMode": 1, "modeValue": 2}},
+            },
+        ],
+    }
+
+
+@pytest.fixture
+def hdmi_capabilities() -> tuple[GoveeCapability, ...]:
+    """Create capabilities for an HDMI sync box device (H6604)."""
+    return (
+        GoveeCapability(
+            type=CAPABILITY_ON_OFF,
+            instance=INSTANCE_POWER,
+            parameters={},
+        ),
+        GoveeCapability(
+            type=CAPABILITY_MODE,
+            instance=INSTANCE_HDMI_SOURCE,
+            parameters={
+                "options": [
+                    {"name": "HDMI 1", "value": 1},
+                    {"name": "HDMI 2", "value": 2},
+                    {"name": "HDMI 3", "value": 3},
+                    {"name": "HDMI 4", "value": 4},
+                ],
+            },
+        ),
+    )
+
+
+@pytest.fixture
+def mock_hdmi_device(hdmi_capabilities) -> GoveeDevice:
+    """Create a mock HDMI sync box device (H6604)."""
+    return GoveeDevice(
+        device_id="AA:BB:CC:DD:EE:FF:00:55",
+        sku="H6604",
+        name="AI Sync Box",
+        device_type=DEVICE_TYPE_LIGHT,
+        capabilities=hdmi_capabilities,
+        is_group=False,
+    )
+
+
+@pytest.fixture
+def mock_hdmi_device_state() -> GoveeDeviceState:
+    """Create a mock HDMI device state."""
+    state = GoveeDeviceState(
+        device_id="AA:BB:CC:DD:EE:FF:00:55",
+        online=True,
+        power_state=True,
+        brightness=100,
+        source="api",
+    )
+    state.hdmi_source = 1  # HDMI 1 selected
+    return state
+
+
+@pytest.fixture
+def api_hdmi_device_response() -> dict[str, Any]:
+    """Create a mock API HDMI device response (H6604)."""
+    return {
+        "device": "AA:BB:CC:DD:EE:FF:00:55",
+        "sku": "H6604",
+        "deviceName": "AI Sync Box",
+        "type": "devices.types.light",
+        "capabilities": [
+            {"type": CAPABILITY_ON_OFF, "instance": INSTANCE_POWER, "parameters": {}},
+            {
+                "type": CAPABILITY_MODE,
+                "instance": INSTANCE_HDMI_SOURCE,
+                "parameters": {
+                    "options": [
+                        {"name": "HDMI 1", "value": 1},
+                        {"name": "HDMI 2", "value": 2},
+                        {"name": "HDMI 3", "value": 3},
+                        {"name": "HDMI 4", "value": 4},
+                    ],
+                },
+            },
+        ],
+    }
+
+
+@pytest.fixture
+def api_hdmi_state_response() -> dict[str, Any]:
+    """Create a mock API HDMI state response."""
+    return {
+        "capabilities": [
+            {
+                "type": "devices.capabilities.online",
+                "instance": "online",
+                "state": {"value": True},
+            },
+            {
+                "type": CAPABILITY_ON_OFF,
+                "instance": INSTANCE_POWER,
+                "state": {"value": 1},
+            },
+            {
+                "type": CAPABILITY_MODE,
+                "instance": INSTANCE_HDMI_SOURCE,
+                "state": {"value": 2},
             },
         ],
     }

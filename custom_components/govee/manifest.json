@@ -9,13 +9,13 @@
   "integration_type": "hub",
   "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/lasswellt/govee-homeassistant/issues",
-  "loggers": ["aiohttp", "aiomqtt"],
+  "loggers": ["custom_components.govee", "aiohttp", "aiomqtt"],
   "requirements": [
     "aiohttp-retry>=2.8.3",
     "aiomqtt>=2.0.0",
     "cryptography>=41.0.0"
   ],
   "ssdp": [],
-  "version": "2026.1.51",
+  "version": "2026.1.52",
   "zeroconf": []
 }

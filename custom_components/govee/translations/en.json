@@ -86,6 +86,9 @@
       },
       "govee_diy_style_select": {
         "name": "DIY Style"
+      },
+      "govee_hdmi_source_select": {
+        "name": "HDMI Source"
       }
     },
     "switch": {

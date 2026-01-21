@@ -93,6 +93,9 @@ class GoveeDeviceState:
     work_mode: int | None = None  # Fan work mode: 1=gearMode, 3=Auto, 9=Fan
     mode_value: int | None = None  # Fan speed for gearMode: 1=Low, 2=Medium, 3=High
 
+    # HDMI source state (for devices like AI Sync Box H6604)
+    hdmi_source: int | None = None  # HDMI port: 1, 2, 3, 4
+
     # Source tracking for state management
     # "api" = from REST poll, "mqtt" = from push, "optimistic" = from command
     source: str = "api"
@@ -141,6 +144,10 @@ class GoveeDeviceState:
                 if instance == "workMode" and isinstance(value, dict):
                     self.work_mode = value.get("workMode")
                     self.mode_value = value.get("modeValue")
+
+            elif cap_type == "devices.capabilities.mode":
+                if instance == "hdmiSource":
+                    self.hdmi_source = int(value) if value is not None else None
 
     def update_from_mqtt(self, data: dict[str, Any]) -> None:
         """Update state from MQTT push message.
@@ -218,6 +225,11 @@ class GoveeDeviceState:
         """Apply optimistic work mode update (fans)."""
         self.work_mode = work_mode
         self.mode_value = mode_value
+        self.source = "optimistic"
+
+    def apply_optimistic_hdmi_source(self, source: int) -> None:
+        """Apply optimistic HDMI source update."""
+        self.hdmi_source = source
         self.source = "optimistic"
 
     @classmethod

@@ -667,9 +667,11 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             BrightnessCommand,
             ColorCommand,
             ColorTempCommand,
+            ModeCommand,
             PowerCommand,
             SceneCommand,
         )
+        from .models.device import INSTANCE_HDMI_SOURCE
 
         if isinstance(command, PowerCommand):
             state.apply_optimistic_power(command.power_on)
@@ -681,6 +683,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             state.apply_optimistic_color_temp(command.kelvin)
         elif isinstance(command, SceneCommand):
             state.apply_optimistic_scene(str(command.scene_id))
+        elif isinstance(command, ModeCommand):
+            if command.mode_instance == INSTANCE_HDMI_SOURCE:
+                state.apply_optimistic_hdmi_source(command.value)
 
     async def async_get_scenes(
         self,
