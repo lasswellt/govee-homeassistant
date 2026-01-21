@@ -82,10 +82,11 @@ class TestGoveeFanEntity:
     def test_percentage_medium(self, fan_entity):
         """Test percentage property for medium speed."""
         # Mock state has mode_value=2 (medium) in gear mode
-        # Medium is the middle value, so should be around 50%
+        # With 3 speeds, HA's ordered_list_item_to_percentage returns:
+        # Low=33, Medium=66, High=100 (evenly divided)
         percentage = fan_entity.percentage
         assert percentage is not None
-        assert percentage == 50  # Medium = 50%
+        assert percentage == 66  # Medium = 66% (2/3 of range)
 
     def test_percentage_low(self, fan_entity, mock_coordinator, mock_fan_device_state):
         """Test percentage property for low speed."""

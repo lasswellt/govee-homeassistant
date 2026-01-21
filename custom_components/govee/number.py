@@ -1,7 +1,7 @@
 """Number platform for Govee integration.
 
 Provides number entities for device controls that use numeric values,
-such as DIY scene playback speed.
+such as DIY scene playback speed and regular scene speed.
 """
 
 from __future__ import annotations
@@ -18,7 +18,9 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
     CONF_ENABLE_DIY_SCENES,
+    CONF_ENABLE_SCENES,
     DEFAULT_ENABLE_DIY_SCENES,
+    DEFAULT_ENABLE_SCENES,
     DOMAIN,
 )
 from .coordinator import GoveeCoordinator
@@ -37,25 +39,28 @@ async def async_setup_entry(
 
     entities: list[NumberEntity] = []
 
-    # Check if DIY scenes are enabled
+    # Check options
     enable_diy_scenes = entry.options.get(CONF_ENABLE_DIY_SCENES, DEFAULT_ENABLE_DIY_SCENES)
+    enable_scenes = entry.options.get(CONF_ENABLE_SCENES, DEFAULT_ENABLE_SCENES)
 
     _LOGGER.debug(
-        "Number entity setup: enable_diy_scenes=%s mqtt_connected=%s",
+        "Number entity setup: enable_diy_scenes=%s enable_scenes=%s mqtt_connected=%s",
         enable_diy_scenes,
+        enable_scenes,
         coordinator.mqtt_connected,
     )
 
-    # DIY speed control requires MQTT for BLE passthrough
+    # Speed controls require MQTT for BLE passthrough
     if not coordinator.mqtt_connected:
-        _LOGGER.debug("Skipping DIY speed entities: MQTT not connected")
+        _LOGGER.debug("Skipping speed entities: MQTT not connected")
         async_add_entities([])
         return
 
     for device in coordinator.devices.values():
         _LOGGER.debug(
-            "Device %s: supports_diy_scenes=%s",
+            "Device %s: supports_scenes=%s supports_diy_scenes=%s",
             device.name,
+            device.supports_scenes,
             device.supports_diy_scenes,
         )
 
@@ -70,6 +75,25 @@ async def async_setup_entry(
                     )
                 )
                 _LOGGER.debug("Created DIY speed number entity for %s", device.name)
+
+        # Scene speed control for devices that support it
+        if enable_scenes and device.supports_scenes:
+            # Fetch light effect library to check speed support
+            library = await coordinator.async_get_light_effect_library(device.device_id)
+            if library.get("support_speed", 0) == 1:
+                speed_range = coordinator.get_scene_speed_range(device.device_id)
+                entities.append(
+                    GoveeSceneSpeedNumber(
+                        coordinator=coordinator,
+                        device=device,
+                        speed_range=speed_range,
+                    )
+                )
+                _LOGGER.debug(
+                    "Created scene speed number entity for %s (range=%s)",
+                    device.name,
+                    speed_range,
+                )
 
     async_add_entities(entities)
     _LOGGER.debug("Set up %d Govee number entities", len(entities))
@@ -189,6 +213,131 @@ class GoveeDIYSpeedNumber(
         else:
             _LOGGER.warning(
                 "Failed to set DIY speed to %d on %s",
+                speed,
+                self._device.name,
+            )
+
+
+class GoveeSceneSpeedNumber(
+    CoordinatorEntity["GoveeCoordinator"],
+    RestoreEntity,
+    NumberEntity,
+):
+    """Govee regular scene speed control entity.
+
+    Controls the playback speed of regular (non-DIY) scenes on devices
+    that support speed control. Unlike DIY scenes, regular scene speed
+    doesn't require matching the animation style.
+
+    Uses RestoreEntity to persist speed across Home Assistant restarts
+    since the API doesn't return the current speed value.
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "govee_scene_speed"
+    _attr_icon = "mdi:speedometer"
+    _attr_mode = NumberMode.SLIDER
+
+    def __init__(
+        self,
+        coordinator: GoveeCoordinator,
+        device: GoveeDevice,
+        speed_range: tuple[int, int] | None = None,
+    ) -> None:
+        """Initialize the scene speed number entity.
+
+        Args:
+            coordinator: Govee data coordinator.
+            device: Device this entity controls.
+            speed_range: Optional (min, max) speed range from light effect library.
+        """
+        super().__init__(coordinator)
+
+        self._device = device
+        self._device_id = device.device_id
+
+        # Set speed range (default 1-100)
+        min_speed, max_speed = speed_range or (1, 100)
+        self._attr_native_min_value = float(min_speed)
+        self._attr_native_max_value = float(max_speed)
+        self._attr_native_step = 1
+        self._attr_native_value: float | None = 50.0  # Default to mid-speed
+
+        # Unique ID
+        self._attr_unique_id = f"{device.device_id}_scene_speed"
+
+        # Entity name
+        self._attr_name = "Scene Speed"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._device.device_id)},
+            name=self._device.name,
+            manufacturer="Govee",
+            model=self._device.sku,
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available.
+
+        Requires MQTT connection for BLE passthrough.
+        """
+        if not self.coordinator.mqtt_connected:
+            return False
+
+        state = self.coordinator.get_state(self._device_id)
+        if state is None:
+            return False
+        return state.online or self._device.is_group
+
+    async def async_added_to_hass(self) -> None:
+        """Restore state when entity is added to Home Assistant."""
+        await super().async_added_to_hass()
+
+        # Restore previous state
+        if (last_state := await self.async_get_last_state()) is not None:
+            if last_state.state not in (None, "unknown", "unavailable"):
+                try:
+                    self._attr_native_value = float(last_state.state)
+                    _LOGGER.debug(
+                        "Restored scene speed for %s: %s",
+                        self._device.name,
+                        self._attr_native_value,
+                    )
+                except ValueError:
+                    _LOGGER.warning(
+                        "Could not restore scene speed for %s: invalid state '%s'",
+                        self._device.name,
+                        last_state.state,
+                    )
+
+    async def async_set_native_value(self, value: float) -> None:
+        """Set the scene speed.
+
+        Args:
+            value: Speed value within the configured range.
+        """
+        speed = int(value)
+
+        success = await self.coordinator.async_send_scene_speed(
+            self._device_id,
+            speed,
+        )
+
+        if success:
+            self._attr_native_value = float(speed)
+            self.async_write_ha_state()
+            _LOGGER.debug(
+                "Set scene speed to %d on %s",
+                speed,
+                self._device.name,
+            )
+        else:
+            _LOGGER.warning(
+                "Failed to set scene speed to %d on %s",
                 speed,
                 self._device.name,
             )

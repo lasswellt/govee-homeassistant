@@ -357,6 +357,10 @@ class GoveeDIYStyleSelectEntity(CoordinatorEntity["GoveeCoordinator"], SelectEnt
 
     Provides a dropdown to select the animation style for DIY scenes.
     Requires MQTT connection for BLE passthrough commands.
+
+    This entity is critical for the DIY speed slider to work correctly:
+    the speed command must include the correct style byte, which is
+    tracked when this selector is used.
     """
 
     _attr_has_entity_name = True
@@ -388,6 +392,20 @@ class GoveeDIYStyleSelectEntity(CoordinatorEntity["GoveeCoordinator"], SelectEnt
 
         # Entity name
         self._attr_name = "DIY Style"
+
+        # Initialize the style value in state if not already set
+        # This ensures speed commands work even before user interacts with style selector
+        state = coordinator.get_state(device.device_id)
+        if state and state.diy_style_value is None:
+            # Set default style value (Fade = 0)
+            state.diy_style = DIY_STYLE_OPTIONS[0]
+            state.diy_style_value = DIY_STYLE_NAMES[DIY_STYLE_OPTIONS[0]]
+            _LOGGER.debug(
+                "Initialized DIY style for %s: %s (value=%d)",
+                device.name,
+                state.diy_style,
+                state.diy_style_value,
+            )
 
     @property
     def device_info(self) -> DeviceInfo:

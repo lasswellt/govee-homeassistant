@@ -86,7 +86,12 @@ class GoveeDeviceState:
     segments: list[SegmentState] = field(default_factory=list)
     diy_speed: int | None = None  # DIY scene playback speed 0-100
     diy_style: str | None = None  # DIY animation style (Fade, Jumping, etc.)
+    diy_style_value: int | None = None  # DIY animation style numeric value (0-4)
     music_mode_enabled: bool | None = None  # Music mode on/off state
+
+    # Scene speed (for regular scenes that support speed control)
+    scene_speed: int | None = None  # Current speed value
+    scene_speed_range: tuple[int, int] | None = None  # (min, max) from speed_info
 
     # Fan state
     oscillating: bool | None = None  # Fan oscillation on/off
@@ -206,9 +211,15 @@ class GoveeDeviceState:
         self.active_scene = scene_id
         self.source = "optimistic"
 
-    def apply_optimistic_diy_style(self, style: str) -> None:
-        """Apply optimistic DIY style update."""
+    def apply_optimistic_diy_style(self, style: str, style_value: int | None = None) -> None:
+        """Apply optimistic DIY style update.
+
+        Args:
+            style: Style name (Fade, Jumping, Flicker, Marquee, Music).
+            style_value: Style numeric value (0-4). If None, will be looked up.
+        """
         self.diy_style = style
+        self.diy_style_value = style_value
         self.source = "optimistic"
 
     def apply_optimistic_music_mode(self, enabled: bool) -> None:
@@ -230,6 +241,11 @@ class GoveeDeviceState:
     def apply_optimistic_hdmi_source(self, source: int) -> None:
         """Apply optimistic HDMI source update."""
         self.hdmi_source = source
+        self.source = "optimistic"
+
+    def apply_optimistic_scene_speed(self, speed: int) -> None:
+        """Apply optimistic scene speed update."""
+        self.scene_speed = speed
         self.source = "optimistic"
 
     @classmethod

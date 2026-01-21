@@ -12,9 +12,12 @@ DIY Speed packet:
 - Byte 0: 0xA1 (DIY packet identifier)
 - Byte 1: 0x02 (DIY command type)
 - Byte 2: 0x01 (number of segments/modes)
-- Byte 3: 0x00 (style - default)
+- Byte 3: style (MUST match active scene: 0x00=Fade, 0x01=Jumping, etc.)
 - Byte 4: 0x00 (mode - default)
 - Byte 5: speed (0-100, where 0 is static and 100 is fastest)
+
+NOTE: The style byte is critical. If it doesn't match the active DIY scene's
+animation style, the speed command will be ignored by the device.
 
 DIY Style packet:
 - Byte 0: 0xA1 (DIY packet identifier)
@@ -108,18 +111,26 @@ def build_packet(data: list[int]) -> bytes:
     return bytes(packet)
 
 
-def build_diy_speed_packet(speed: int) -> bytes:
+def build_diy_speed_packet(speed: int, style: int = 0) -> bytes:
     """Build DIY scene speed control packet.
+
+    The style parameter is critical: the speed command is ignored if the
+    style byte doesn't match the active DIY scene's animation style.
+    For example, if the active scene uses "jumping" (style=1), sending
+    a speed packet with style=0 (fade) will have no effect.
 
     Args:
         speed: Playback speed 0-100, where 0 is static (no animation)
                and 100 is the fastest playback speed.
+        style: Animation style value (0=Fade, 1=Jumping, 2=Flicker,
+               3=Marquee, 4=Music). Must match the active DIY scene's style.
 
     Returns:
         20-byte BLE packet for DIY speed command.
     """
-    # Clamp speed to valid range
+    # Clamp values to valid ranges
     speed = max(0, min(100, speed))
+    style = max(0, min(4, style))
 
     # Build command data
     # Packet: A1 02 [NUM] [STYLE] [MODE] [SPEED] ...
@@ -127,7 +138,7 @@ def build_diy_speed_packet(speed: int) -> bytes:
         DIY_PACKET_ID,  # 0xA1 - DIY packet identifier
         DIY_COMMAND,  # 0x02 - DIY command type
         0x01,  # Number of segments/modes
-        0x00,  # Style (default)
+        style,  # Style value (must match active scene)
         0x00,  # Mode (default)
         speed,  # Speed value 0-100
     ]
@@ -184,6 +195,40 @@ def build_music_mode_packet(enabled: bool, sensitivity: int = 50) -> bytes:
         MUSIC_MODE_INDICATOR,  # 0x01 - Music mode indicator
         0x01 if enabled else 0x00,  # Enabled state
         sensitivity,  # Sensitivity 0-100
+    ]
+
+    return build_packet(data)
+
+
+def build_scene_speed_packet(speed: int) -> bytes:
+    """Build regular scene speed control packet.
+
+    This packet adjusts the playback speed for regular (non-DIY) scenes
+    that support speed control. Unlike DIY scenes, regular scenes use
+    a simpler packet format that doesn't require matching the style byte.
+
+    Based on Govee BLE protocol analysis from govee2mqtt and GlowFin projects.
+
+    Args:
+        speed: Playback speed 0-100, where lower values are slower
+               and higher values are faster.
+
+    Returns:
+        20-byte BLE packet for scene speed command.
+    """
+    # Clamp speed to valid range
+    speed = max(0, min(100, speed))
+
+    # Build command data
+    # Packet format: 33 05 02 [SPEED] ...
+    # 0x33 = standard command prefix
+    # 0x05 = scene/mode command
+    # 0x02 = speed subcommand indicator
+    data = [
+        MUSIC_PACKET_PREFIX,  # 0x33 - Standard command prefix (same as music mode)
+        MUSIC_MODE_COMMAND,  # 0x05 - Scene/mode command
+        0x02,  # Speed subcommand indicator
+        speed,  # Speed value 0-100
     ]
 
     return build_packet(data)

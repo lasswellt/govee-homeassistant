@@ -103,6 +103,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # DIY scene cache {device_id: [scenes]}
         self._diy_scene_cache: dict[str, list[dict[str, Any]]] = {}
 
+        # Light effect library cache {sku: library_data}
+        # Contains speed support info for regular scenes
+        self._light_effect_cache: dict[str, dict[str, Any]] = {}
+
         # Observers for state changes
         self._observers: list[IStateObserver] = []
 
@@ -494,6 +498,11 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         Sends a ptReal MQTT command to adjust DIY scene playback speed.
         This feature requires MQTT connection as there is no REST API fallback.
 
+        IMPORTANT: The speed command includes the animation style byte, which
+        must match the active DIY scene's style. If the style doesn't match,
+        the device will ignore the speed command. The style is tracked in
+        the device state when a DIY scene or style is selected.
+
         Args:
             device_id: Device identifier.
             speed: Playback speed 0-100 (0 = static, 100 = fastest).
@@ -513,10 +522,21 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             _LOGGER.error("Unknown device for DIY speed: %s", device_id)
             return False
 
+        # Get the current style value from state (critical for speed command to work)
+        state = self._states.get(device_id)
+        style_value = 0  # Default to Fade
+        if state and state.diy_style_value is not None:
+            style_value = state.diy_style_value
+            _LOGGER.debug(
+                "Using tracked style %d (%s) for speed command",
+                style_value,
+                state.diy_style or "unknown",
+            )
+
         # Build and send BLE packet
         from .api.ble_packet import build_diy_speed_packet, encode_packet_base64
 
-        packet = build_diy_speed_packet(speed)
+        packet = build_diy_speed_packet(speed, style_value)
         encoded = encode_packet_base64(packet)
 
         # Get device-specific MQTT topic for publishing
@@ -531,11 +551,15 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
         if success:
             # Apply optimistic update to state
-            state = self._states.get(device_id)
             if state:
                 state.diy_speed = speed
                 state.source = "optimistic"
-            _LOGGER.debug("Sent DIY speed %d to %s", speed, device.name)
+            _LOGGER.debug(
+                "Sent DIY speed %d (style=%d) to %s",
+                speed,
+                style_value,
+                device.name,
+            )
 
         return success
 
@@ -590,7 +614,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             # Apply optimistic update to state
             state = self._states.get(device_id)
             if state:
-                state.apply_optimistic_diy_style(style)
+                state.apply_optimistic_diy_style(style, int(style_value))
                 state.diy_speed = speed
             _LOGGER.debug("Sent DIY style '%s' (speed=%d) to %s", style, speed, device.name)
 
@@ -794,6 +818,157 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             cached = self._diy_scene_cache.get(device_id, [])
             _LOGGER.debug("Returning %d cached DIY scenes after error", len(cached))
             return cached
+
+    async def async_get_light_effect_library(
+        self,
+        device_id: str,
+        refresh: bool = False,
+    ) -> dict[str, Any]:
+        """Get light effect library for a device.
+
+        The light effect library contains information about scene speed support,
+        including whether the device supports speed control and per-scene speed ranges.
+
+        Args:
+            device_id: Device identifier.
+            refresh: Force refresh from API.
+
+        Returns:
+            Light effect library data with structure:
+            {
+                "support_speed": 0 or 1,
+                "scenes": [...],
+            }
+        """
+        device = self._devices.get(device_id)
+        if not device:
+            _LOGGER.warning("Device %s not found for light effect library fetch", device_id)
+            return {}
+
+        sku = device.sku
+
+        # Check cache (keyed by SKU since library is per-model)
+        if not refresh and sku in self._light_effect_cache:
+            _LOGGER.debug("Returning cached light effect library for %s", sku)
+            return self._light_effect_cache[sku]
+
+        # Need IoT credentials to access undocumented API
+        if not self._iot_credentials:
+            _LOGGER.debug("No IoT credentials, cannot fetch light effect library")
+            return {}
+
+        _LOGGER.debug("Fetching light effect library for %s (sku=%s)", device.name, sku)
+
+        try:
+            async with GoveeAuthClient() as auth_client:
+                library = await auth_client.fetch_light_effect_library(
+                    self._iot_credentials.token,
+                    sku,
+                )
+                self._light_effect_cache[sku] = library
+                _LOGGER.info(
+                    "Fetched light effect library for %s: support_speed=%s",
+                    sku,
+                    library.get("support_speed", 0),
+                )
+                return library
+
+        except GoveeApiError as err:
+            _LOGGER.warning("Failed to fetch light effect library for %s: %s", sku, err)
+            # Return cached data if available
+            return self._light_effect_cache.get(sku, {})
+        except Exception as err:
+            _LOGGER.warning("Unexpected error fetching light effect library: %s", err)
+            return self._light_effect_cache.get(sku, {})
+
+    def supports_scene_speed(self, device_id: str) -> bool:
+        """Check if a device supports scene speed control.
+
+        Args:
+            device_id: Device identifier.
+
+        Returns:
+            True if device supports scene speed control.
+        """
+        device = self._devices.get(device_id)
+        if not device:
+            return False
+
+        library = self._light_effect_cache.get(device.sku, {})
+        return library.get("support_speed", 0) == 1
+
+    def get_scene_speed_range(self, device_id: str) -> tuple[int, int] | None:
+        """Get the speed range for scene speed control.
+
+        Args:
+            device_id: Device identifier.
+
+        Returns:
+            Tuple of (min, max) speed values, or None if not supported.
+        """
+        device = self._devices.get(device_id)
+        if not device:
+            return None
+
+        library = self._light_effect_cache.get(device.sku, {})
+        if library.get("support_speed", 0) != 1:
+            return None
+
+        # Default range if not specified
+        return (1, 100)
+
+    async def async_send_scene_speed(self, device_id: str, speed: int) -> bool:
+        """Send regular scene speed via BLE passthrough.
+
+        Sends a ptReal MQTT command to adjust scene playback speed.
+        This feature requires MQTT connection as there is no REST API fallback.
+
+        Unlike DIY scene speed, regular scene speed doesn't require matching
+        the animation style byte.
+
+        Args:
+            device_id: Device identifier.
+            speed: Playback speed (typically 1-100, lower = slower).
+
+        Returns:
+            True if command was sent successfully.
+        """
+        if not self.mqtt_connected:
+            _LOGGER.warning(
+                "Cannot send scene speed for %s: MQTT not connected",
+                device_id,
+            )
+            return False
+
+        device = self._devices.get(device_id)
+        if not device:
+            _LOGGER.error("Unknown device for scene speed: %s", device_id)
+            return False
+
+        # Build and send BLE packet
+        from .api.ble_packet import build_scene_speed_packet, encode_packet_base64
+
+        packet = build_scene_speed_packet(speed)
+        encoded = encode_packet_base64(packet)
+
+        # Get device-specific MQTT topic for publishing
+        device_topic = self._device_topics.get(device_id)
+
+        success = await self._mqtt_client.async_publish_ptreal(
+            device_id,
+            device.sku,
+            encoded,
+            device_topic,
+        )
+
+        if success:
+            # Apply optimistic update to state
+            state = self._states.get(device_id)
+            if state:
+                state.apply_optimistic_scene_speed(speed)
+            _LOGGER.debug("Sent scene speed %d to %s", speed, device.name)
+
+        return success
 
     async def async_shutdown(self) -> None:
         """Shutdown coordinator and cleanup resources."""

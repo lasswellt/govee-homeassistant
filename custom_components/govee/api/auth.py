@@ -30,6 +30,7 @@ _LOGGER = logging.getLogger(__name__)
 GOVEE_LOGIN_URL = "https://app2.govee.com/account/rest/account/v1/login"
 GOVEE_IOT_KEY_URL = "https://app2.govee.com/app/v1/account/iot/key"
 GOVEE_DEVICE_LIST_URL = "https://app2.govee.com/device/rest/devices/v1/list"
+GOVEE_LIGHT_EFFECT_URL = "https://app2.govee.com/appsku/v1/light-effect-libraries"
 GOVEE_CLIENT_TYPE = "1"  # Android client type
 
 
@@ -276,6 +277,83 @@ class GoveeAuthClient:
 
         except aiohttp.ClientError as err:
             raise GoveeApiError(f"Connection error fetching device topics: {err}") from err
+
+    async def fetch_light_effect_library(
+        self, token: str, sku: str
+    ) -> dict[str, Any]:
+        """Fetch light effect library for a device SKU.
+
+        This API returns scene information including speed support:
+        - support_speed: Whether the device supports scene speed control
+        - scenes with speed_info: Per-scene speed configuration
+
+        Reference: wez/govee2mqtt light effect library API
+
+        Args:
+            token: Authentication token from login response.
+            sku: Device SKU/model number.
+
+        Returns:
+            Dict with light effect library data:
+            {
+                "support_speed": 1,  # 0 or 1
+                "scenes": [
+                    {
+                        "sceneId": 123,
+                        "sceneName": "Aurora",
+                        "speed_info": {
+                            "moveAll": [10, 100],  # [min, max] range
+                            "default": 50
+                        },
+                        ...
+                    }
+                ]
+            }
+
+        Raises:
+            GoveeApiError: If the request fails.
+        """
+        if self._session is None:
+            self._session = aiohttp.ClientSession()
+            self._owns_session = True
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+
+        url = f"{GOVEE_LIGHT_EFFECT_URL}?sku={sku}"
+
+        try:
+            async with self._session.get(
+                url,
+                headers=headers,
+            ) as response:
+                data = await response.json()
+
+                if response.status != 200:
+                    message = data.get("message", f"HTTP {response.status}")
+                    raise GoveeApiError(
+                        f"Failed to get light effect library: {message}",
+                        code=response.status,
+                    )
+
+                # Response structure: { "data": { "support_speed": 1, "scenes": [...] } }
+                result = data.get("data", {}) if isinstance(data, dict) else {}
+
+                _LOGGER.debug(
+                    "Light effect library for %s: support_speed=%s, scenes=%d",
+                    sku,
+                    result.get("support_speed", 0),
+                    len(result.get("scenes", [])),
+                )
+                return result
+
+        except aiohttp.ClientError as err:
+            raise GoveeApiError(
+                f"Connection error fetching light effect library: {err}"
+            ) from err
 
     async def login(
         self,
