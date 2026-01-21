@@ -59,6 +59,7 @@ Enter your API key. Want instant updates? Add your Govee email/password for MQTT
 |--------|----------|
 | **LED Lights & Strips** | On/off, brightness, RGB, color temp |
 | **RGBIC Strips** | All the above + per-segment colors |
+| **Fans** | On/off, speed (Low/Medium/High), oscillation, preset modes |
 
 > **Note:** Cloud-enabled devices only. Bluetooth-only devices need a different integration.
 
@@ -81,6 +82,74 @@ No credentials? Polling works fine (every 60 seconds by default).
 | Rate limit errors | Increase poll interval (Govee allows 100 req/min) |
 
 Need debug logs? Add `custom_components.govee: debug` to your logger config.
+
+---
+
+## Reporting Issues
+
+When reporting issues with unsupported devices or unexpected behavior, please include your device's API response. This helps us understand your device's capabilities and fix the problem.
+
+### Getting Your Device Data
+
+You'll need your **Govee API key** (the same one you used to set up this integration).
+
+---
+
+#### macOS / Linux
+
+**Step 1: Open Terminal**
+- **macOS:** Press `Cmd + Space`, type "Terminal", press Enter
+- **Linux:** Press `Ctrl + Alt + T` or search for "Terminal" in your applications
+
+**Step 2: Get your device list**
+
+Copy this command, replace `YOUR_API_KEY` with your actual API key, then paste into Terminal and press Enter:
+
+```bash
+curl -s -H "Govee-API-Key: YOUR_API_KEY" "https://openapi.api.govee.com/router/api/v1/user/devices"
+```
+
+**Step 3: Get device state** (optional, for more details)
+
+From the output above, find your device's `sku` (e.g., "H7101") and `device` ID (e.g., "AA:BB:CC:DD:EE:FF:00:11"), then run:
+
+```bash
+curl -s -X POST -H "Govee-API-Key: YOUR_API_KEY" -H "Content-Type: application/json" -d '{"requestId":"test","payload":{"sku":"YOUR_SKU","device":"YOUR_DEVICE_ID"}}' "https://openapi.api.govee.com/router/api/v1/device/state"
+```
+
+---
+
+#### Windows
+
+**Step 1: Open PowerShell**
+- Press `Win + X`, then click "Windows PowerShell" or "Terminal"
+- Or press `Win + R`, type `powershell`, press Enter
+
+**Step 2: Get your device list**
+
+Copy this command, replace `YOUR_API_KEY` with your actual API key, then paste into PowerShell and press Enter:
+
+```powershell
+Invoke-RestMethod -Uri "https://openapi.api.govee.com/router/api/v1/user/devices" -Headers @{"Govee-API-Key"="YOUR_API_KEY"} | ConvertTo-Json -Depth 10
+```
+
+**Step 3: Get device state** (optional, for more details)
+
+From the output above, find your device's `sku` and `device` ID, then run (replace the values):
+
+```powershell
+Invoke-RestMethod -Uri "https://openapi.api.govee.com/router/api/v1/device/state" -Method POST -Headers @{"Govee-API-Key"="YOUR_API_KEY"; "Content-Type"="application/json"} -Body '{"requestId":"test","payload":{"sku":"YOUR_SKU","device":"YOUR_DEVICE_ID"}}' | ConvertTo-Json -Depth 10
+```
+
+---
+
+### Posting Your Results
+
+**Before posting**, redact sensitive information:
+- Replace your API key with `REDACTED`
+- Replace your email/account ID if visible
+
+Then paste the output in your [GitHub issue](https://github.com/lasswellt/govee-homeassistant/issues).
 
 ---
 
