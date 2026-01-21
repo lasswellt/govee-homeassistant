@@ -27,6 +27,7 @@ DEVICE_TYPE_LIGHT = "devices.types.light"
 DEVICE_TYPE_PLUG = "devices.types.socket"
 DEVICE_TYPE_HEATER = "devices.types.heater"
 DEVICE_TYPE_HUMIDIFIER = "devices.types.humidifier"
+DEVICE_TYPE_FAN = "devices.types.fan"
 
 # Instance constants
 INSTANCE_POWER = "powerSwitch"
@@ -39,6 +40,8 @@ INSTANCE_DIY = "diyScene"
 INSTANCE_NIGHT_LIGHT = "nightlightToggle"
 INSTANCE_GRADUAL_ON = "gradientToggle"
 INSTANCE_TIMER = "timer"
+INSTANCE_OSCILLATION = "oscillationToggle"
+INSTANCE_WORK_MODE = "workMode"
 
 
 @dataclass(frozen=True)
@@ -183,6 +186,16 @@ class GoveeCapability:
         return self.type == CAPABILITY_TOGGLE and self.instance == INSTANCE_NIGHT_LIGHT
 
     @property
+    def is_oscillation(self) -> bool:
+        """Check if this is an oscillation toggle (for fans)."""
+        return self.type == CAPABILITY_TOGGLE and self.instance == INSTANCE_OSCILLATION
+
+    @property
+    def is_work_mode(self) -> bool:
+        """Check if this is a work mode capability (for fans)."""
+        return self.type == CAPABILITY_WORK_MODE and self.instance == INSTANCE_WORK_MODE
+
+    @property
     def brightness_range(self) -> tuple[int, int]:
         """Get brightness min/max range. Default (0, 100)."""
         if not self.is_brightness:
@@ -264,8 +277,25 @@ class GoveeDevice:
         return self.device_type == DEVICE_TYPE_PLUG
 
     @property
+    def is_fan(self) -> bool:
+        """Check if device is a fan."""
+        return self.device_type == DEVICE_TYPE_FAN
+
+    @property
+    def supports_oscillation(self) -> bool:
+        """Check if device supports oscillation (fans)."""
+        return any(cap.is_oscillation for cap in self.capabilities)
+
+    @property
+    def supports_work_mode(self) -> bool:
+        """Check if device supports work mode (fans)."""
+        return any(cap.is_work_mode for cap in self.capabilities)
+
+    @property
     def is_light_device(self) -> bool:
-        """Check if device is a light (not a plug or other appliance)."""
+        """Check if device is a light (not a plug, fan, or other appliance)."""
+        if self.is_fan or self.is_plug:
+            return False
         return self.device_type == DEVICE_TYPE_LIGHT or self.supports_rgb or self.supports_color_temp
 
     @property

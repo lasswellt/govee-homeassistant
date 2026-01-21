@@ -88,6 +88,11 @@ class GoveeDeviceState:
     diy_style: str | None = None  # DIY animation style (Fade, Jumping, etc.)
     music_mode_enabled: bool | None = None  # Music mode on/off state
 
+    # Fan state
+    oscillating: bool | None = None  # Fan oscillation on/off
+    work_mode: int | None = None  # Fan work mode: 1=gearMode, 3=Auto, 9=Fan
+    mode_value: int | None = None  # Fan speed for gearMode: 1=Low, 2=Medium, 3=High
+
     # Source tracking for state management
     # "api" = from REST poll, "mqtt" = from push, "optimistic" = from command
     source: str = "api"
@@ -127,6 +132,15 @@ class GoveeDeviceState:
                         self.color = RGBColor.from_dict(value)
                 elif instance == "colorTemperatureK":
                     self.color_temp_kelvin = int(value) if value is not None else None
+
+            elif cap_type == "devices.capabilities.toggle":
+                if instance == "oscillationToggle":
+                    self.oscillating = bool(value)
+
+            elif cap_type == "devices.capabilities.work_mode":
+                if instance == "workMode" and isinstance(value, dict):
+                    self.work_mode = value.get("workMode")
+                    self.mode_value = value.get("modeValue")
 
     def update_from_mqtt(self, data: dict[str, Any]) -> None:
         """Update state from MQTT push message.
@@ -193,6 +207,17 @@ class GoveeDeviceState:
     def apply_optimistic_music_mode(self, enabled: bool) -> None:
         """Apply optimistic music mode update."""
         self.music_mode_enabled = enabled
+        self.source = "optimistic"
+
+    def apply_optimistic_oscillation(self, oscillating: bool) -> None:
+        """Apply optimistic oscillation update (fans)."""
+        self.oscillating = oscillating
+        self.source = "optimistic"
+
+    def apply_optimistic_work_mode(self, work_mode: int, mode_value: int) -> None:
+        """Apply optimistic work mode update (fans)."""
+        self.work_mode = work_mode
+        self.mode_value = mode_value
         self.source = "optimistic"
 
     @classmethod

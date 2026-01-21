@@ -15,17 +15,23 @@ from custom_components.govee.models import (
     ColorTempCommand,
     SceneCommand,
     SegmentColorCommand,
+    OscillationCommand,
+    WorkModeCommand,
 )
 from custom_components.govee.models.device import (
     CAPABILITY_ON_OFF,
     CAPABILITY_RANGE,
     CAPABILITY_COLOR_SETTING,
     CAPABILITY_DYNAMIC_SCENE,
+    CAPABILITY_TOGGLE,
+    CAPABILITY_WORK_MODE,
     INSTANCE_POWER,
     INSTANCE_BRIGHTNESS,
     INSTANCE_COLOR_RGB,
     INSTANCE_COLOR_TEMP,
     INSTANCE_SCENE,
+    INSTANCE_OSCILLATION,
+    INSTANCE_WORK_MODE,
 )
 
 
@@ -122,6 +128,18 @@ class TestGoveeCapability:
         cap = GoveeCapability(type=CAPABILITY_DYNAMIC_SCENE, instance=INSTANCE_SCENE, parameters={})
         assert cap.is_scene is True
 
+    def test_is_oscillation(self):
+        """Test oscillation capability detection (fans)."""
+        cap = GoveeCapability(type=CAPABILITY_TOGGLE, instance=INSTANCE_OSCILLATION, parameters={})
+        assert cap.is_oscillation is True
+        assert cap.is_toggle is True
+        assert cap.is_night_light is False
+
+    def test_is_work_mode(self):
+        """Test work mode capability detection (fans)."""
+        cap = GoveeCapability(type=CAPABILITY_WORK_MODE, instance=INSTANCE_WORK_MODE, parameters={})
+        assert cap.is_work_mode is True
+
     def test_immutable(self):
         """Test that GoveeCapability is immutable (frozen)."""
         cap = GoveeCapability(type=CAPABILITY_ON_OFF, instance=INSTANCE_POWER, parameters={})
@@ -184,6 +202,25 @@ class TestGoveeDevice:
         """Test group device detection."""
         assert mock_group_device.is_group is True
 
+    def test_is_fan(self, mock_fan_device):
+        """Test fan device detection."""
+        assert mock_fan_device.is_fan is True
+        assert mock_fan_device.is_plug is False
+        assert mock_fan_device.is_light_device is False
+
+    def test_supports_oscillation(self, mock_fan_device):
+        """Test oscillation support detection (fans)."""
+        assert mock_fan_device.supports_oscillation is True
+
+    def test_supports_work_mode(self, mock_fan_device):
+        """Test work mode support detection (fans)."""
+        assert mock_fan_device.supports_work_mode is True
+
+    def test_fan_not_light(self, mock_fan_device):
+        """Test that fan devices are not detected as lights."""
+        assert mock_fan_device.is_light_device is False
+        assert mock_fan_device.supports_power is True
+
     def test_from_api_response(self, api_device_response):
         """Test creating device from API response."""
         device = GoveeDevice.from_api_response(api_device_response)
@@ -193,6 +230,18 @@ class TestGoveeDevice:
         assert device.supports_power is True
         assert device.supports_brightness is True
         assert device.supports_rgb is True
+
+    def test_from_api_response_fan(self, api_fan_device_response):
+        """Test creating fan device from API response."""
+        device = GoveeDevice.from_api_response(api_fan_device_response)
+        assert device.device_id == "AA:BB:CC:DD:EE:FF:00:44"
+        assert device.sku == "H7101"
+        assert device.name == "Living Room Fan"
+        assert device.is_fan is True
+        assert device.is_light_device is False
+        assert device.supports_power is True
+        assert device.supports_oscillation is True
+        assert device.supports_work_mode is True
 
     def test_immutable(self, mock_light_device):
         """Test that GoveeDevice is immutable (frozen)."""
@@ -281,6 +330,42 @@ class TestGoveeDeviceState:
         assert state.color is None  # Reset RGB
         assert state.source == "optimistic"
 
+    def test_fan_state_fields(self):
+        """Test fan-specific state fields."""
+        state = GoveeDeviceState.create_empty("test_id")
+        assert state.oscillating is None
+        assert state.work_mode is None
+        assert state.mode_value is None
+
+    def test_update_fan_state_from_api(self, api_fan_state_response):
+        """Test updating fan state from API response."""
+        state = GoveeDeviceState.create_empty("AA:BB:CC:DD:EE:FF:00:44")
+        state.update_from_api(api_fan_state_response)
+        assert state.online is True
+        assert state.power_state is True
+        assert state.oscillating is True
+        assert state.work_mode == 1
+        assert state.mode_value == 2
+        assert state.source == "api"
+
+    def test_optimistic_oscillation(self):
+        """Test optimistic oscillation update (fans)."""
+        state = GoveeDeviceState.create_empty("test_id")
+        state.apply_optimistic_oscillation(True)
+        assert state.oscillating is True
+        assert state.source == "optimistic"
+
+        state.apply_optimistic_oscillation(False)
+        assert state.oscillating is False
+
+    def test_optimistic_work_mode(self):
+        """Test optimistic work mode update (fans)."""
+        state = GoveeDeviceState.create_empty("test_id")
+        state.apply_optimistic_work_mode(work_mode=1, mode_value=3)
+        assert state.work_mode == 1
+        assert state.mode_value == 3
+        assert state.source == "optimistic"
+
 
 # ==============================================================================
 # Command Tests
@@ -343,3 +428,35 @@ class TestCommands:
         cmd = PowerCommand(power_on=True)
         with pytest.raises(AttributeError):
             cmd.power_on = False
+
+    def test_oscillation_command_on(self):
+        """Test oscillation command (on)."""
+        cmd = OscillationCommand(oscillating=True)
+        assert cmd.oscillating is True
+        assert cmd.get_value() == 1
+        payload = cmd.to_api_payload()
+        assert payload["type"] == "devices.capabilities.toggle"
+        assert payload["instance"] == "oscillationToggle"
+        assert payload["value"] == 1
+
+    def test_oscillation_command_off(self):
+        """Test oscillation command (off)."""
+        cmd = OscillationCommand(oscillating=False)
+        assert cmd.get_value() == 0
+
+    def test_work_mode_command_gear(self):
+        """Test work mode command for manual gear mode."""
+        cmd = WorkModeCommand(work_mode=1, mode_value=2)  # Medium speed
+        assert cmd.work_mode == 1
+        assert cmd.mode_value == 2
+        payload = cmd.to_api_payload()
+        assert payload["type"] == "devices.capabilities.work_mode"
+        assert payload["instance"] == "workMode"
+        assert payload["value"] == {"workMode": 1, "modeValue": 2}
+
+    def test_work_mode_command_auto(self):
+        """Test work mode command for auto mode."""
+        cmd = WorkModeCommand(work_mode=3, mode_value=0)
+        value = cmd.get_value()
+        assert value["workMode"] == 3
+        assert value["modeValue"] == 0

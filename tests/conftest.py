@@ -24,16 +24,21 @@ from custom_components.govee.models.device import (
     CAPABILITY_ON_OFF,
     CAPABILITY_RANGE,
     CAPABILITY_SEGMENT_COLOR,
+    CAPABILITY_TOGGLE,
+    CAPABILITY_WORK_MODE,
     INSTANCE_BRIGHTNESS,
     INSTANCE_COLOR_RGB,
     INSTANCE_COLOR_TEMP,
+    INSTANCE_OSCILLATION,
     INSTANCE_POWER,
     INSTANCE_SCENE,
+    INSTANCE_WORK_MODE,
 )
 
 # Capability constants for test devices
 DEVICE_TYPE_LIGHT = "devices.types.light"
 DEVICE_TYPE_PLUG = "devices.types.socket"
+DEVICE_TYPE_FAN = "devices.types.fan"
 
 
 @pytest.fixture
@@ -297,4 +302,114 @@ def mqtt_state_message() -> dict[str, Any]:
             "color": {"r": 255, "g": 128, "b": 64},
             "colorTemInKelvin": 0,
         },
+    }
+
+
+@pytest.fixture
+def fan_capabilities() -> tuple[GoveeCapability, ...]:
+    """Create capabilities for a fan device (H7101)."""
+    return (
+        GoveeCapability(
+            type=CAPABILITY_ON_OFF,
+            instance=INSTANCE_POWER,
+            parameters={},
+        ),
+        GoveeCapability(
+            type=CAPABILITY_TOGGLE,
+            instance=INSTANCE_OSCILLATION,
+            parameters={},
+        ),
+        GoveeCapability(
+            type=CAPABILITY_WORK_MODE,
+            instance=INSTANCE_WORK_MODE,
+            parameters={
+                "options": [
+                    {"name": "gearMode", "value": {"workMode": 1, "modeValue": [1, 2, 3]}},
+                    {"name": "Auto", "value": {"workMode": 3, "modeValue": [0]}},
+                ],
+            },
+        ),
+    )
+
+
+@pytest.fixture
+def mock_fan_device(fan_capabilities) -> GoveeDevice:
+    """Create a mock fan device (H7101)."""
+    return GoveeDevice(
+        device_id="AA:BB:CC:DD:EE:FF:00:44",
+        sku="H7101",
+        name="Living Room Fan",
+        device_type=DEVICE_TYPE_FAN,
+        capabilities=fan_capabilities,
+        is_group=False,
+    )
+
+
+@pytest.fixture
+def mock_fan_device_state() -> GoveeDeviceState:
+    """Create a mock fan device state."""
+    state = GoveeDeviceState(
+        device_id="AA:BB:CC:DD:EE:FF:00:44",
+        online=True,
+        power_state=True,
+        brightness=100,
+        source="api",
+    )
+    state.oscillating = True
+    state.work_mode = 1  # gearMode
+    state.mode_value = 2  # Medium speed
+    return state
+
+
+@pytest.fixture
+def api_fan_device_response() -> dict[str, Any]:
+    """Create a mock API fan device response (H7101)."""
+    return {
+        "device": "AA:BB:CC:DD:EE:FF:00:44",
+        "sku": "H7101",
+        "deviceName": "Living Room Fan",
+        "type": "devices.types.fan",
+        "capabilities": [
+            {"type": CAPABILITY_ON_OFF, "instance": INSTANCE_POWER, "parameters": {}},
+            {"type": CAPABILITY_TOGGLE, "instance": INSTANCE_OSCILLATION, "parameters": {}},
+            {
+                "type": CAPABILITY_WORK_MODE,
+                "instance": INSTANCE_WORK_MODE,
+                "parameters": {
+                    "options": [
+                        {"name": "gearMode", "value": {"workMode": 1, "modeValue": [1, 2, 3]}},
+                        {"name": "Auto", "value": {"workMode": 3, "modeValue": [0]}},
+                    ],
+                },
+            },
+        ],
+    }
+
+
+@pytest.fixture
+def api_fan_state_response() -> dict[str, Any]:
+    """Create a mock API fan state response."""
+    return {
+        "capabilities": [
+            {
+                "type": "devices.capabilities.online",
+                "instance": "online",
+                "state": {"value": True},
+            },
+            {
+                "type": CAPABILITY_ON_OFF,
+                "instance": INSTANCE_POWER,
+                "state": {"value": 1},
+            },
+            {
+                "type": CAPABILITY_TOGGLE,
+                "instance": INSTANCE_OSCILLATION,
+                "state": {"value": 1},
+            },
+            {
+                "type": CAPABILITY_WORK_MODE,
+                "instance": INSTANCE_WORK_MODE,
+                "state": {"value": {"workMode": 1, "modeValue": 2}},
+            },
+        ],
     }

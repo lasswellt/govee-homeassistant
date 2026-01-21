@@ -43,6 +43,7 @@ PLATFORMS: list[Platform] = [
     Platform.SELECT,  # Scene dropdowns - show first
     Platform.NUMBER,  # DIY speed controls
     Platform.LIGHT,  # Main light + segments
+    Platform.FAN,  # Fan devices
     Platform.SWITCH,
     Platform.SENSOR,
     Platform.BUTTON,

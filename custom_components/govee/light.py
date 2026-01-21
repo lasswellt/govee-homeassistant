@@ -58,8 +58,8 @@ async def async_setup_entry(
     enable_segments = entry.options.get(CONF_ENABLE_SEGMENTS, DEFAULT_ENABLE_SEGMENTS)
 
     for device in coordinator.devices.values():
-        # Only create light entities for devices with power control
-        if device.supports_power:
+        # Only create light entities for devices with power control (not fans)
+        if device.supports_power and not device.is_fan:
             entities.append(GoveeLightEntity(coordinator, device))
 
         # Create segment entities for RGBIC devices

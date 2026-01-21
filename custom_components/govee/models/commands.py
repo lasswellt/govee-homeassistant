@@ -17,14 +17,17 @@ from .device import (
     CAPABILITY_RANGE,
     CAPABILITY_SEGMENT_COLOR,
     CAPABILITY_TOGGLE,
+    CAPABILITY_WORK_MODE,
     INSTANCE_BRIGHTNESS,
     INSTANCE_COLOR_RGB,
     INSTANCE_COLOR_TEMP,
     INSTANCE_DIY,
     INSTANCE_NIGHT_LIGHT,
+    INSTANCE_OSCILLATION,
     INSTANCE_POWER,
     INSTANCE_SCENE,
     INSTANCE_SEGMENT_COLOR,
+    INSTANCE_WORK_MODE,
 )
 from .state import RGBColor
 
@@ -225,3 +228,51 @@ class ToggleCommand(DeviceCommand):
 def create_night_light_command(enabled: bool) -> ToggleCommand:
     """Create a command to toggle night light mode."""
     return ToggleCommand(toggle_instance=INSTANCE_NIGHT_LIGHT, enabled=enabled)
+
+
+@dataclass(frozen=True)
+class OscillationCommand(DeviceCommand):
+    """Command to toggle fan oscillation."""
+
+    oscillating: bool
+
+    @property
+    def capability_type(self) -> str:
+        return CAPABILITY_TOGGLE
+
+    @property
+    def instance(self) -> str:
+        return INSTANCE_OSCILLATION
+
+    def get_value(self) -> int:
+        return 1 if self.oscillating else 0
+
+
+@dataclass(frozen=True)
+class WorkModeCommand(DeviceCommand):
+    """Command to set fan work mode and speed.
+
+    Work modes:
+    - 1 (gearMode): Manual speed control with mode_value 1=Low, 2=Medium, 3=High
+    - 3 (Auto): Automatic mode
+    - 9 (Fan): Fan mode
+
+    Mode values (for gearMode):
+    - 1: Low
+    - 2: Medium
+    - 3: High
+    """
+
+    work_mode: int  # 1=gearMode, 3=Auto, 9=Fan
+    mode_value: int  # Speed for gearMode: 1=Low, 2=Medium, 3=High
+
+    @property
+    def capability_type(self) -> str:
+        return CAPABILITY_WORK_MODE
+
+    @property
+    def instance(self) -> str:
+        return INSTANCE_WORK_MODE
+
+    def get_value(self) -> dict[str, int]:
+        return {"workMode": self.work_mode, "modeValue": self.mode_value}
