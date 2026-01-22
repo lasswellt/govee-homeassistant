@@ -87,7 +87,12 @@ class GoveeDeviceState:
     diy_speed: int | None = None  # DIY scene playback speed 0-100
     diy_style: str | None = None  # DIY animation style (Fade, Jumping, etc.)
     diy_style_value: int | None = None  # DIY animation style numeric value (0-4)
-    music_mode_enabled: bool | None = None  # Music mode on/off state
+    music_mode_enabled: bool | None = None  # Music mode on/off state (legacy BLE)
+
+    # STRUCT-based music mode state (for devices with music_setting capability)
+    music_mode_value: int | None = None  # Music mode value (1-11)
+    music_mode_name: str | None = None  # Music mode display name (e.g., "Rhythm")
+    music_sensitivity: int | None = None  # Microphone sensitivity (0-100)
 
     # Scene speed (for regular scenes that support speed control)
     scene_speed: int | None = None  # Current speed value
@@ -223,8 +228,27 @@ class GoveeDeviceState:
         self.source = "optimistic"
 
     def apply_optimistic_music_mode(self, enabled: bool) -> None:
-        """Apply optimistic music mode update."""
+        """Apply optimistic music mode update (legacy BLE)."""
         self.music_mode_enabled = enabled
+        self.source = "optimistic"
+
+    def apply_optimistic_music_mode_struct(
+        self,
+        music_mode: int,
+        sensitivity: int,
+        mode_name: str | None = None,
+    ) -> None:
+        """Apply optimistic music mode update (STRUCT-based REST API).
+
+        Args:
+            music_mode: Music mode value (1-11).
+            sensitivity: Microphone sensitivity (0-100).
+            mode_name: Optional display name for the mode.
+        """
+        self.music_mode_value = music_mode
+        self.music_sensitivity = sensitivity
+        self.music_mode_name = mode_name
+        self.music_mode_enabled = True  # Also set enabled for switch state
         self.source = "optimistic"
 
     def apply_optimistic_oscillation(self, oscillating: bool) -> None:

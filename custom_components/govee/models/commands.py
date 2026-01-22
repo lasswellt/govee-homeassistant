@@ -14,6 +14,7 @@ from .device import (
     CAPABILITY_COLOR_SETTING,
     CAPABILITY_DYNAMIC_SCENE,
     CAPABILITY_MODE,
+    CAPABILITY_MUSIC_MODE,
     CAPABILITY_ON_OFF,
     CAPABILITY_RANGE,
     CAPABILITY_SEGMENT_COLOR,
@@ -23,6 +24,7 @@ from .device import (
     INSTANCE_COLOR_RGB,
     INSTANCE_COLOR_TEMP,
     INSTANCE_DIY,
+    INSTANCE_MUSIC_MODE,
     INSTANCE_NIGHT_LIGHT,
     INSTANCE_OSCILLATION,
     INSTANCE_POWER,
@@ -301,3 +303,53 @@ class ModeCommand(DeviceCommand):
 
     def get_value(self) -> int:
         return self.value
+
+
+@dataclass(frozen=True)
+class MusicModeCommand(DeviceCommand):
+    """Command to set music mode with STRUCT payload.
+
+    This command is for devices with STRUCT-based music mode capability
+    (devices.capabilities.music_setting with musicMode instance).
+
+    The STRUCT payload includes:
+    - musicMode (required): Integer 1-11 selecting the mode
+    - sensitivity (required): Integer 0-100 for microphone sensitivity
+    - autoColor (optional): 1=auto colors, 0=use specified RGB
+    - rgb (optional): Packed RGB integer, only used when autoColor=0
+
+    Example API payload:
+    {
+        "type": "devices.capabilities.music_setting",
+        "instance": "musicMode",
+        "value": {
+            "musicMode": 1,
+            "sensitivity": 50,
+            "autoColor": 1
+        }
+    }
+    """
+
+    music_mode: int  # 1-11 (Rhythm, Spectrum, Rolling, etc.)
+    sensitivity: int  # 0-100
+    auto_color: int = 1  # 1=on (auto), 0=off (use rgb)
+    rgb: int | None = None  # Packed RGB, only used when auto_color=0
+
+    @property
+    def capability_type(self) -> str:
+        return CAPABILITY_MUSIC_MODE
+
+    @property
+    def instance(self) -> str:
+        return INSTANCE_MUSIC_MODE
+
+    def get_value(self) -> dict[str, Any]:
+        """Return STRUCT value for music mode command."""
+        value: dict[str, Any] = {
+            "musicMode": self.music_mode,
+            "sensitivity": self.sensitivity,
+            "autoColor": self.auto_color,
+        }
+        if self.rgb is not None and self.auto_color == 0:
+            value["rgb"] = self.rgb
+        return value

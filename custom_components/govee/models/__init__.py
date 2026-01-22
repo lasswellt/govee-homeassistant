@@ -10,6 +10,7 @@ from .commands import (
     DeviceCommand,
     DIYSceneCommand,
     ModeCommand,
+    MusicModeCommand,
     OscillationCommand,
     PowerCommand,
     SceneCommand,
@@ -49,5 +50,6 @@ __all__ = [
     "OscillationCommand",
     "WorkModeCommand",
     "ModeCommand",
+    "MusicModeCommand",
     "create_night_light_command",
 ]

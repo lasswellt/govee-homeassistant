@@ -692,6 +692,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             ColorCommand,
             ColorTempCommand,
             ModeCommand,
+            MusicModeCommand,
             PowerCommand,
             SceneCommand,
         )
@@ -710,6 +711,20 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         elif isinstance(command, ModeCommand):
             if command.mode_instance == INSTANCE_HDMI_SOURCE:
                 state.apply_optimistic_hdmi_source(command.value)
+        elif isinstance(command, MusicModeCommand):
+            # Look up mode name from device capabilities for display
+            device = self._devices.get(device_id)
+            mode_name = None
+            if device:
+                for opt in device.get_music_mode_options():
+                    if opt.get("value") == command.music_mode:
+                        mode_name = opt.get("name")
+                        break
+            state.apply_optimistic_music_mode_struct(
+                command.music_mode,
+                command.sensitivity,
+                mode_name,
+            )
 
     async def async_get_scenes(
         self,

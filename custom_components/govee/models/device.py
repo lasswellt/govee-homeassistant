@@ -44,6 +44,7 @@ INSTANCE_TIMER = "timer"
 INSTANCE_OSCILLATION = "oscillationToggle"
 INSTANCE_WORK_MODE = "workMode"
 INSTANCE_HDMI_SOURCE = "hdmiSource"
+INSTANCE_MUSIC_MODE = "musicMode"
 
 
 @dataclass(frozen=True)
@@ -309,6 +310,46 @@ class GoveeDevice:
             if cap.is_hdmi_source:
                 return cap.parameters.get("options", [])
         return []
+
+    @property
+    def has_struct_music_mode(self) -> bool:
+        """Check if device has STRUCT-based music mode (vs legacy BLE).
+
+        STRUCT-based music mode uses the REST API with a structured payload
+        containing musicMode, sensitivity, and optionally autoColor/rgb fields.
+        Legacy devices use BLE passthrough via MQTT.
+        """
+        for cap in self.capabilities:
+            if cap.type == CAPABILITY_MUSIC_MODE and cap.instance == INSTANCE_MUSIC_MODE:
+                # STRUCT capabilities have 'fields' array in parameters
+                return "fields" in cap.parameters
+        return False
+
+    def get_music_mode_options(self) -> list[dict[str, Any]]:
+        """Extract music mode options from capability fields.
+
+        Returns list of {"name": "Rhythm", "value": 1} dicts.
+        Pattern validated in external repositories.
+        """
+        for cap in self.capabilities:
+            if cap.type == CAPABILITY_MUSIC_MODE and cap.instance == INSTANCE_MUSIC_MODE:
+                for field in cap.parameters.get("fields", []):
+                    if field.get("fieldName") == "musicMode":
+                        return field.get("options", [])
+        return []
+
+    def get_music_sensitivity_range(self) -> tuple[int, int]:
+        """Extract sensitivity range from capability fields.
+
+        Returns (min, max) tuple, defaulting to (0, 100).
+        """
+        for cap in self.capabilities:
+            if cap.type == CAPABILITY_MUSIC_MODE and cap.instance == INSTANCE_MUSIC_MODE:
+                for field in cap.parameters.get("fields", []):
+                    if field.get("fieldName") == "sensitivity":
+                        range_info = field.get("range", {})
+                        return (range_info.get("min", 0), range_info.get("max", 100))
+        return (0, 100)
 
     @property
     def is_light_device(self) -> bool:

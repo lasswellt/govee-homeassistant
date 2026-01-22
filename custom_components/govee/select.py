@@ -25,7 +25,7 @@ from .const import (
     DOMAIN,
 )
 from .coordinator import GoveeCoordinator
-from .models import DIYSceneCommand, GoveeDevice, ModeCommand, SceneCommand
+from .models import DIYSceneCommand, GoveeDevice, ModeCommand, MusicModeCommand, SceneCommand
 from .models.device import INSTANCE_HDMI_SOURCE
 
 # DIY Style options for select entity
@@ -116,6 +116,23 @@ async def async_setup_entry(
                     )
                 )
                 _LOGGER.debug("Created HDMI source select entity for %s", device.name)
+
+        # Music mode selector (for devices with STRUCT-based music mode)
+        if device.has_struct_music_mode:
+            music_options = device.get_music_mode_options()
+            if music_options:
+                entities.append(
+                    GoveeMusicModeSelectEntity(
+                        coordinator=coordinator,
+                        device=device,
+                        options=music_options,
+                    )
+                )
+                _LOGGER.debug(
+                    "Created music mode select entity for %s with %d modes",
+                    device.name,
+                    len(music_options),
+                )
 
     async_add_entities(entities)
     _LOGGER.debug("Set up %d Govee scene select entities", len(entities))
@@ -576,6 +593,138 @@ class GoveeHdmiSourceSelectEntity(CoordinatorEntity["GoveeCoordinator"], SelectE
         else:
             _LOGGER.warning(
                 "Failed to set HDMI source '%s' on %s",
+                option,
+                self._device.name,
+            )
+
+
+class GoveeMusicModeSelectEntity(CoordinatorEntity["GoveeCoordinator"], SelectEntity):
+    """Govee music mode select entity.
+
+    Provides a dropdown to select music reactive mode on devices with
+    STRUCT-based music mode capability. This sends the mode via REST API
+    with a structured payload containing musicMode and sensitivity.
+
+    Music mode options vary by device but typically include:
+    - Rhythm (1)
+    - Spectrum (2)
+    - Rolling (3)
+    - Separation (4)
+    - Hopping (5)
+    - PianoKeys (6)
+    - Fountain (7)
+    - DayAndNight (8)
+    - Sprouting (9)
+    - Shiny (10)
+    - Energic (11)
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "govee_music_mode_select"
+    _attr_icon = "mdi:music"
+
+    def __init__(
+        self,
+        coordinator: GoveeCoordinator,
+        device: GoveeDevice,
+        options: list[dict[str, Any]],
+    ) -> None:
+        """Initialize the music mode select entity.
+
+        Args:
+            coordinator: Govee data coordinator.
+            device: Device this select belongs to.
+            options: List of music mode options from capability parameters.
+        """
+        super().__init__(coordinator)
+
+        self._device = device
+        self._device_id = device.device_id
+
+        # Build option mapping: display name -> value
+        self._option_map: dict[str, int] = {}
+        option_names: list[str] = []
+
+        for opt in options:
+            name = opt.get("name", "")
+            value = opt.get("value")
+            if name and value is not None:
+                self._option_map[name] = value
+                option_names.append(name)
+
+        self._attr_options = option_names
+
+        # Unique ID
+        self._attr_unique_id = f"{device.device_id}_music_mode_select"
+
+        # Entity name
+        self._attr_name = "Music Mode"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, self._device.device_id)},
+            name=self._device.name,
+            manufacturer="Govee",
+            model=self._device.sku,
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        state = self.coordinator.get_state(self._device_id)
+        if state is None:
+            return False
+        return state.online or self._device.is_group
+
+    @property
+    def current_option(self) -> str | None:
+        """Return current selected option from state."""
+        state = self.coordinator.get_state(self._device_id)
+        if state and state.music_mode_name is not None:
+            # Check if the name is in our options
+            if state.music_mode_name in self._option_map:
+                return state.music_mode_name
+        # Return first option as default if available
+        return self._attr_options[0] if self._attr_options else None
+
+    async def async_select_option(self, option: str) -> None:
+        """Handle music mode selection."""
+        value = self._option_map.get(option)
+        if value is None:
+            _LOGGER.warning("Unknown music mode option: %s", option)
+            return
+
+        # Get current sensitivity from state, default to 50
+        state = self.coordinator.get_state(self._device_id)
+        sensitivity = 50
+        if state and state.music_sensitivity is not None:
+            sensitivity = state.music_sensitivity
+
+        command = MusicModeCommand(
+            music_mode=value,
+            sensitivity=sensitivity,
+            auto_color=1,  # Use automatic colors
+        )
+
+        success = await self.coordinator.async_control_device(
+            self._device_id,
+            command,
+        )
+
+        if success:
+            self.async_write_ha_state()
+            _LOGGER.debug(
+                "Set music mode '%s' (value=%d, sensitivity=%d) on %s",
+                option,
+                value,
+                sensitivity,
+                self._device.name,
+            )
+        else:
+            _LOGGER.warning(
+                "Failed to set music mode '%s' on %s",
                 option,
                 self._device.name,
             )
