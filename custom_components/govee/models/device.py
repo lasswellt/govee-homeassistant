@@ -45,6 +45,7 @@ INSTANCE_OSCILLATION = "oscillationToggle"
 INSTANCE_WORK_MODE = "workMode"
 INSTANCE_HDMI_SOURCE = "hdmiSource"
 INSTANCE_MUSIC_MODE = "musicMode"
+INSTANCE_DREAMVIEW = "dreamViewToggle"
 
 
 @dataclass(frozen=True)
@@ -194,6 +195,11 @@ class GoveeCapability:
         return self.type == CAPABILITY_TOGGLE and self.instance == INSTANCE_OSCILLATION
 
     @property
+    def is_dreamview(self) -> bool:
+        """Check if this is a DreamView toggle (Movie Mode)."""
+        return self.type == CAPABILITY_TOGGLE and self.instance == INSTANCE_DREAMVIEW
+
+    @property
     def is_work_mode(self) -> bool:
         """Check if this is a work mode capability (for fans)."""
         return self.type == CAPABILITY_WORK_MODE and self.instance == INSTANCE_WORK_MODE
@@ -295,6 +301,11 @@ class GoveeDevice:
         return any(cap.is_oscillation for cap in self.capabilities)
 
     @property
+    def supports_dreamview(self) -> bool:
+        """Check if device supports DreamView (Movie Mode) toggle."""
+        return any(cap.is_dreamview for cap in self.capabilities)
+
+    @property
     def supports_work_mode(self) -> bool:
         """Check if device supports work mode (fans)."""
         return any(cap.is_work_mode for cap in self.capabilities)
@@ -308,7 +319,8 @@ class GoveeDevice:
         """Get available HDMI source options from capability parameters."""
         for cap in self.capabilities:
             if cap.is_hdmi_source:
-                return cap.parameters.get("options", [])
+                options: list[dict[str, Any]] = cap.parameters.get("options", [])
+                return options
         return []
 
     @property
@@ -333,9 +345,10 @@ class GoveeDevice:
         """
         for cap in self.capabilities:
             if cap.type == CAPABILITY_MUSIC_MODE and cap.instance == INSTANCE_MUSIC_MODE:
-                for field in cap.parameters.get("fields", []):
-                    if field.get("fieldName") == "musicMode":
-                        return field.get("options", [])
+                for f in cap.parameters.get("fields", []):
+                    if f.get("fieldName") == "musicMode":
+                        options: list[dict[str, Any]] = f.get("options", [])
+                        return options
         return []
 
     def get_music_sensitivity_range(self) -> tuple[int, int]:
@@ -345,9 +358,9 @@ class GoveeDevice:
         """
         for cap in self.capabilities:
             if cap.type == CAPABILITY_MUSIC_MODE and cap.instance == INSTANCE_MUSIC_MODE:
-                for field in cap.parameters.get("fields", []):
-                    if field.get("fieldName") == "sensitivity":
-                        range_info = field.get("range", {})
+                for f in cap.parameters.get("fields", []):
+                    if f.get("fieldName") == "sensitivity":
+                        range_info = f.get("range", {})
                         return (range_info.get("min", 0), range_info.get("max", 100))
         return (0, 100)
 

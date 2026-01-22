@@ -17,6 +17,7 @@ from .commands import (
     SegmentColorCommand,
     ToggleCommand,
     WorkModeCommand,
+    create_dreamview_command,
     create_night_light_command,
 )
 from .device import (
@@ -51,5 +52,6 @@ __all__ = [
     "WorkModeCommand",
     "ModeCommand",
     "MusicModeCommand",
+    "create_dreamview_command",
     "create_night_light_command",
 ]

@@ -24,6 +24,7 @@ from .device import (
     INSTANCE_COLOR_RGB,
     INSTANCE_COLOR_TEMP,
     INSTANCE_DIY,
+    INSTANCE_DREAMVIEW,
     INSTANCE_MUSIC_MODE,
     INSTANCE_NIGHT_LIGHT,
     INSTANCE_OSCILLATION,
@@ -231,6 +232,11 @@ class ToggleCommand(DeviceCommand):
 def create_night_light_command(enabled: bool) -> ToggleCommand:
     """Create a command to toggle night light mode."""
     return ToggleCommand(toggle_instance=INSTANCE_NIGHT_LIGHT, enabled=enabled)
+
+
+def create_dreamview_command(enabled: bool) -> ToggleCommand:
+    """Create a command to toggle DreamView (Movie Mode)."""
+    return ToggleCommand(toggle_instance=INSTANCE_DREAMVIEW, enabled=enabled)
 
 
 @dataclass(frozen=True)

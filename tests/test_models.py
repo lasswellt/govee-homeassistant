@@ -18,6 +18,7 @@ from custom_components.govee.models import (
     OscillationCommand,
     WorkModeCommand,
     ModeCommand,
+    create_dreamview_command,
 )
 from custom_components.govee.models.device import (
     CAPABILITY_ON_OFF,
@@ -35,6 +36,7 @@ from custom_components.govee.models.device import (
     INSTANCE_OSCILLATION,
     INSTANCE_WORK_MODE,
     INSTANCE_HDMI_SOURCE,
+    INSTANCE_DREAMVIEW,
 )
 
 
@@ -158,6 +160,21 @@ class TestGoveeCapability:
         assert cap.is_hdmi_source is True
         assert cap.is_work_mode is False
 
+    def test_is_dreamview(self):
+        """Test DreamView toggle capability detection."""
+        cap = GoveeCapability(
+            type=CAPABILITY_TOGGLE,
+            instance=INSTANCE_DREAMVIEW,
+            parameters={
+                "dataType": "ENUM",
+                "options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}],
+            },
+        )
+        assert cap.is_dreamview is True
+        assert cap.is_toggle is True
+        assert cap.is_night_light is False
+        assert cap.is_oscillation is False
+
     def test_immutable(self):
         """Test that GoveeCapability is immutable (frozen)."""
         cap = GoveeCapability(type=CAPABILITY_ON_OFF, instance=INSTANCE_POWER, parameters={})
@@ -256,6 +273,14 @@ class TestGoveeDevice:
         """Test getting HDMI source options from device without HDMI support."""
         options = mock_light_device.get_hdmi_source_options()
         assert options == []
+
+    def test_supports_dreamview(self, mock_dreamview_device):
+        """Test DreamView support detection."""
+        assert mock_dreamview_device.supports_dreamview is True
+
+    def test_no_dreamview_support(self, mock_light_device):
+        """Test that regular lights don't have DreamView support."""
+        assert mock_light_device.supports_dreamview is False
 
     def test_from_api_response(self, api_device_response):
         """Test creating device from API response."""
@@ -541,3 +566,22 @@ class TestCommands:
         cmd = ModeCommand(mode_instance="hdmiSource", value=1)
         with pytest.raises(AttributeError):
             cmd.value = 2
+
+    def test_dreamview_command_on(self):
+        """Test create_dreamview_command for turning DreamView on."""
+        cmd = create_dreamview_command(enabled=True)
+        assert cmd.toggle_instance == "dreamViewToggle"
+        assert cmd.enabled is True
+        assert cmd.get_value() == 1
+        payload = cmd.to_api_payload()
+        assert payload["type"] == "devices.capabilities.toggle"
+        assert payload["instance"] == "dreamViewToggle"
+        assert payload["value"] == 1
+
+    def test_dreamview_command_off(self):
+        """Test create_dreamview_command for turning DreamView off."""
+        cmd = create_dreamview_command(enabled=False)
+        assert cmd.enabled is False
+        assert cmd.get_value() == 0
+        payload = cmd.to_api_payload()
+        assert payload["value"] == 0

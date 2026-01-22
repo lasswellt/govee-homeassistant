@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -15,7 +15,6 @@ from custom_components.govee.fan import (
     WORK_MODE_AUTO,
 )
 from custom_components.govee.models import (
-    GoveeDeviceState,
     OscillationCommand,
     PowerCommand,
     WorkModeCommand,

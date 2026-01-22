@@ -30,6 +30,7 @@ from custom_components.govee.models.device import (
     INSTANCE_BRIGHTNESS,
     INSTANCE_COLOR_RGB,
     INSTANCE_COLOR_TEMP,
+    INSTANCE_DREAMVIEW,
     INSTANCE_HDMI_SOURCE,
     INSTANCE_OSCILLATION,
     INSTANCE_POWER,
@@ -516,3 +517,41 @@ def api_hdmi_state_response() -> dict[str, Any]:
             },
         ],
     }
+
+
+@pytest.fixture
+def dreamview_capabilities() -> tuple[GoveeCapability, ...]:
+    """Create capabilities for a DreamView-enabled device (e.g., H6199 Immersion)."""
+    return (
+        GoveeCapability(
+            type=CAPABILITY_ON_OFF,
+            instance=INSTANCE_POWER,
+            parameters={},
+        ),
+        GoveeCapability(
+            type=CAPABILITY_RANGE,
+            instance=INSTANCE_BRIGHTNESS,
+            parameters={"range": {"min": 0, "max": 100}},
+        ),
+        GoveeCapability(
+            type=CAPABILITY_TOGGLE,
+            instance=INSTANCE_DREAMVIEW,
+            parameters={
+                "dataType": "ENUM",
+                "options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}],
+            },
+        ),
+    )
+
+
+@pytest.fixture
+def mock_dreamview_device(dreamview_capabilities) -> GoveeDevice:
+    """Create a mock DreamView-enabled device (e.g., H6199 Immersion)."""
+    return GoveeDevice(
+        device_id="AA:BB:CC:DD:EE:FF:00:66",
+        sku="H6199",
+        name="TV Backlight Immersion",
+        device_type=DEVICE_TYPE_LIGHT,
+        capabilities=dreamview_capabilities,
+        is_group=False,
+    )

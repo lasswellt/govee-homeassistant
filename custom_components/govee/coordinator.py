@@ -542,6 +542,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # Get device-specific MQTT topic for publishing
         device_topic = self._device_topics.get(device_id)
 
+        if self._mqtt_client is None:
+            return False
+
         success = await self._mqtt_client.async_publish_ptreal(
             device_id,
             device.sku,
@@ -603,6 +606,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # Get device-specific MQTT topic for publishing
         device_topic = self._device_topics.get(device_id)
 
+        if self._mqtt_client is None:
+            return False
+
         success = await self._mqtt_client.async_publish_ptreal(
             device_id,
             device.sku,
@@ -654,6 +660,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
         # Get device-specific MQTT topic for publishing
         device_topic = self._device_topics.get(device_id)
+
+        if self._mqtt_client is None:
+            return False
 
         success = await self._mqtt_client.async_publish_ptreal(
             device_id,
@@ -910,7 +919,8 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             return False
 
         library = self._light_effect_cache.get(device.sku, {})
-        return library.get("support_speed", 0) == 1
+        support_speed: int = library.get("support_speed", 0)
+        return support_speed == 1
 
     def get_scene_speed_range(self, device_id: str) -> tuple[int, int] | None:
         """Get the speed range for scene speed control.
@@ -968,6 +978,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
         # Get device-specific MQTT topic for publishing
         device_topic = self._device_topics.get(device_id)
+
+        if self._mqtt_client is None:
+            return False
 
         success = await self._mqtt_client.async_publish_ptreal(
             device_id,

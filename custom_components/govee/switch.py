@@ -17,7 +17,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import GoveeCoordinator
 from .entity import GoveeEntity
-from .models import GoveeDevice, MusicModeCommand, PowerCommand, create_night_light_command
+from .models import GoveeDevice, MusicModeCommand, PowerCommand, create_dreamview_command, create_night_light_command
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -52,6 +52,11 @@ async def async_setup_entry(
             # Legacy BLE-based music mode - requires MQTT
             entities.append(GoveeMusicModeSwitchEntity(coordinator, device, use_rest_api=False))
             _LOGGER.debug("Created BLE music mode switch entity for %s", device.name)
+
+        # Create switch for DreamView (Movie Mode) toggle
+        if device.supports_dreamview:
+            entities.append(GoveeDreamViewSwitchEntity(coordinator, device))
+            _LOGGER.debug("Created DreamView switch entity for %s", device.name)
 
     async_add_entities(entities)
     _LOGGER.debug("Set up %d Govee switch entities", len(entities))
@@ -283,3 +288,56 @@ class GoveeMusicModeSwitchEntity(GoveeEntity, SwitchEntity):
             if success:
                 self._is_on = False
                 self.async_write_ha_state()
+
+
+class GoveeDreamViewSwitchEntity(GoveeEntity, SwitchEntity):
+    """Govee DreamView (Movie Mode) toggle switch entity.
+
+    Controls DreamView mode for devices that support it (e.g., Immersion TV backlights).
+    Uses optimistic state since API may not return DreamView status.
+    """
+
+    _attr_translation_key = "govee_dreamview"
+    _attr_icon = "mdi:movie-open"
+
+    def __init__(
+        self,
+        coordinator: GoveeCoordinator,
+        device: GoveeDevice,
+    ) -> None:
+        """Initialize the DreamView switch entity."""
+        super().__init__(coordinator, device)
+
+        # Unique ID for DreamView switch
+        self._attr_unique_id = f"{device.device_id}_dreamview"
+
+        # Name as "DreamView"
+        self._attr_name = "DreamView"
+
+        # Optimistic state
+        self._is_on = False
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if DreamView is on."""
+        return self._is_on
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn DreamView on."""
+        success = await self.coordinator.async_control_device(
+            self._device_id,
+            create_dreamview_command(enabled=True),
+        )
+        if success:
+            self._is_on = True
+            self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn DreamView off."""
+        success = await self.coordinator.async_control_device(
+            self._device_id,
+            create_dreamview_command(enabled=False),
+        )
+        if success:
+            self._is_on = False
+            self.async_write_ha_state()

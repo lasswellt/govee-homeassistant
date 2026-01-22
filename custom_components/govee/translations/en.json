@@ -109,6 +109,9 @@
       },
       "govee_music_mode": {
         "name": "Music Mode"
+      },
+      "govee_dreamview": {
+        "name": "DreamView"
       }
     },
     "sensor": {
