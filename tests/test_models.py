@@ -455,6 +455,113 @@ class TestGoveeDeviceState:
         assert state.hdmi_source == 3
         assert state.source == "optimistic"
 
+    def test_optimistic_dreamview(self):
+        """Test optimistic DreamView update."""
+        state = GoveeDeviceState.create_empty("test_id")
+        state.apply_optimistic_dreamview(True)
+        assert state.dreamview_enabled is True
+        assert state.source == "optimistic"
+
+    def test_optimistic_dreamview_off(self):
+        """Test optimistic DreamView off does not clear other modes."""
+        state = GoveeDeviceState.create_empty("test_id")
+        state.music_mode_enabled = True
+        state.active_scene = "123"
+        state.apply_optimistic_dreamview(False)
+        assert state.dreamview_enabled is False
+        # Other modes should NOT be cleared when turning off
+        assert state.music_mode_enabled is True
+        assert state.active_scene == "123"
+
+    def test_dreamview_clears_music_mode(self):
+        """Test enabling DreamView clears music mode (mutual exclusion)."""
+        state = GoveeDeviceState.create_empty("test_id")
+        state.music_mode_enabled = True
+        state.music_mode_value = 5
+        state.music_mode_name = "Spectrum"
+        state.apply_optimistic_dreamview(True)
+        assert state.dreamview_enabled is True
+        assert state.music_mode_enabled is False
+        assert state.music_mode_value is None
+        assert state.music_mode_name is None
+
+    def test_dreamview_clears_scene(self):
+        """Test enabling DreamView clears active scene (mutual exclusion)."""
+        state = GoveeDeviceState.create_empty("test_id")
+        state.active_scene = "123"
+        state.active_diy_scene = "456"
+        state.apply_optimistic_dreamview(True)
+        assert state.dreamview_enabled is True
+        assert state.active_scene is None
+        assert state.active_diy_scene is None
+
+    def test_music_mode_clears_dreamview(self):
+        """Test enabling music mode clears DreamView (mutual exclusion)."""
+        state = GoveeDeviceState.create_empty("test_id")
+        state.dreamview_enabled = True
+        state.apply_optimistic_music_mode(True)
+        assert state.music_mode_enabled is True
+        assert state.dreamview_enabled is False
+
+    def test_music_mode_clears_scene(self):
+        """Test enabling music mode clears scene (mutual exclusion)."""
+        state = GoveeDeviceState.create_empty("test_id")
+        state.active_scene = "123"
+        state.active_diy_scene = "456"
+        state.apply_optimistic_music_mode(True)
+        assert state.music_mode_enabled is True
+        assert state.active_scene is None
+        assert state.active_diy_scene is None
+
+    def test_music_mode_struct_clears_dreamview(self):
+        """Test enabling STRUCT music mode clears DreamView (mutual exclusion)."""
+        state = GoveeDeviceState.create_empty("test_id")
+        state.dreamview_enabled = True
+        state.active_scene = "123"
+        state.apply_optimistic_music_mode_struct(5, 75, "Spectrum")
+        assert state.music_mode_enabled is True
+        assert state.music_mode_value == 5
+        assert state.dreamview_enabled is False
+        assert state.active_scene is None
+
+    def test_scene_clears_dreamview_and_music(self):
+        """Test selecting scene clears DreamView and music mode (mutual exclusion)."""
+        state = GoveeDeviceState.create_empty("test_id")
+        state.dreamview_enabled = True
+        state.music_mode_enabled = True
+        state.music_mode_value = 5
+        state.apply_optimistic_scene("123")
+        assert state.active_scene == "123"
+        assert state.dreamview_enabled is False
+        assert state.music_mode_enabled is False
+        assert state.music_mode_value is None
+
+    def test_scene_clears_diy_scene(self):
+        """Test selecting regular scene clears DIY scene."""
+        state = GoveeDeviceState.create_empty("test_id")
+        state.active_diy_scene = "456"
+        state.apply_optimistic_scene("123")
+        assert state.active_scene == "123"
+        assert state.active_diy_scene is None
+
+    def test_diy_scene_clears_regular_scene(self):
+        """Test selecting DIY scene clears regular scene."""
+        state = GoveeDeviceState.create_empty("test_id")
+        state.active_scene = "123"
+        state.apply_optimistic_diy_scene("456")
+        assert state.active_diy_scene == "456"
+        assert state.active_scene is None
+
+    def test_diy_scene_clears_dreamview_and_music(self):
+        """Test selecting DIY scene clears DreamView and music mode."""
+        state = GoveeDeviceState.create_empty("test_id")
+        state.dreamview_enabled = True
+        state.music_mode_enabled = True
+        state.apply_optimistic_diy_scene("456")
+        assert state.active_diy_scene == "456"
+        assert state.dreamview_enabled is False
+        assert state.music_mode_enabled is False
+
 
 # ==============================================================================
 # Command Tests

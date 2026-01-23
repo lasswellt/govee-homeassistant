@@ -143,6 +143,9 @@ class GoveeSceneSelectEntity(CoordinatorEntity["GoveeCoordinator"], SelectEntity
 
     Provides a dropdown to select and activate scenes on a device.
     Much more manageable than individual scene entities.
+
+    Scene, Music Mode, and DreamView are mutually exclusive.
+    When Music Mode or DreamView is activated, the scene selection shows "None".
     """
 
     _attr_has_entity_name = True
@@ -169,6 +172,8 @@ class GoveeSceneSelectEntity(CoordinatorEntity["GoveeCoordinator"], SelectEntity
 
         # Build scene mapping: name -> (id, name)
         self._scene_map: dict[str, tuple[int, str]] = {}
+        # Reverse mapping: scene_id (as string) -> option name
+        self._scene_id_to_option: dict[str, str] = {}
         options = [SCENE_NONE]
 
         for scene_data in scenes:
@@ -183,10 +188,10 @@ class GoveeSceneSelectEntity(CoordinatorEntity["GoveeCoordinator"], SelectEntity
                 counter += 1
 
             self._scene_map[unique_name] = (scene_id, scene_name)
+            self._scene_id_to_option[str(scene_id)] = unique_name
             options.append(unique_name)
 
         self._attr_options = options
-        self._attr_current_option = SCENE_NONE
 
         # Unique ID
         self._attr_unique_id = f"{device.device_id}_scene_select"
@@ -212,11 +217,31 @@ class GoveeSceneSelectEntity(CoordinatorEntity["GoveeCoordinator"], SelectEntity
             return False
         return state.online or self._device.is_group
 
+    @property
+    def current_option(self) -> str | None:
+        """Return current selected option from state.
+
+        Reads from coordinator state to reflect mutual exclusion.
+        When DreamView or Music Mode is active, scene is cleared.
+        """
+        state = self.coordinator.get_state(self._device_id)
+        if state and state.active_scene:
+            # Look up option name from scene ID
+            option = self._scene_id_to_option.get(state.active_scene)
+            if option:
+                return option
+        return SCENE_NONE
+
     async def async_select_option(self, option: str) -> None:
-        """Handle scene selection."""
+        """Handle scene selection.
+
+        Selecting a scene clears Music Mode and DreamView states.
+        """
         if option == SCENE_NONE:
-            # Just update state, don't send command
-            self._attr_current_option = SCENE_NONE
+            # Clear the scene state
+            state = self.coordinator.get_state(self._device_id)
+            if state:
+                state.active_scene = None
             self.async_write_ha_state()
             return
 
@@ -238,7 +263,7 @@ class GoveeSceneSelectEntity(CoordinatorEntity["GoveeCoordinator"], SelectEntity
         )
 
         if success:
-            self._attr_current_option = option
+            # State update with mutual exclusion is handled in coordinator
             self.async_write_ha_state()
             _LOGGER.debug(
                 "Activated scene '%s' on %s",
@@ -258,6 +283,9 @@ class GoveeDIYSceneSelectEntity(CoordinatorEntity["GoveeCoordinator"], SelectEnt
 
     Provides a dropdown to select and activate DIY scenes on a device.
     DIY scenes are user-created custom effects stored on the device.
+
+    DIY Scene, Music Mode, and DreamView are mutually exclusive.
+    When Music Mode or DreamView is activated, the scene selection shows "None".
     """
 
     _attr_has_entity_name = True
@@ -284,6 +312,8 @@ class GoveeDIYSceneSelectEntity(CoordinatorEntity["GoveeCoordinator"], SelectEnt
 
         # Build scene mapping: name -> (id, name)
         self._scene_map: dict[str, tuple[int, str]] = {}
+        # Reverse mapping: scene_id (as string) -> option name
+        self._scene_id_to_option: dict[str, str] = {}
         options = [SCENE_NONE]
 
         for scene_data in scenes:
@@ -299,10 +329,10 @@ class GoveeDIYSceneSelectEntity(CoordinatorEntity["GoveeCoordinator"], SelectEnt
                 counter += 1
 
             self._scene_map[unique_name] = (scene_id, scene_name)
+            self._scene_id_to_option[str(scene_id)] = unique_name
             options.append(unique_name)
 
         self._attr_options = options
-        self._attr_current_option = SCENE_NONE
 
         # Unique ID
         self._attr_unique_id = f"{device.device_id}_diy_scene_select"
@@ -328,11 +358,31 @@ class GoveeDIYSceneSelectEntity(CoordinatorEntity["GoveeCoordinator"], SelectEnt
             return False
         return state.online or self._device.is_group
 
+    @property
+    def current_option(self) -> str | None:
+        """Return current selected option from state.
+
+        Reads from coordinator state to reflect mutual exclusion.
+        When DreamView or Music Mode is active, DIY scene is cleared.
+        """
+        state = self.coordinator.get_state(self._device_id)
+        if state and state.active_diy_scene:
+            # Look up option name from scene ID
+            option = self._scene_id_to_option.get(state.active_diy_scene)
+            if option:
+                return option
+        return SCENE_NONE
+
     async def async_select_option(self, option: str) -> None:
-        """Handle DIY scene selection."""
+        """Handle DIY scene selection.
+
+        Selecting a DIY scene clears Music Mode and DreamView states.
+        """
         if option == SCENE_NONE:
-            # Just update state, don't send command
-            self._attr_current_option = SCENE_NONE
+            # Clear the DIY scene state
+            state = self.coordinator.get_state(self._device_id)
+            if state:
+                state.active_diy_scene = None
             self.async_write_ha_state()
             return
 
@@ -354,7 +404,7 @@ class GoveeDIYSceneSelectEntity(CoordinatorEntity["GoveeCoordinator"], SelectEnt
         )
 
         if success:
-            self._attr_current_option = option
+            # State update with mutual exclusion is handled in coordinator
             self.async_write_ha_state()
             _LOGGER.debug(
                 "Activated DIY scene '%s' on %s",

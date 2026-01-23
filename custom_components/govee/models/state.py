@@ -83,6 +83,7 @@ class GoveeDeviceState:
     color: RGBColor | None = None
     color_temp_kelvin: int | None = None
     active_scene: str | None = None
+    active_diy_scene: str | None = None  # DIY scene ID (separate from regular scenes)
     segments: list[SegmentState] = field(default_factory=list)
     diy_speed: int | None = None  # DIY scene playback speed 0-100
     diy_style: str | None = None  # DIY animation style (Fade, Jumping, etc.)
@@ -105,6 +106,9 @@ class GoveeDeviceState:
 
     # HDMI source state (for devices like AI Sync Box H6604)
     hdmi_source: int | None = None  # HDMI port: 1, 2, 3, 4
+
+    # DreamView (Movie Mode) state
+    dreamview_enabled: bool | None = None  # DreamView on/off
 
     # Source tracking for state management
     # "api" = from REST poll, "mqtt" = from push, "optimistic" = from command
@@ -149,6 +153,8 @@ class GoveeDeviceState:
             elif cap_type == "devices.capabilities.toggle":
                 if instance == "oscillationToggle":
                     self.oscillating = bool(value)
+                elif instance == "dreamViewToggle":
+                    self.dreamview_enabled = bool(value)
 
             elif cap_type == "devices.capabilities.work_mode":
                 if instance == "workMode" and isinstance(value, dict):
@@ -212,9 +218,34 @@ class GoveeDeviceState:
         self.source = "optimistic"
 
     def apply_optimistic_scene(self, scene_id: str) -> None:
-        """Apply optimistic scene activation."""
+        """Apply optimistic scene activation.
+
+        Scenes, Music Mode, and DreamView are mutually exclusive.
+        When a Scene is activated, DreamView, music mode, and DIY scene are cleared.
+        """
         self.active_scene = scene_id
         self.source = "optimistic"
+        # Mutual exclusion: clear other modes when activating scene
+        self.dreamview_enabled = False
+        self.music_mode_enabled = False
+        self.music_mode_value = None
+        self.music_mode_name = None
+        self.active_diy_scene = None
+
+    def apply_optimistic_diy_scene(self, scene_id: str) -> None:
+        """Apply optimistic DIY scene activation.
+
+        DIY Scenes, regular Scenes, Music Mode, and DreamView are mutually exclusive.
+        When a DIY Scene is activated, DreamView, music mode, and regular scene are cleared.
+        """
+        self.active_diy_scene = scene_id
+        self.source = "optimistic"
+        # Mutual exclusion: clear other modes when activating DIY scene
+        self.dreamview_enabled = False
+        self.music_mode_enabled = False
+        self.music_mode_value = None
+        self.music_mode_name = None
+        self.active_scene = None
 
     def apply_optimistic_diy_style(self, style: str, style_value: int | None = None) -> None:
         """Apply optimistic DIY style update.
@@ -228,9 +259,18 @@ class GoveeDeviceState:
         self.source = "optimistic"
 
     def apply_optimistic_music_mode(self, enabled: bool) -> None:
-        """Apply optimistic music mode update (legacy BLE)."""
+        """Apply optimistic music mode update (legacy BLE).
+
+        Music Mode, DreamView, and Scenes are mutually exclusive.
+        When Music Mode is enabled, DreamView and scenes are cleared.
+        """
         self.music_mode_enabled = enabled
         self.source = "optimistic"
+        # Mutual exclusion: clear other modes when enabling music mode
+        if enabled:
+            self.dreamview_enabled = False
+            self.active_scene = None
+            self.active_diy_scene = None
 
     def apply_optimistic_music_mode_struct(
         self,
@@ -239,6 +279,9 @@ class GoveeDeviceState:
         mode_name: str | None = None,
     ) -> None:
         """Apply optimistic music mode update (STRUCT-based REST API).
+
+        Music Mode, DreamView, and Scenes are mutually exclusive.
+        When Music Mode is enabled, DreamView and active scene are cleared.
 
         Args:
             music_mode: Music mode value (1-11).
@@ -250,6 +293,10 @@ class GoveeDeviceState:
         self.music_mode_name = mode_name
         self.music_mode_enabled = True  # Also set enabled for switch state
         self.source = "optimistic"
+        # Mutual exclusion: clear other modes when enabling music mode
+        self.dreamview_enabled = False
+        self.active_scene = None
+        self.active_diy_scene = None
 
     def apply_optimistic_oscillation(self, oscillating: bool) -> None:
         """Apply optimistic oscillation update (fans)."""
@@ -271,6 +318,22 @@ class GoveeDeviceState:
         """Apply optimistic scene speed update."""
         self.scene_speed = speed
         self.source = "optimistic"
+
+    def apply_optimistic_dreamview(self, enabled: bool) -> None:
+        """Apply optimistic DreamView (Movie Mode) update.
+
+        DreamView, Music Mode, and Scenes are mutually exclusive.
+        When DreamView is enabled, music mode and scenes are cleared.
+        """
+        self.dreamview_enabled = enabled
+        self.source = "optimistic"
+        # Mutual exclusion: clear other modes when enabling DreamView
+        if enabled:
+            self.music_mode_enabled = False
+            self.music_mode_value = None
+            self.music_mode_name = None
+            self.active_scene = None
+            self.active_diy_scene = None
 
     @classmethod
     def create_empty(cls, device_id: str) -> GoveeDeviceState:

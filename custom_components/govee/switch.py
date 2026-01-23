@@ -294,7 +294,9 @@ class GoveeDreamViewSwitchEntity(GoveeEntity, SwitchEntity):
     """Govee DreamView (Movie Mode) toggle switch entity.
 
     Controls DreamView mode for devices that support it (e.g., Immersion TV backlights).
-    Uses optimistic state since API may not return DreamView status.
+
+    DreamView, Music Mode, and Scenes are mutually exclusive on the device.
+    When DreamView is turned on, music mode and scene states are cleared.
     """
 
     _attr_translation_key = "govee_dreamview"
@@ -314,22 +316,28 @@ class GoveeDreamViewSwitchEntity(GoveeEntity, SwitchEntity):
         # Name as "DreamView"
         self._attr_name = "DreamView"
 
-        # Optimistic state
-        self._is_on = False
-
     @property
     def is_on(self) -> bool:
-        """Return True if DreamView is on."""
-        return self._is_on
+        """Return True if DreamView is on.
+
+        Reads from device state for proper mutual exclusion tracking.
+        """
+        state = self.device_state
+        if state and state.dreamview_enabled is not None:
+            return state.dreamview_enabled
+        return False
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn DreamView on."""
+        """Turn DreamView on.
+
+        This clears music mode and scene states due to mutual exclusion.
+        """
         success = await self.coordinator.async_control_device(
             self._device_id,
             create_dreamview_command(enabled=True),
         )
         if success:
-            self._is_on = True
+            # State update with mutual exclusion is handled in coordinator
             self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
@@ -339,5 +347,4 @@ class GoveeDreamViewSwitchEntity(GoveeEntity, SwitchEntity):
             create_dreamview_command(enabled=False),
         )
         if success:
-            self._is_on = False
             self.async_write_ha_state()
