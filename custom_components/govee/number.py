@@ -245,17 +245,25 @@ class GoveeSceneSpeedNumber(
     """Govee regular scene speed control entity.
 
     Controls the playback speed of regular (non-DIY) scenes on devices
-    that support speed control. Unlike DIY scenes, regular scene speed
-    doesn't require matching the animation style.
+    that support speed control. The speed range is dynamically determined
+    by the currently active scene - each scene can have its own min/max range.
+
+    This entity uses the multi-packet BLE protocol (0xA3) to modify the
+    scene's animation data and re-send it with the new speed value.
 
     Uses RestoreEntity to persist speed across Home Assistant restarts
     since the API doesn't return the current speed value.
+
+    Only available when:
+    - MQTT is connected (required for BLE passthrough)
+    - A scene is active that supports speed control (has speedIndex and scenceParam)
     """
 
     _attr_has_entity_name = True
     _attr_translation_key = "govee_scene_speed"
     _attr_icon = "mdi:speedometer"
     _attr_mode = NumberMode.SLIDER
+    _attr_native_step = 1
 
     def __init__(
         self,
@@ -268,18 +276,15 @@ class GoveeSceneSpeedNumber(
         Args:
             coordinator: Govee data coordinator.
             device: Device this entity controls.
-            speed_range: Optional (min, max) speed range from light effect library.
+            speed_range: Default (min, max) speed range (used when no scene is active).
         """
         super().__init__(coordinator)
 
         self._device = device
         self._device_id = device.device_id
 
-        # Set speed range (default 1-100)
-        min_speed, max_speed = speed_range or (1, 100)
-        self._attr_native_min_value = float(min_speed)
-        self._attr_native_max_value = float(max_speed)
-        self._attr_native_step = 1
+        # Default speed range (used when no scene-specific range available)
+        self._default_min, self._default_max = speed_range or (1, 100)
         self._attr_native_value: float | None = 50.0  # Default to mid-speed
 
         # Unique ID
@@ -287,6 +292,58 @@ class GoveeSceneSpeedNumber(
 
         # Entity name
         self._attr_name = "Scene Speed"
+
+    @property
+    def native_min_value(self) -> float:
+        """Return minimum value, dynamically based on active scene."""
+        speed_range = self._get_active_scene_speed_range()
+        if speed_range:
+            return float(speed_range[0])
+        return float(self._default_min)
+
+    @property
+    def native_max_value(self) -> float:
+        """Return maximum value, dynamically based on active scene."""
+        speed_range = self._get_active_scene_speed_range()
+        if speed_range:
+            return float(speed_range[1])
+        return float(self._default_max)
+
+    def _get_active_scene_speed_range(self) -> tuple[int, int] | None:
+        """Get speed range for the currently active scene.
+
+        Returns:
+            Tuple of (min, max) if active scene supports speed, else None.
+        """
+        state = self.coordinator.get_state(self._device_id)
+        if not state or not state.active_scene:
+            return None
+
+        # Look up scene-specific speed range
+        scene_data = self.coordinator.get_scene_speed_data(
+            self._device_id, state.active_scene
+        )
+        if scene_data:
+            speed_min = scene_data.get("speedMin", self._default_min)
+            speed_max = scene_data.get("speedMax", self._default_max)
+            return (speed_min, speed_max)
+
+        return None
+
+    def _active_scene_supports_speed(self) -> bool:
+        """Check if the currently active scene supports speed control.
+
+        Returns:
+            True if active scene has speedIndex and scenceParam.
+        """
+        state = self.coordinator.get_state(self._device_id)
+        if not state or not state.active_scene:
+            return False
+
+        scene_data = self.coordinator.get_scene_speed_data(
+            self._device_id, state.active_scene
+        )
+        return scene_data is not None
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -302,7 +359,10 @@ class GoveeSceneSpeedNumber(
     def available(self) -> bool:
         """Return True if entity is available.
 
-        Requires MQTT connection for BLE passthrough.
+        Requires:
+        - MQTT connection for BLE passthrough
+        - Device online
+        - Active scene that supports speed control (has speedIndex and scenceParam)
         """
         if not self.coordinator.mqtt_connected:
             return False
@@ -310,7 +370,12 @@ class GoveeSceneSpeedNumber(
         state = self.coordinator.get_state(self._device_id)
         if state is None:
             return False
-        return state.online or self._device.is_group
+
+        if not (state.online or self._device.is_group):
+            return False
+
+        # Only available if active scene supports speed control
+        return self._active_scene_supports_speed()
 
     async def async_added_to_hass(self) -> None:
         """Restore state when entity is added to Home Assistant."""
@@ -336,8 +401,11 @@ class GoveeSceneSpeedNumber(
     async def async_set_native_value(self, value: float) -> None:
         """Set the scene speed.
 
+        Uses multi-packet BLE protocol to modify the active scene's animation
+        data with the new speed value.
+
         Args:
-            value: Speed value within the configured range.
+            value: Speed value within the scene's configured range.
         """
         speed = int(value)
 

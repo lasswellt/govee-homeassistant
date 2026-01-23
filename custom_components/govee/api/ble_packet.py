@@ -244,3 +244,164 @@ def encode_packet_base64(packet: bytes) -> str:
         Base64-encoded ASCII string.
     """
     return base64.b64encode(packet).decode("ascii")
+
+
+# ==============================================================================
+# Multi-Packet Scene Speed Protocol (0xA3)
+# ==============================================================================
+
+# Multi-packet constants
+MULTI_PACKET_ID = 0xA3
+MULTI_PACKET_FIRST_INDEX = 0x00
+MULTI_PACKET_LAST_INDEX = 0xFF
+
+# Scene activation constants
+SCENE_ACTIVATION_PREFIX = 0x33
+SCENE_ACTIVATION_COMMAND = 0x05
+SCENE_ACTIVATION_INDICATOR = 0x04
+
+
+def modify_scene_speed(scence_param_b64: str, speed_index: int, new_speed: int) -> bytes:
+    """Decode scenceParam and modify the speed byte at speedIndex.
+
+    The scenceParam is base64-encoded animation data from the light effect
+    library. The speedIndex indicates which byte position contains the speed
+    value that needs to be modified.
+
+    Args:
+        scence_param_b64: Base64-encoded scenceParam from light effect library.
+        speed_index: Byte position of the speed value in the decoded data.
+        new_speed: New speed value (will be clamped to valid range).
+
+    Returns:
+        Modified animation data as bytes.
+
+    Raises:
+        ValueError: If speed_index is out of bounds or base64 is invalid.
+    """
+    try:
+        # Decode base64 to get raw animation data
+        data = bytearray(base64.b64decode(scence_param_b64))
+    except Exception as err:
+        raise ValueError(f"Invalid base64 scenceParam: {err}") from err
+
+    # Validate speed_index is within bounds
+    if speed_index < 0 or speed_index >= len(data):
+        raise ValueError(
+            f"speedIndex {speed_index} out of bounds for data length {len(data)}"
+        )
+
+    # Clamp speed to valid range (typically 1-100 for regular scenes)
+    new_speed = max(1, min(100, new_speed))
+
+    # Modify the speed byte
+    data[speed_index] = new_speed
+
+    return bytes(data)
+
+
+def build_multi_packet_sequence(data: bytes, scene_type: int = 2) -> list[bytes]:
+    """Build 0xA3 multi-packet sequence for scene animation data.
+
+    Multi-packet format:
+    - First packet:  [0xA3, 0x00, count, scene_type, data[0:14]...]
+    - Middle packet: [0xA3, index, data[offset:offset+17]...]
+    - Last packet:   [0xA3, 0xFF, remaining_data...]
+
+    Each packet is 20 bytes (19 data + 1 XOR checksum).
+
+    Args:
+        data: Animation data bytes to send.
+        scene_type: Scene type indicator (default 2 for regular scenes).
+
+    Returns:
+        List of 20-byte packets ready for transmission.
+    """
+    packets: list[bytes] = []
+
+    # Calculate how many packets we need
+    # First packet has 14 bytes of data (after 0xA3, 0x00, count, scene_type)
+    # Middle packets have 17 bytes of data (after 0xA3, index)
+    # Last packet has remaining data (after 0xA3, 0xFF)
+
+    if len(data) == 0:
+        # Edge case: empty data, just send a minimal packet
+        packets.append(build_packet([MULTI_PACKET_ID, MULTI_PACKET_FIRST_INDEX, 1, scene_type]))
+        packets.append(build_packet([MULTI_PACKET_ID, MULTI_PACKET_LAST_INDEX]))
+        return packets
+
+    # First packet: 0xA3, 0x00, count, scene_type, data[0:14]
+    first_data_size = 14
+    first_chunk = data[:first_data_size]
+    remaining = data[first_data_size:]
+
+    # Calculate total packet count (including first and last)
+    middle_data_size = 17
+    if len(remaining) == 0:
+        total_packets = 2  # Just first and last
+    else:
+        # Middle packets + last packet for remaining data
+        middle_packet_count = (len(remaining) - 1) // middle_data_size + 1
+        total_packets = 1 + middle_packet_count  # First + middle/last
+
+    # Build first packet
+    first_packet_data = [MULTI_PACKET_ID, MULTI_PACKET_FIRST_INDEX, total_packets, scene_type]
+    first_packet_data.extend(first_chunk)
+    packets.append(build_packet(first_packet_data))
+
+    # Build middle packets (if needed)
+    index = 1
+    offset = 0
+    while offset < len(remaining):
+        chunk = remaining[offset : offset + middle_data_size]
+        is_last = offset + middle_data_size >= len(remaining)
+
+        if is_last:
+            # Last packet uses 0xFF as index
+            packet_data = [MULTI_PACKET_ID, MULTI_PACKET_LAST_INDEX]
+        else:
+            # Middle packet uses sequential index
+            packet_data = [MULTI_PACKET_ID, index]
+
+        packet_data.extend(chunk)
+        packets.append(build_packet(packet_data))
+
+        offset += middle_data_size
+        index += 1
+
+    # If we only had first packet data, add an empty last packet
+    if len(remaining) == 0:
+        packets.append(build_packet([MULTI_PACKET_ID, MULTI_PACKET_LAST_INDEX]))
+
+    return packets
+
+
+def build_scene_activation_packet(scene_code: int) -> bytes:
+    """Build scene activation packet (0x33 0x05 0x04).
+
+    This packet is sent after the multi-packet scene data to activate
+    the scene on the device.
+
+    Packet format:
+    [0x33, 0x05, 0x04, code_lo, code_hi, 0x00...] + checksum
+
+    Args:
+        scene_code: Scene code from light effect library (16-bit value).
+
+    Returns:
+        20-byte BLE packet for scene activation.
+    """
+    # Extract low and high bytes of scene code
+    code_lo = scene_code & 0xFF
+    code_hi = (scene_code >> 8) & 0xFF
+
+    # Build activation packet
+    data = [
+        SCENE_ACTIVATION_PREFIX,  # 0x33
+        SCENE_ACTIVATION_COMMAND,  # 0x05
+        SCENE_ACTIVATION_INDICATOR,  # 0x04
+        code_lo,
+        code_hi,
+    ]
+
+    return build_packet(data)

@@ -370,18 +370,20 @@ class GoveeAwsIotClient:
         self,
         device_id: str,
         sku: str,
-        ble_packet_base64: str,
+        ble_packet_base64: str | list[str],
         device_topic: str | None = None,
     ) -> bool:
         """Publish BLE passthrough command via MQTT.
 
-        Sends a ptReal command to the device to execute a BLE packet.
+        Sends a ptReal command to the device to execute BLE packet(s).
         This allows controlling device features not exposed via REST API.
 
         Args:
             device_id: Target device identifier.
             sku: Device SKU/model.
-            ble_packet_base64: Base64-encoded BLE packet.
+            ble_packet_base64: Base64-encoded BLE packet or list of packets.
+                               For multi-packet sequences (e.g., scene speed),
+                               pass a list of base64-encoded packets.
             device_topic: Device-specific MQTT topic for publishing commands.
                           Required for AWS IoT - obtained from undocumented API.
 
@@ -400,12 +402,18 @@ class GoveeAwsIotClient:
             )
             return False
 
+        # Normalize to list for consistent handling
+        if isinstance(ble_packet_base64, str):
+            packets = [ble_packet_base64]
+        else:
+            packets = ble_packet_base64
+
         # Build ptReal payload with device targeting
         payload = {
             "msg": {
                 "cmd": "ptReal",
                 "data": {
-                    "command": [ble_packet_base64],
+                    "command": packets,
                     "device": device_id,
                     "sku": sku,
                 },
@@ -418,10 +426,11 @@ class GoveeAwsIotClient:
         try:
             await self._client.publish(device_topic, json.dumps(payload))
             _LOGGER.debug(
-                "Published ptReal to %s for device %s (sku=%s)",
+                "Published ptReal to %s for device %s (sku=%s, packets=%d)",
                 device_topic[:30] + "...",
                 device_id,
                 sku,
+                len(packets),
             )
             return True
         except Exception as err:

@@ -286,6 +286,8 @@ class GoveeAuthClient:
         This API returns scene information including speed support:
         - support_speed: Whether the device supports scene speed control
         - scenes with speed_info: Per-scene speed configuration
+        - scenceParam: Base64-encoded animation data for multi-packet protocol
+        - sceneCode: Activation code for BLE scene activation packet
 
         Reference: wez/govee2mqtt light effect library API
 
@@ -297,17 +299,20 @@ class GoveeAuthClient:
             Dict with light effect library data:
             {
                 "support_speed": 1,  # 0 or 1
-                "scenes": [
-                    {
+                "categories": [...],  # Raw category data
+                "scenes": {  # Flattened scene lookup by sceneId
+                    "123": {
                         "sceneId": 123,
                         "sceneName": "Aurora",
-                        "speed_info": {
-                            "moveAll": [10, 100],  # [min, max] range
-                            "default": 50
-                        },
-                        ...
-                    }
-                ]
+                        "sceneCode": 10191,
+                        "scenceParam": "base64-encoded-data",
+                        "speedIndex": 5,  # Byte position of speed in scenceParam
+                        "speedMin": 10,
+                        "speedMax": 100,
+                        "speedDefault": 50,
+                    },
+                    ...
+                }
             }
 
         Raises:
@@ -339,14 +344,64 @@ class GoveeAuthClient:
                         code=response.status,
                     )
 
-                # Response structure: { "data": { "support_speed": 1, "scenes": [...] } }
-                result = data.get("data", {}) if isinstance(data, dict) else {}
+                # Response structure: { "data": { "support_speed": 1, "categories": [...] } }
+                raw_data = data.get("data", {}) if isinstance(data, dict) else {}
+
+                # Build flattened scene lookup for easy access
+                scenes_lookup: dict[str, dict[str, Any]] = {}
+                categories = raw_data.get("categories", [])
+
+                for category in categories:
+                    for scene in category.get("scenes", []):
+                        scene_id = scene.get("sceneId")
+                        if scene_id is None:
+                            continue
+
+                        scene_data: dict[str, Any] = {
+                            "sceneId": scene_id,
+                            "sceneName": scene.get("sceneName", ""),
+                            "sceneCode": scene.get("sceneCode"),
+                            "sceneType": scene.get("sceneType", 1),
+                        }
+
+                        # Extract scenceParam from lightEffects if available
+                        light_effects = scene.get("lightEffects", [])
+                        if light_effects:
+                            # Use the first light effect (usually the only one)
+                            effect = light_effects[0]
+                            scene_data["scenceParam"] = effect.get("scenceParam")
+                            scene_data["scenceParamId"] = effect.get("scenceParamId")
+
+                        # Extract speed_info if available
+                        speed_info = scene.get("speed_info")
+                        if speed_info:
+                            scene_data["speedIndex"] = speed_info.get("speedIndex")
+
+                            # moveAll contains [min, max] speed range
+                            move_all = speed_info.get("moveAll", [])
+                            if len(move_all) >= 2:
+                                scene_data["speedMin"] = move_all[0]
+                                scene_data["speedMax"] = move_all[1]
+                            else:
+                                # Default range
+                                scene_data["speedMin"] = 1
+                                scene_data["speedMax"] = 100
+
+                            scene_data["speedDefault"] = speed_info.get("default", 50)
+
+                        scenes_lookup[str(scene_id)] = scene_data
+
+                result = {
+                    "support_speed": raw_data.get("support_speed", 0),
+                    "categories": categories,
+                    "scenes": scenes_lookup,
+                }
 
                 _LOGGER.debug(
                     "Light effect library for %s: support_speed=%s, scenes=%d",
                     sku,
                     result.get("support_speed", 0),
-                    len(result.get("scenes", [])),
+                    len(scenes_lookup),
                 )
                 return result
 

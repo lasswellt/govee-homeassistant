@@ -930,11 +930,13 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         support_speed: int = library.get("support_speed", 0)
         return support_speed == 1
 
-    def get_scene_speed_range(self, device_id: str) -> tuple[int, int] | None:
+    def get_scene_speed_range(self, device_id: str, scene_id: str | None = None) -> tuple[int, int] | None:
         """Get the speed range for scene speed control.
 
         Args:
             device_id: Device identifier.
+            scene_id: Optional specific scene ID. If not provided, uses the
+                      active scene from device state.
 
         Returns:
             Tuple of (min, max) speed values, or None if not supported.
@@ -947,21 +949,72 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if library.get("support_speed", 0) != 1:
             return None
 
-        # Default range if not specified
+        # Determine which scene to check
+        if scene_id is None:
+            state = self._states.get(device_id)
+            if state and state.active_scene:
+                scene_id = state.active_scene
+            else:
+                # No active scene, return default range
+                return (1, 100)
+
+        # Get scene-specific speed range
+        scene_data = self.get_scene_speed_data(device_id, str(scene_id))
+        if scene_data:
+            speed_min = scene_data.get("speedMin", 1)
+            speed_max = scene_data.get("speedMax", 100)
+            return (speed_min, speed_max)
+
+        # Default range if scene not found or doesn't have speed info
         return (1, 100)
 
-    async def async_send_scene_speed(self, device_id: str, speed: int) -> bool:
-        """Send regular scene speed via BLE passthrough.
-
-        Sends a ptReal MQTT command to adjust scene playback speed.
-        This feature requires MQTT connection as there is no REST API fallback.
-
-        Unlike DIY scene speed, regular scene speed doesn't require matching
-        the animation style byte.
+    def get_scene_speed_data(self, device_id: str, scene_id: str) -> dict[str, Any] | None:
+        """Get scene speed data for a specific scene.
 
         Args:
             device_id: Device identifier.
-            speed: Playback speed (typically 1-100, lower = slower).
+            scene_id: Scene ID to look up.
+
+        Returns:
+            Dict with scene speed data (scenceParam, speedIndex, speedMin, speedMax, etc.)
+            or None if not found or not speed-capable.
+        """
+        device = self._devices.get(device_id)
+        if not device:
+            return None
+
+        library = self._light_effect_cache.get(device.sku, {})
+        scenes = library.get("scenes", {})
+        scene_data = scenes.get(str(scene_id))
+
+        if not scene_data:
+            _LOGGER.debug("Scene %s not found in library for %s", scene_id, device_id)
+            return None
+
+        # Scene must have speedIndex and scenceParam for speed control
+        if scene_data.get("speedIndex") is None or not scene_data.get("scenceParam"):
+            _LOGGER.debug(
+                "Scene %s does not support speed control (missing speedIndex or scenceParam)",
+                scene_id,
+            )
+            return None
+
+        return scene_data
+
+    async def async_send_scene_speed(self, device_id: str, speed: int) -> bool:
+        """Send regular scene speed via multi-packet BLE protocol.
+
+        This method implements the proper scene speed protocol:
+        1. Gets the active scene's scenceParam (base64-encoded animation data)
+        2. Decodes and modifies the speed byte at speedIndex position
+        3. Sends via multi-packet 0xA3 BLE protocol
+        4. Sends scene activation packet 0x33 0x05 0x04
+
+        This feature requires MQTT connection as there is no REST API fallback.
+
+        Args:
+            device_id: Device identifier.
+            speed: Playback speed (typically 1-100, range depends on scene).
 
         Returns:
             True if command was sent successfully.
@@ -978,11 +1031,78 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             _LOGGER.error("Unknown device for scene speed: %s", device_id)
             return False
 
-        # Build and send BLE packet
-        from .api.ble_packet import build_scene_speed_packet, encode_packet_base64
+        # Get current active scene from state
+        state = self._states.get(device_id)
+        if not state or not state.active_scene:
+            _LOGGER.warning(
+                "Cannot send scene speed for %s: No active scene",
+                device_id,
+            )
+            return False
 
-        packet = build_scene_speed_packet(speed)
-        encoded = encode_packet_base64(packet)
+        # Get scene speed data from library
+        scene_data = self.get_scene_speed_data(device_id, state.active_scene)
+        if not scene_data:
+            _LOGGER.warning(
+                "Cannot send scene speed for %s: Scene %s does not support speed control",
+                device_id,
+                state.active_scene,
+            )
+            return False
+
+        # Extract required data
+        scence_param = scene_data.get("scenceParam")
+        speed_index = scene_data.get("speedIndex")
+        scene_code = scene_data.get("sceneCode")
+        speed_min = scene_data.get("speedMin", 1)
+        speed_max = scene_data.get("speedMax", 100)
+
+        if not scence_param or speed_index is None:
+            _LOGGER.error(
+                "Missing scenceParam or speedIndex for scene %s",
+                state.active_scene,
+            )
+            return False
+
+        # Clamp speed to scene's valid range
+        speed = max(speed_min, min(speed_max, speed))
+
+        # Import BLE packet builders
+        from .api.ble_packet import (
+            build_multi_packet_sequence,
+            build_scene_activation_packet,
+            encode_packet_base64,
+            modify_scene_speed,
+        )
+
+        try:
+            # Modify the speed byte in the animation data
+            modified_data = modify_scene_speed(scence_param, speed_index, speed)
+
+            # Build multi-packet sequence
+            scene_type = scene_data.get("sceneType", 2)
+            packets = build_multi_packet_sequence(modified_data, scene_type)
+
+            # Add activation packet if we have a scene code
+            if scene_code:
+                activation_packet = build_scene_activation_packet(scene_code)
+                packets.append(activation_packet)
+
+            # Encode all packets to base64
+            encoded_packets = [encode_packet_base64(p) for p in packets]
+
+            _LOGGER.debug(
+                "Sending scene speed %d for scene %s: %d packets (speedIndex=%d, sceneCode=%s)",
+                speed,
+                state.active_scene,
+                len(encoded_packets),
+                speed_index,
+                scene_code,
+            )
+
+        except ValueError as err:
+            _LOGGER.error("Failed to build scene speed packets: %s", err)
+            return False
 
         # Get device-specific MQTT topic for publishing
         device_topic = self._device_topics.get(device_id)
@@ -990,16 +1110,16 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if self._mqtt_client is None:
             return False
 
+        # Send all packets in one ptReal command
         success = await self._mqtt_client.async_publish_ptreal(
             device_id,
             device.sku,
-            encoded,
+            encoded_packets,
             device_topic,
         )
 
         if success:
             # Apply optimistic update to state
-            state = self._states.get(device_id)
             if state:
                 state.apply_optimistic_scene_speed(speed)
             _LOGGER.debug("Sent scene speed %d to %s", speed, device.name)
