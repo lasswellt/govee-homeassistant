@@ -26,11 +26,43 @@ from .exceptions import GoveeApiError, GoveeAuthError
 
 _LOGGER = logging.getLogger(__name__)
 
+# Fields that should be redacted in debug logs (contain credentials/secrets)
+_SENSITIVE_FIELDS = frozenset({
+    "token", "refreshToken", "password", "p12", "p12Pass", "p12_pass",
+    "privateKey", "certificatePem", "caCertificate",
+})
+
+
+def _sanitize_response_for_logging(data: dict[str, Any]) -> dict[str, Any]:
+    """Mask sensitive fields in API response for safe logging.
+
+    Args:
+        data: API response dictionary.
+
+    Returns:
+        Copy of dict with sensitive values replaced by [REDACTED].
+    """
+    if not isinstance(data, dict):
+        return data
+
+    sanitized: dict[str, Any] = {}
+    for key, value in data.items():
+        if key in _SENSITIVE_FIELDS:
+            sanitized[key] = "[REDACTED]"
+        elif isinstance(value, dict):
+            sanitized[key] = _sanitize_response_for_logging(value)
+        elif isinstance(value, str) and len(value) > 100:
+            # Truncate long strings (likely base64 data)
+            sanitized[key] = f"{value[:50]}...[truncated, {len(value)} chars]"
+        else:
+            sanitized[key] = value
+    return sanitized
+
+
 # Govee Account API endpoints
 GOVEE_LOGIN_URL = "https://app2.govee.com/account/rest/account/v1/login"
 GOVEE_IOT_KEY_URL = "https://app2.govee.com/app/v1/account/iot/key"
 GOVEE_DEVICE_LIST_URL = "https://app2.govee.com/device/rest/devices/v1/list"
-GOVEE_LIGHT_EFFECT_URL = "https://app2.govee.com/appsku/v1/light-effect-libraries"
 GOVEE_CLIENT_TYPE = "1"  # Android client type
 
 
@@ -185,21 +217,33 @@ class GoveeAuthClient:
             "Accept": "application/json",
         }
 
+        _LOGGER.debug("Fetching IoT credentials from Govee API")
+
         try:
             async with self._session.get(
                 GOVEE_IOT_KEY_URL,
                 headers=headers,
             ) as response:
                 data = await response.json()
+                _LOGGER.debug("Govee IoT key HTTP response: status=%d", response.status)
 
                 if response.status != 200:
                     message = data.get("message", f"HTTP {response.status}")
+                    _LOGGER.warning(
+                        "Govee IoT key request failed: status=%d message='%s' response=%s",
+                        response.status,
+                        message,
+                        _sanitize_response_for_logging(data) if isinstance(data, dict) else data,
+                    )
                     raise GoveeApiError(f"Failed to get IoT key: {message}", code=response.status)
 
                 # IoT key response wraps data in a "data" field
                 return data.get("data", {}) if isinstance(data, dict) else {}
 
         except aiohttp.ClientError as err:
+            _LOGGER.warning(
+                "Connection error fetching IoT key: %s (%s)", type(err).__name__, str(err)
+            )
             raise GoveeApiError(f"Connection error getting IoT key: {err}") from err
 
     async def fetch_device_topics(self, token: str) -> dict[str, str]:
@@ -278,138 +322,6 @@ class GoveeAuthClient:
         except aiohttp.ClientError as err:
             raise GoveeApiError(f"Connection error fetching device topics: {err}") from err
 
-    async def fetch_light_effect_library(
-        self, token: str, sku: str
-    ) -> dict[str, Any]:
-        """Fetch light effect library for a device SKU.
-
-        This API returns scene information including speed support:
-        - support_speed: Whether the device supports scene speed control
-        - scenes with speed_info: Per-scene speed configuration
-        - scenceParam: Base64-encoded animation data for multi-packet protocol
-        - sceneCode: Activation code for BLE scene activation packet
-
-        Reference: wez/govee2mqtt light effect library API
-
-        Args:
-            token: Authentication token from login response.
-            sku: Device SKU/model number.
-
-        Returns:
-            Dict with light effect library data:
-            {
-                "support_speed": 1,  # 0 or 1
-                "categories": [...],  # Raw category data
-                "scenes": {  # Flattened scene lookup by sceneId
-                    "123": {
-                        "sceneId": 123,
-                        "sceneName": "Aurora",
-                        "sceneCode": 10191,
-                        "scenceParam": "base64-encoded-data",
-                        "speedIndex": 5,  # Byte position of speed in scenceParam
-                        "speedMin": 10,
-                        "speedMax": 100,
-                        "speedDefault": 50,
-                    },
-                    ...
-                }
-            }
-
-        Raises:
-            GoveeApiError: If the request fails.
-        """
-        if self._session is None:
-            self._session = aiohttp.ClientSession()
-            self._owns_session = True
-
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        }
-
-        url = f"{GOVEE_LIGHT_EFFECT_URL}?sku={sku}"
-
-        try:
-            async with self._session.get(
-                url,
-                headers=headers,
-            ) as response:
-                data = await response.json()
-
-                if response.status != 200:
-                    message = data.get("message", f"HTTP {response.status}")
-                    raise GoveeApiError(
-                        f"Failed to get light effect library: {message}",
-                        code=response.status,
-                    )
-
-                # Response structure: { "data": { "support_speed": 1, "categories": [...] } }
-                raw_data = data.get("data", {}) if isinstance(data, dict) else {}
-
-                # Build flattened scene lookup for easy access
-                scenes_lookup: dict[str, dict[str, Any]] = {}
-                categories = raw_data.get("categories", [])
-
-                for category in categories:
-                    for scene in category.get("scenes", []):
-                        scene_id = scene.get("sceneId")
-                        if scene_id is None:
-                            continue
-
-                        scene_data: dict[str, Any] = {
-                            "sceneId": scene_id,
-                            "sceneName": scene.get("sceneName", ""),
-                            "sceneCode": scene.get("sceneCode"),
-                            "sceneType": scene.get("sceneType", 1),
-                        }
-
-                        # Extract scenceParam from lightEffects if available
-                        light_effects = scene.get("lightEffects", [])
-                        if light_effects:
-                            # Use the first light effect (usually the only one)
-                            effect = light_effects[0]
-                            scene_data["scenceParam"] = effect.get("scenceParam")
-                            scene_data["scenceParamId"] = effect.get("scenceParamId")
-
-                        # Extract speed_info if available
-                        speed_info = scene.get("speed_info")
-                        if speed_info:
-                            scene_data["speedIndex"] = speed_info.get("speedIndex")
-
-                            # moveAll contains [min, max] speed range
-                            move_all = speed_info.get("moveAll", [])
-                            if len(move_all) >= 2:
-                                scene_data["speedMin"] = move_all[0]
-                                scene_data["speedMax"] = move_all[1]
-                            else:
-                                # Default range
-                                scene_data["speedMin"] = 1
-                                scene_data["speedMax"] = 100
-
-                            scene_data["speedDefault"] = speed_info.get("default", 50)
-
-                        scenes_lookup[str(scene_id)] = scene_data
-
-                result = {
-                    "support_speed": raw_data.get("support_speed", 0),
-                    "categories": categories,
-                    "scenes": scenes_lookup,
-                }
-
-                _LOGGER.debug(
-                    "Light effect library for %s: support_speed=%s, scenes=%d",
-                    sku,
-                    result.get("support_speed", 0),
-                    len(scenes_lookup),
-                )
-                return result
-
-        except aiohttp.ClientError as err:
-            raise GoveeApiError(
-                f"Connection error fetching light effect library: {err}"
-            ) from err
-
     async def login(
         self,
         email: str,
@@ -449,6 +361,8 @@ class GoveeAuthClient:
             "Accept": "application/json",
         }
 
+        _LOGGER.debug("Attempting Govee account login for email: %s", email)
+
         try:
             async with self._session.post(
                 GOVEE_LOGIN_URL,
@@ -456,20 +370,37 @@ class GoveeAuthClient:
                 headers=headers,
             ) as response:
                 data = await response.json()
+                _LOGGER.debug("Govee login HTTP response: status=%d", response.status)
 
                 if response.status == 401:
-                    raise GoveeAuthError("Invalid email or password")
+                    _LOGGER.debug(
+                        "Govee login failed with HTTP 401. Response: %s",
+                        _sanitize_response_for_logging(data) if isinstance(data, dict) else data,
+                    )
+                    raise GoveeAuthError("Invalid email or password", code=401)
 
                 if response.status != 200:
                     message = data.get("message", f"HTTP {response.status}")
+                    _LOGGER.warning(
+                        "Govee login failed with HTTP %d: %s. Response: %s",
+                        response.status,
+                        message,
+                        _sanitize_response_for_logging(data) if isinstance(data, dict) else data,
+                    )
                     raise GoveeApiError(f"Login failed: {message}", code=response.status)
 
                 # Check response status code within JSON
                 status = data.get("status")
                 if status != 200:
                     message = data.get("message", "Login failed")
+                    _LOGGER.warning(
+                        "Govee login error: status=%s message='%s' response=%s",
+                        status,
+                        message,
+                        _sanitize_response_for_logging(data) if isinstance(data, dict) else data,
+                    )
                     if status == 401 or "password" in message.lower():
-                        raise GoveeAuthError(message)
+                        raise GoveeAuthError(message, code=status)
                     raise GoveeApiError(f"Login failed: {message}", code=status)
 
                 client_data = data.get("client", {})
@@ -523,6 +454,9 @@ class GoveeAuthClient:
                 return credentials
 
         except aiohttp.ClientError as err:
+            _LOGGER.warning(
+                "Connection error during Govee login: %s (%s)", type(err).__name__, str(err)
+            )
             raise GoveeApiError(f"Connection error during login: {err}") from err
 
 

@@ -85,7 +85,6 @@ class GoveeDeviceState:
     active_scene: str | None = None
     active_diy_scene: str | None = None  # DIY scene ID (separate from regular scenes)
     segments: list[SegmentState] = field(default_factory=list)
-    diy_speed: int | None = None  # DIY scene playback speed 0-100
     diy_style: str | None = None  # DIY animation style (Fade, Jumping, etc.)
     diy_style_value: int | None = None  # DIY animation style numeric value (0-4)
     music_mode_enabled: bool | None = None  # Music mode on/off state (legacy BLE)
@@ -94,10 +93,6 @@ class GoveeDeviceState:
     music_mode_value: int | None = None  # Music mode value (1-11)
     music_mode_name: str | None = None  # Music mode display name (e.g., "Rhythm")
     music_sensitivity: int | None = None  # Microphone sensitivity (0-100)
-
-    # Scene speed (for regular scenes that support speed control)
-    scene_speed: int | None = None  # Current speed value
-    scene_speed_range: tuple[int, int] | None = None  # (min, max) from speed_info
 
     # Fan state
     oscillating: bool | None = None  # Fan oscillation on/off
@@ -312,11 +307,6 @@ class GoveeDeviceState:
     def apply_optimistic_hdmi_source(self, source: int) -> None:
         """Apply optimistic HDMI source update."""
         self.hdmi_source = source
-        self.source = "optimistic"
-
-    def apply_optimistic_scene_speed(self, speed: int) -> None:
-        """Apply optimistic scene speed update."""
-        self.scene_speed = speed
         self.source = "optimistic"
 
     def apply_optimistic_dreamview(self, enabled: bool) -> None:

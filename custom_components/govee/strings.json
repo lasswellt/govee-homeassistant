@@ -73,12 +73,6 @@
       }
     },
     "number": {
-      "govee_diy_speed": {
-        "name": "DIY Scene Speed"
-      },
-      "govee_scene_speed": {
-        "name": "Scene Speed"
-      },
       "govee_music_sensitivity": {
         "name": "Music Sensitivity"
       }
