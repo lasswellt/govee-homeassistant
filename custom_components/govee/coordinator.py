@@ -417,6 +417,31 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                     # Device is off, clear the scene
                     _LOGGER.debug("Clearing scene for %s (device turned off)", device_id)
 
+            # Preserve DreamView optimistic state
+            # API often returns stale data that doesn't reflect recent commands
+            if existing_state and existing_state.dreamview_enabled:
+                if state.power_state:
+                    state.dreamview_enabled = existing_state.dreamview_enabled
+                else:
+                    _LOGGER.debug("Clearing DreamView for %s (device turned off)", device_id)
+
+            # Preserve Music Mode optimistic state
+            if existing_state and existing_state.music_mode_enabled:
+                if state.power_state:
+                    state.music_mode_enabled = existing_state.music_mode_enabled
+                    state.music_mode_value = existing_state.music_mode_value
+                    state.music_mode_name = existing_state.music_mode_name
+                    state.music_sensitivity = existing_state.music_sensitivity
+                else:
+                    _LOGGER.debug("Clearing music mode for %s (device turned off)", device_id)
+
+            # Preserve DIY scene optimistic state
+            if existing_state and existing_state.active_diy_scene:
+                if state.power_state:
+                    state.active_diy_scene = existing_state.active_diy_scene
+                else:
+                    _LOGGER.debug("Clearing DIY scene for %s (device turned off)", device_id)
+
             return state
 
         except GoveeDeviceNotFoundError:
