@@ -87,7 +87,10 @@ class GoveeConfigFlow(ConfigFlow, domain=DOMAIN):
                 # Proceed to optional account step for MQTT
                 return await self.async_step_account()
 
-            except GoveeAuthError:
+            except GoveeAuthError as err:
+                _LOGGER.warning(
+                    "API key validation failed: %s (code=%s)", err, getattr(err, "code", None)
+                )
                 errors["base"] = "invalid_auth"
             except GoveeApiError as err:
                 _LOGGER.error("API validation failed: %s", err)
@@ -135,7 +138,13 @@ class GoveeConfigFlow(ConfigFlow, domain=DOMAIN):
 
                 return self._create_entry()
 
-            except GoveeAuthError:
+            except GoveeAuthError as err:
+                _LOGGER.warning(
+                    "Govee account validation failed for '%s': %s (code=%s)",
+                    email,
+                    err,
+                    getattr(err, "code", None),
+                )
                 errors["base"] = "invalid_auth"
             except GoveeApiError as err:
                 _LOGGER.error("Account validation failed: %s", err)
@@ -231,9 +240,15 @@ class GoveeConfigFlow(ConfigFlow, domain=DOMAIN):
                     await self.hass.config_entries.async_reload(entry.entry_id)
                     return self.async_abort(reason="reauth_successful")
 
-            except GoveeAuthError:
+            except GoveeAuthError as err:
+                _LOGGER.warning(
+                    "API key validation failed during reauth: %s (code=%s)",
+                    err,
+                    getattr(err, "code", None),
+                )
                 errors["base"] = "invalid_auth"
-            except GoveeApiError:
+            except GoveeApiError as err:
+                _LOGGER.warning("API validation failed during reauth: %s", err)
                 errors["base"] = "cannot_connect"
             except Exception:
                 _LOGGER.exception("Unexpected error during reauth")
@@ -283,10 +298,17 @@ class GoveeConfigFlow(ConfigFlow, domain=DOMAIN):
                         await validate_govee_credentials(email, password)
                         new_data[CONF_EMAIL] = email
                         new_data[CONF_PASSWORD] = password
-                    except GoveeAuthError:
+                    except GoveeAuthError as err:
+                        _LOGGER.warning(
+                            "Govee account validation failed for '%s' during reconfigure: %s (code=%s)",
+                            email,
+                            err,
+                            getattr(err, "code", None),
+                        )
                         errors["base"] = "invalid_account"
                         # Continue to show form with error
-                    except GoveeApiError:
+                    except GoveeApiError as err:
+                        _LOGGER.warning("Account validation failed during reconfigure: %s", err)
                         errors["base"] = "cannot_connect"
                 elif not email and not password:
                     # Remove account credentials if both are empty
@@ -302,9 +324,15 @@ class GoveeConfigFlow(ConfigFlow, domain=DOMAIN):
                         data_updates=new_data,
                     )
 
-            except GoveeAuthError:
+            except GoveeAuthError as err:
+                _LOGGER.warning(
+                    "API key validation failed during reconfigure: %s (code=%s)",
+                    err,
+                    getattr(err, "code", None),
+                )
                 errors["base"] = "invalid_auth"
-            except GoveeApiError:
+            except GoveeApiError as err:
+                _LOGGER.warning("API validation failed during reconfigure: %s", err)
                 errors["base"] = "cannot_connect"
             except Exception:
                 _LOGGER.exception("Unexpected error during reconfigure")
