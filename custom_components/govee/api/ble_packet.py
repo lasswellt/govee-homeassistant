@@ -25,6 +25,15 @@ MUSIC_PACKET_PREFIX = 0x33
 MUSIC_MODE_COMMAND = 0x05
 MUSIC_MODE_INDICATOR = 0x01
 
+# DIY style name to value mapping for select entity
+DIY_STYLE_NAMES: dict[str, int] = {
+    "Fade": 0x00,
+    "Jumping": 0x01,
+    "Flicker": 0x02,
+    "Marquee": 0x03,
+    "Music": 0x04,
+}
+
 
 def calculate_checksum(data: list[int]) -> int:
     """Calculate XOR checksum of all bytes.
