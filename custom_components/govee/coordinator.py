@@ -601,10 +601,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         return success
 
     async def async_send_dreamview(self, device_id: str, enabled: bool) -> bool:
-        """Send DreamView command via BLE passthrough.
-
-        For devices where REST API DreamView toggle doesn't work (e.g., H6199),
-        this sends a ptReal MQTT command to enable/disable DreamView mode.
+        """Send DreamView command via REST API, with BLE fallback.
 
         Args:
             device_id: Device identifier.
@@ -613,16 +610,34 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         Returns:
             True if command was sent successfully.
         """
+        device = self._devices.get(device_id)
+        if not device:
+            _LOGGER.error("Unknown device for DreamView: %s", device_id)
+            return False
+
+        # Try REST API first (works for HTTP-capable devices like H6097)
+        from .models.commands import create_dreamview_command
+
+        try:
+            success = await self.async_control_device(
+                device_id, create_dreamview_command(enabled)
+            )
+            if success:
+                _LOGGER.debug(
+                    "Sent DreamView %s to %s via REST API",
+                    "ON" if enabled else "OFF",
+                    device.name,
+                )
+                return True
+        except Exception as err:
+            _LOGGER.debug("REST DreamView failed for %s: %s", device.name, err)
+
+        # Fall back to BLE passthrough for devices that need it
         if not self.mqtt_connected:
             _LOGGER.warning(
                 "Cannot send DreamView for %s: MQTT not connected",
                 device_id,
             )
-            return False
-
-        device = self._devices.get(device_id)
-        if not device:
-            _LOGGER.error("Unknown device for DreamView: %s", device_id)
             return False
 
         from .api.ble_packet import build_dreamview_packet, encode_packet_base64
