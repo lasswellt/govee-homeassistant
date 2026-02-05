@@ -629,6 +629,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                     device.name,
                 )
                 return True
+        except ConfigEntryAuthFailed:
+            # Let authentication errors propagate so Home Assistant can handle reauth
+            raise
         except Exception as err:
             _LOGGER.debug("REST DreamView failed for %s: %s", device.name, err)
 
