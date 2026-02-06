@@ -37,7 +37,7 @@ Ever wanted your Govee lights to actually *talk* to Home Assistant? This integra
 
 ### 1. Grab Your API Key
 
-In the **Govee Home** app: **Profile** → **Settings** → **About Us** → **Apply for API Key**
+In the **Govee Home** app: **Profile** → **Settings** → **Apply for API Key**
 
 Check your email in ~5 minutes.
 
