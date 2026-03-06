@@ -812,6 +812,71 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
         return success
 
+    async def async_send_diy_scene(
+        self,
+        device_id: str,
+        scene_id: int,
+        scene_name: str = "",
+    ) -> bool:
+        """Send DIY scene command via REST API, with BLE fallback.
+
+        Args:
+            device_id: Device identifier.
+            scene_id: DIY scene ID from the API.
+            scene_name: DIY scene name for logging/state.
+
+        Returns:
+            True if command was sent successfully.
+        """
+        device = self._devices.get(device_id)
+        if not device:
+            _LOGGER.error("Unknown device for DIY scene: %s", device_id)
+            return False
+
+        # Try REST API first
+        try:
+            command = DIYSceneCommand(scene_id=scene_id, scene_name=scene_name)
+            success = await self.async_control_device(device_id, command)
+            if success:
+                _LOGGER.debug(
+                    "Activated DIY scene '%s' on %s via REST API",
+                    scene_name,
+                    device.name,
+                )
+                return True
+            _LOGGER.debug(
+                "REST DIY scene returned failure for %s, trying BLE passthrough",
+                device.name,
+            )
+        except ConfigEntryAuthFailed:
+            raise
+        except Exception as err:
+            _LOGGER.debug("REST DIY scene failed for %s: %s", device.name, err)
+
+        # Fall back to BLE passthrough
+        if not self._ble_manager.available:
+            _LOGGER.warning(
+                "Cannot send DIY scene for %s: MQTT not connected",
+                device_id,
+            )
+            return False
+
+        success = await self._ble_manager.async_send_diy_scene(
+            device_id, device.sku, scene_id
+        )
+
+        if success:
+            state = self._states.get(device_id)
+            if state:
+                state.apply_optimistic_diy_scene(str(scene_id))
+            _LOGGER.debug(
+                "Activated DIY scene '%s' on %s via BLE passthrough",
+                scene_name,
+                device.name,
+            )
+
+        return success
+
     async def async_send_diy_style(
         self, device_id: str, style: str, speed: int = 50
     ) -> bool:

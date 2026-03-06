@@ -12,6 +12,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from .api.ble_packet import (
+    build_diy_scene_packet,
     build_dreamview_packet,
     build_music_mode_packet,
     encode_packet_base64,
@@ -119,5 +120,25 @@ class BlePassthroughManager:
             True if command was sent successfully.
         """
         packet = build_dreamview_packet(enabled)
+        encoded = encode_packet_base64(packet)
+        return await self.async_send_ble_packet(device_id, sku, encoded)
+
+    async def async_send_diy_scene(
+        self,
+        device_id: str,
+        sku: str,
+        scene_id: int,
+    ) -> bool:
+        """Send DIY scene activation via BLE passthrough.
+
+        Args:
+            device_id: Device identifier.
+            sku: Device SKU.
+            scene_id: DIY scene ID from the API.
+
+        Returns:
+            True if command was sent successfully.
+        """
+        packet = build_diy_scene_packet(scene_id)
         encoded = encode_packet_base64(packet)
         return await self.async_send_ble_packet(device_id, sku, encoded)

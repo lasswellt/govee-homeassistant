@@ -28,6 +28,7 @@ MUSIC_MODE_INDICATOR = 0x01
 # DreamView (Movie Mode) packet constants
 DREAMVIEW_COMMAND = 0x05  # Same as music mode command byte
 DREAMVIEW_INDICATOR = 0x04  # Scene mode indicator (vs 0x01 for music)
+DIY_MODE_INDICATOR = 0x0A  # DIY mode indicator
 
 # DIY style name to value mapping for select entity
 DIY_STYLE_NAMES: dict[str, int] = {
@@ -125,6 +126,35 @@ def build_dreamview_packet(enabled: bool) -> bytes:
         DREAMVIEW_INDICATOR,  # 0x04 - Scene mode indicator
         0x01 if enabled else 0x00,  # Enabled state
     ]
+    return build_packet(data)
+
+
+def build_diy_scene_packet(scene_id: int) -> bytes:
+    """Build DIY scene activation packet.
+
+    Activates a saved DIY scene by ID. Uses the DIY mode indicator (0x0A)
+    with the scene ID encoded as 4-byte little-endian.
+
+    Args:
+        scene_id: DIY scene ID from the API (e.g., 21104832).
+
+    Returns:
+        20-byte BLE packet for DIY scene activation.
+    """
+    # Encode scene_id as 4-byte little-endian
+    id_bytes = scene_id.to_bytes(4, byteorder="little")
+
+    # Packet: 33 05 0A [id_byte0] [id_byte1] [id_byte2] [id_byte3] 00...00 [XOR]
+    data = [
+        MUSIC_PACKET_PREFIX,  # 0x33 - Standard command prefix
+        MUSIC_MODE_COMMAND,  # 0x05 - Color/mode command
+        DIY_MODE_INDICATOR,  # 0x0A - DIY mode indicator
+        id_bytes[0],
+        id_bytes[1],
+        id_bytes[2],
+        id_bytes[3],
+    ]
+
     return build_packet(data)
 
 

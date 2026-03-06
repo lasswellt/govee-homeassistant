@@ -31,7 +31,6 @@ from .const import (
 from .coordinator import GoveeCoordinator
 from .entity import GoveeEntity
 from .models import (
-    DIYSceneCommand,
     GoveeDevice,
     ModeCommand,
     MusicModeCommand,
@@ -408,18 +407,13 @@ class GoveeDIYSceneSelectEntity(GoveeEntity, SelectEntity):
 
         scene_id, scene_name = scene_info
 
-        command = DIYSceneCommand(
+        success = await self.coordinator.async_send_diy_scene(
+            self._device_id,
             scene_id=scene_id,
             scene_name=scene_name,
         )
 
-        success = await self.coordinator.async_control_device(
-            self._device_id,
-            command,
-        )
-
         if success:
-            # State update with mutual exclusion is handled in coordinator
             self.async_write_ha_state()
             _LOGGER.debug(
                 "Activated DIY scene '%s' on %s",
