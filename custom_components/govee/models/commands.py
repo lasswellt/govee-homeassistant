@@ -390,10 +390,13 @@ class TemperatureSettingCommand(DeviceCommand):
     """Command to set heater target temperature via STRUCT payload.
 
     Heaters use the temperature_setting capability with a STRUCT value
-    containing temperature and unit fields.
+    containing autoStop, temperature, and unit fields. The autoStop field
+    must be included or the device silently ignores the command (HTTP 200
+    but no temperature change).
     """
 
     temperature: int
+    auto_stop: int = 0
     unit: str = "Celsius"
 
     @property
@@ -405,4 +408,8 @@ class TemperatureSettingCommand(DeviceCommand):
         return INSTANCE_TARGET_TEMPERATURE
 
     def get_value(self) -> dict[str, Any]:
-        return {"temperature": self.temperature, "unit": self.unit}
+        return {
+            "autoStop": self.auto_stop,
+            "temperature": self.temperature,
+            "unit": self.unit,
+        }

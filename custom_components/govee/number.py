@@ -306,8 +306,15 @@ class GoveeHeaterTemperatureNumber(
         """
         temperature = int(value)
 
+        # Preserve the current auto_stop setting so the API doesn't ignore the command
+        auto_stop = 0
+        state = self.coordinator.get_state(self._device_id)
+        if state and state.heater_auto_stop is not None:
+            auto_stop = state.heater_auto_stop
+
         command = TemperatureSettingCommand(
             temperature=temperature,
+            auto_stop=auto_stop,
         )
 
         success = await self.coordinator.async_control_device(

@@ -134,6 +134,9 @@
       },
       "govee_dreamview": {
         "name": "DreamView"
+      },
+      "govee_heater_auto_stop": {
+        "name": "Auto Stop"
       }
     },
     "sensor": {

@@ -52,6 +52,7 @@ INSTANCE_TEMPERATURE = "temperature"
 INSTANCE_TARGET_TEMPERATURE = "targetTemperature"
 INSTANCE_FAN_SPEED = "fanSpeed"
 INSTANCE_PURIFIER_MODE = "purifierMode"
+INSTANCE_THERMOSTAT_TOGGLE = "thermostatToggle"
 
 
 @dataclass(frozen=True)
@@ -313,6 +314,14 @@ class GoveeDevice:
         return any(cap.is_dreamview for cap in self.capabilities)
 
     @property
+    def supports_thermostat_toggle(self) -> bool:
+        """Check if device supports thermostat (auto-stop) toggle."""
+        return any(
+            cap.type == CAPABILITY_TOGGLE and cap.instance == INSTANCE_THERMOSTAT_TOGGLE
+            for cap in self.capabilities
+        )
+
+    @property
     def supports_work_mode(self) -> bool:
         """Check if device supports work mode (fans)."""
         return any(cap.is_work_mode for cap in self.capabilities)
@@ -450,18 +459,22 @@ class GoveeDevice:
                             if sub_value is not None:
                                 if not sub_name:
                                     sub_name = f"Speed {sub_value}"
-                                result.append({
-                                    "name": sub_name,
-                                    "work_mode": wm_value,
-                                    "mode_value": sub_value,
-                                })
+                                result.append(
+                                    {
+                                        "name": sub_name,
+                                        "work_mode": wm_value,
+                                        "mode_value": sub_value,
+                                    }
+                                )
                     else:
                         default_mv: int = mv_entry.get("defaultValue", 0)
-                        result.append({
-                            "name": wm_name,
-                            "work_mode": wm_value,
-                            "mode_value": default_mv,
-                        })
+                        result.append(
+                            {
+                                "name": wm_name,
+                                "work_mode": wm_value,
+                                "mode_value": default_mv,
+                            }
+                        )
 
                 return result
         return []
@@ -494,7 +507,9 @@ class GoveeDevice:
                         # Find the gearMode options within the nested structure
                         for opt in options:
                             if opt.get("name") == "gearMode":
-                                gear_options: list[dict[str, Any]] = opt.get("options", [])
+                                gear_options: list[dict[str, Any]] = opt.get(
+                                    "options", []
+                                )
                                 if gear_options:
                                     return gear_options
         return []

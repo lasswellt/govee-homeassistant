@@ -16,15 +16,22 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import SUFFIX_DREAMVIEW, SUFFIX_MUSIC_MODE, SUFFIX_NIGHT_LIGHT
+from .const import (
+    SUFFIX_DREAMVIEW,
+    SUFFIX_HEATER_AUTO_STOP,
+    SUFFIX_MUSIC_MODE,
+    SUFFIX_NIGHT_LIGHT,
+)
 from .coordinator import GoveeCoordinator
 from .entity import GoveeEntity
 from .models import (
     GoveeDevice,
     MusicModeCommand,
     PowerCommand,
+    ToggleCommand,
     create_night_light_command,
 )
+from .models.device import INSTANCE_THERMOSTAT_TOGGLE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -70,6 +77,11 @@ async def async_setup_entry(
                 GoveeMusicModeSwitchEntity(coordinator, device, use_rest_api=False)
             )
             _LOGGER.debug("Created BLE music mode switch entity for %s", device.name)
+
+        # Create switch for heater auto-stop toggle (H7130 thermostatToggle)
+        if device.supports_thermostat_toggle:
+            entities.append(GoveeAutoStopSwitchEntity(coordinator, device))
+            _LOGGER.debug("Created auto-stop switch entity for %s", device.name)
 
         # Create switch for DreamView (Movie Mode) toggle
         # Skip for group devices - groups don't support DreamView
@@ -364,4 +376,61 @@ class GoveeDreamViewSwitchEntity(GoveeEntity, SwitchEntity):
             enabled=False,
         )
         if success:
+            self.async_write_ha_state()
+
+
+class GoveeAutoStopSwitchEntity(GoveeEntity, SwitchEntity, RestoreEntity):
+    """Govee heater auto-stop toggle switch entity.
+
+    Controls the thermostat auto-stop feature on heaters that support it
+    (e.g., H7130 with thermostatToggle capability).
+    Uses RestoreEntity since API may not reliably return auto-stop status.
+    """
+
+    _attr_translation_key = "govee_heater_auto_stop"
+
+    def __init__(
+        self,
+        coordinator: GoveeCoordinator,
+        device: GoveeDevice,
+    ) -> None:
+        """Initialize the auto-stop switch entity."""
+        super().__init__(coordinator, device)
+
+        self._attr_unique_id = f"{device.device_id}{SUFFIX_HEATER_AUTO_STOP}"
+        self._is_on = False
+
+    async def async_added_to_hass(self) -> None:
+        """Restore state on startup."""
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state:
+            self._is_on = last_state.state == "on"
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if auto-stop is on."""
+        state = self.device_state
+        if state and state.heater_auto_stop is not None:
+            return state.heater_auto_stop == 1
+        return self._is_on
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn auto-stop on."""
+        success = await self.coordinator.async_control_device(
+            self._device_id,
+            ToggleCommand(toggle_instance=INSTANCE_THERMOSTAT_TOGGLE, enabled=True),
+        )
+        if success:
+            self._is_on = True
+            self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn auto-stop off."""
+        success = await self.coordinator.async_control_device(
+            self._device_id,
+            ToggleCommand(toggle_instance=INSTANCE_THERMOSTAT_TOGGLE, enabled=False),
+        )
+        if success:
+            self._is_on = False
             self.async_write_ha_state()

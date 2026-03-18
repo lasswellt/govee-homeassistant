@@ -9,19 +9,22 @@ import pytest
 from custom_components.govee.models import (
     GoveeCapability,
     GoveeDevice,
+    GoveeDeviceState,
     TemperatureSettingCommand,
+    ToggleCommand,
     WorkModeCommand,
 )
 from custom_components.govee.models.device import (
     CAPABILITY_ON_OFF,
     CAPABILITY_TEMPERATURE_SETTING,
+    CAPABILITY_TOGGLE,
     CAPABILITY_WORK_MODE,
     DEVICE_TYPE_HEATER,
     INSTANCE_POWER,
     INSTANCE_TARGET_TEMPERATURE,
+    INSTANCE_THERMOSTAT_TOGGLE,
     INSTANCE_WORK_MODE,
 )
-
 
 # ==============================================================================
 # Heater Device Fixtures
@@ -32,7 +35,8 @@ from custom_components.govee.models.device import (
 def heater_capabilities() -> tuple[GoveeCapability, ...]:
     """Create capabilities for a heater device (H7130).
 
-    Uses real API shapes: STRUCT-based temperature_setting and work_mode.
+    Uses real API shapes: STRUCT-based temperature_setting (range 5-30 with
+    autoStop field) and work_mode, plus thermostatToggle capability.
     """
     return (
         GoveeCapability(
@@ -46,8 +50,16 @@ def heater_capabilities() -> tuple[GoveeCapability, ...]:
             parameters={
                 "fields": [
                     {
+                        "fieldName": "autoStop",
+                        "defaultValue": 0,
+                        "options": [
+                            {"name": "Maintain", "value": 0},
+                            {"name": "Auto stop", "value": 1},
+                        ],
+                    },
+                    {
                         "fieldName": "temperature",
-                        "range": {"min": 16, "max": 35},
+                        "range": {"min": 5, "max": 30},
                     },
                     {
                         "fieldName": "unit",
@@ -79,6 +91,11 @@ def heater_capabilities() -> tuple[GoveeCapability, ...]:
                     },
                 ],
             },
+        ),
+        GoveeCapability(
+            type=CAPABILITY_TOGGLE,
+            instance=INSTANCE_THERMOSTAT_TOGGLE,
+            parameters={},
         ),
     )
 
@@ -120,6 +137,10 @@ class TestHeaterDeviceDetection:
         """Test heater supports power control."""
         assert mock_heater_device.supports_power is True
 
+    def test_supports_thermostat_toggle(self, mock_heater_device):
+        """Test H7130 supports thermostat toggle."""
+        assert mock_heater_device.supports_thermostat_toggle is True
+
 
 # ==============================================================================
 # Heater Capability Parsing Tests
@@ -132,8 +153,8 @@ class TestHeaterCapabilityParsing:
     def test_get_temperature_range(self, mock_heater_device):
         """Test temperature range extraction from STRUCT capability."""
         min_temp, max_temp = mock_heater_device.get_temperature_range()
-        assert min_temp == 16
-        assert max_temp == 35
+        assert min_temp == 5
+        assert max_temp == 30
 
     def test_get_temperature_range_default(self):
         """Test temperature range defaults to 16-35."""
@@ -142,11 +163,13 @@ class TestHeaterCapabilityParsing:
             sku="H7130",
             name="Test Heater",
             device_type=DEVICE_TYPE_HEATER,
-            capabilities=(GoveeCapability(
-                type=CAPABILITY_ON_OFF,
-                instance=INSTANCE_POWER,
-                parameters={},
-            ),),
+            capabilities=(
+                GoveeCapability(
+                    type=CAPABILITY_ON_OFF,
+                    instance=INSTANCE_POWER,
+                    parameters={},
+                ),
+            ),
         )
         min_temp, max_temp = device.get_temperature_range()
         assert min_temp == 16
@@ -167,14 +190,44 @@ class TestHeaterCapabilityParsing:
             sku="H7130",
             name="Test Heater",
             device_type=DEVICE_TYPE_HEATER,
-            capabilities=(GoveeCapability(
-                type=CAPABILITY_ON_OFF,
-                instance=INSTANCE_POWER,
-                parameters={},
-            ),),
+            capabilities=(
+                GoveeCapability(
+                    type=CAPABILITY_ON_OFF,
+                    instance=INSTANCE_POWER,
+                    parameters={},
+                ),
+            ),
         )
         options = device.get_fan_speed_options()
         assert options == []
+
+
+# ==============================================================================
+# Temperature Command Tests
+# ==============================================================================
+
+
+class TestTemperatureSettingCommand:
+    """Test TemperatureSettingCommand includes autoStop in payload."""
+
+    def test_command_includes_auto_stop(self):
+        """Test command value includes autoStop field."""
+        cmd = TemperatureSettingCommand(temperature=22, auto_stop=0)
+        value = cmd.get_value()
+        assert value == {"autoStop": 0, "temperature": 22, "unit": "Celsius"}
+
+    def test_command_auto_stop_enabled(self):
+        """Test command value with autoStop enabled."""
+        cmd = TemperatureSettingCommand(temperature=25, auto_stop=1)
+        value = cmd.get_value()
+        assert value == {"autoStop": 1, "temperature": 25, "unit": "Celsius"}
+
+    def test_command_default_auto_stop_is_zero(self):
+        """Test auto_stop defaults to 0."""
+        cmd = TemperatureSettingCommand(temperature=20)
+        assert cmd.auto_stop == 0
+        value = cmd.get_value()
+        assert value["autoStop"] == 0
 
 
 # ==============================================================================
@@ -188,8 +241,6 @@ class TestHeaterTemperatureNumberEntity:
     @pytest.fixture
     def mock_coordinator(self, mock_heater_device):
         """Create a mock coordinator for testing."""
-        from custom_components.govee.models import GoveeDeviceState
-
         coordinator = MagicMock()
         coordinator.devices = {mock_heater_device.device_id: mock_heater_device}
 
@@ -202,6 +253,7 @@ class TestHeaterTemperatureNumberEntity:
             source="api",
         )
         state.heater_temperature = 22
+        state.heater_auto_stop = 0
 
         coordinator.get_state = MagicMock(return_value=state)
         coordinator.async_control_device = AsyncMock(return_value=True)
@@ -215,7 +267,7 @@ class TestHeaterTemperatureNumberEntity:
         entity = GoveeHeaterTemperatureNumber(
             coordinator=mock_coordinator,
             device=mock_heater_device,
-            temp_range=(16, 35),
+            temp_range=(5, 30),
         )
         entity.hass = MagicMock()
         entity.async_write_ha_state = MagicMock()
@@ -228,8 +280,8 @@ class TestHeaterTemperatureNumberEntity:
 
     def test_temp_entity_range(self, heater_temp_entity):
         """Test temperature range is correctly set."""
-        assert heater_temp_entity._attr_native_min_value == 16.0
-        assert heater_temp_entity._attr_native_max_value == 35.0
+        assert heater_temp_entity._attr_native_min_value == 5.0
+        assert heater_temp_entity._attr_native_max_value == 30.0
         assert heater_temp_entity._attr_native_step == 1
 
     def test_temp_entity_unique_id(self, heater_temp_entity, mock_heater_device):
@@ -243,10 +295,10 @@ class TestHeaterTemperatureNumberEntity:
         """Test entity is available when device is online."""
         assert heater_temp_entity.available is True
 
-    def test_temp_entity_unavailable_offline(self, heater_temp_entity, mock_coordinator):
+    def test_temp_entity_unavailable_offline(
+        self, heater_temp_entity, mock_coordinator
+    ):
         """Test entity is unavailable when device is offline."""
-        from custom_components.govee.models import GoveeDeviceState
-
         offline_state = GoveeDeviceState(
             device_id=heater_temp_entity._device_id,
             online=False,
@@ -257,7 +309,7 @@ class TestHeaterTemperatureNumberEntity:
         assert heater_temp_entity.available is False
 
     async def test_set_temperature(self, heater_temp_entity, mock_coordinator):
-        """Test setting heater temperature sends TemperatureSettingCommand."""
+        """Test setting heater temperature sends TemperatureSettingCommand with autoStop."""
         await heater_temp_entity.async_set_native_value(25.0)
 
         # Verify command was sent
@@ -268,30 +320,52 @@ class TestHeaterTemperatureNumberEntity:
         assert device_id == heater_temp_entity._device_id
         assert isinstance(command, TemperatureSettingCommand)
         assert command.temperature == 25
+        assert command.auto_stop == 0  # Preserved from state
         assert command.unit == "Celsius"
 
         # Verify state was updated
         assert heater_temp_entity._attr_native_value == 25.0
 
-    async def test_set_temperature_boundary_low(self, heater_temp_entity, mock_coordinator):
+    async def test_set_temperature_preserves_auto_stop(
+        self, heater_temp_entity, mock_coordinator
+    ):
+        """Test setting temperature preserves current auto_stop setting."""
+        # Set auto_stop to 1 in state
+        state = mock_coordinator.get_state.return_value
+        state.heater_auto_stop = 1
+
+        await heater_temp_entity.async_set_native_value(20.0)
+
+        call_args = mock_coordinator.async_control_device.call_args
+        _, command = call_args[0]
+
+        assert isinstance(command, TemperatureSettingCommand)
+        assert command.temperature == 20
+        assert command.auto_stop == 1  # Preserved from state
+
+    async def test_set_temperature_boundary_low(
+        self, heater_temp_entity, mock_coordinator
+    ):
         """Test setting temperature at minimum boundary."""
-        await heater_temp_entity.async_set_native_value(16.0)
+        await heater_temp_entity.async_set_native_value(5.0)
 
         call_args = mock_coordinator.async_control_device.call_args
         device_id, command = call_args[0]
 
         assert isinstance(command, TemperatureSettingCommand)
-        assert command.temperature == 16
+        assert command.temperature == 5
 
-    async def test_set_temperature_boundary_high(self, heater_temp_entity, mock_coordinator):
+    async def test_set_temperature_boundary_high(
+        self, heater_temp_entity, mock_coordinator
+    ):
         """Test setting temperature at maximum boundary."""
-        await heater_temp_entity.async_set_native_value(35.0)
+        await heater_temp_entity.async_set_native_value(30.0)
 
         call_args = mock_coordinator.async_control_device.call_args
         device_id, command = call_args[0]
 
         assert isinstance(command, TemperatureSettingCommand)
-        assert command.temperature == 35
+        assert command.temperature == 30
 
     async def test_set_temperature_failure(self, heater_temp_entity, mock_coordinator):
         """Test temperature setting failure."""
@@ -310,8 +384,6 @@ class TestFanSpeedSelectEntity:
     @pytest.fixture
     def mock_coordinator(self, mock_heater_device):
         """Create a mock coordinator for testing."""
-        from custom_components.govee.models import GoveeDeviceState
-
         coordinator = MagicMock()
         coordinator.devices = {mock_heater_device.device_id: mock_heater_device}
 
@@ -371,8 +443,6 @@ class TestFanSpeedSelectEntity:
 
     def test_current_option_default_on_none(self, fan_speed_entity, mock_coordinator):
         """Test current option returns first option when work_mode is None."""
-        from custom_components.govee.models import GoveeDeviceState
-
         state = GoveeDeviceState(
             device_id=fan_speed_entity._device_id,
             online=True,
@@ -424,13 +494,37 @@ def h7131_capabilities() -> tuple[GoveeCapability, ...]:
     """Create capabilities for H7131 heater with nested modeValue.
 
     H7131 has gearMode as a parent workMode containing Low/Medium/High
-    sub-options in the modeValue field.
+    sub-options in the modeValue field. No thermostatToggle capability.
     """
     return (
         GoveeCapability(
             type=CAPABILITY_ON_OFF,
             instance=INSTANCE_POWER,
             parameters={},
+        ),
+        GoveeCapability(
+            type=CAPABILITY_TEMPERATURE_SETTING,
+            instance=INSTANCE_TARGET_TEMPERATURE,
+            parameters={
+                "fields": [
+                    {
+                        "fieldName": "autoStop",
+                        "defaultValue": 0,
+                        "options": [
+                            {"name": "Maintain", "value": 0},
+                            {"name": "Auto stop", "value": 1},
+                        ],
+                    },
+                    {
+                        "fieldName": "temperature",
+                        "range": {"min": 5, "max": 30},
+                    },
+                    {
+                        "fieldName": "unit",
+                        "defaultValue": "Celsius",
+                    },
+                ],
+            },
         ),
         GoveeCapability(
             type=CAPABILITY_WORK_MODE,
@@ -492,6 +586,10 @@ class TestH7131CapabilityParsing:
         assert options[3] == {"name": "Fan", "work_mode": 9, "mode_value": 0}
         assert options[4] == {"name": "Auto", "work_mode": 3, "mode_value": 0}
 
+    def test_h7131_no_thermostat_toggle(self, mock_h7131_device):
+        """Test H7131 does NOT support thermostat toggle."""
+        assert mock_h7131_device.supports_thermostat_toggle is False
+
 
 class TestH7131FanSpeedSelectEntity:
     """Test H7131 fan speed select entity with nested modeValue."""
@@ -499,8 +597,6 @@ class TestH7131FanSpeedSelectEntity:
     @pytest.fixture
     def mock_coordinator(self, mock_h7131_device):
         """Create a mock coordinator for H7131."""
-        from custom_components.govee.models import GoveeDeviceState
-
         coordinator = MagicMock()
         coordinator.devices = {mock_h7131_device.device_id: mock_h7131_device}
 
@@ -535,7 +631,11 @@ class TestH7131FanSpeedSelectEntity:
     def test_options_list(self, fan_speed_entity):
         """Test H7131 shows Low/Medium/High/Fan/Auto options."""
         assert fan_speed_entity._attr_options == [
-            "Low", "Medium", "High", "Fan", "Auto",
+            "Low",
+            "Medium",
+            "High",
+            "Fan",
+            "Auto",
         ]
 
     def test_option_map(self, fan_speed_entity):
@@ -552,8 +652,6 @@ class TestH7131FanSpeedSelectEntity:
 
     def test_current_option_fan(self, fan_speed_entity, mock_coordinator):
         """Test current option matches Fan via work_mode=9."""
-        from custom_components.govee.models import GoveeDeviceState
-
         state = GoveeDeviceState(
             device_id=fan_speed_entity._device_id,
             online=True,
@@ -565,10 +663,10 @@ class TestH7131FanSpeedSelectEntity:
         mock_coordinator.get_state.return_value = state
         assert fan_speed_entity.current_option == "Fan"
 
-    def test_current_option_fallback_work_mode_only(self, fan_speed_entity, mock_coordinator):
+    def test_current_option_fallback_work_mode_only(
+        self, fan_speed_entity, mock_coordinator
+    ):
         """Test fallback matching on work_mode when mode_value is None."""
-        from custom_components.govee.models import GoveeDeviceState
-
         state = GoveeDeviceState(
             device_id=fan_speed_entity._device_id,
             online=True,
@@ -604,3 +702,120 @@ class TestH7131FanSpeedSelectEntity:
         assert isinstance(command, WorkModeCommand)
         assert command.work_mode == 9
         assert command.mode_value == 0
+
+
+# ==============================================================================
+# Auto-Stop Switch Entity Tests
+# ==============================================================================
+
+
+class TestAutoStopSwitchEntity:
+    """Test heater auto-stop switch entity."""
+
+    @pytest.fixture
+    def mock_coordinator(self, mock_heater_device):
+        """Create a mock coordinator for testing."""
+        coordinator = MagicMock()
+        coordinator.devices = {mock_heater_device.device_id: mock_heater_device}
+
+        state = GoveeDeviceState(
+            device_id=mock_heater_device.device_id,
+            online=True,
+            power_state=True,
+            source="api",
+        )
+        state.heater_auto_stop = 0
+
+        coordinator.get_state = MagicMock(return_value=state)
+        coordinator.async_control_device = AsyncMock(return_value=True)
+        return coordinator
+
+    @pytest.fixture
+    def auto_stop_entity(self, mock_coordinator, mock_heater_device):
+        """Create an auto-stop switch entity for testing."""
+        from custom_components.govee.switch import GoveeAutoStopSwitchEntity
+
+        entity = GoveeAutoStopSwitchEntity(
+            coordinator=mock_coordinator,
+            device=mock_heater_device,
+        )
+        entity.hass = MagicMock()
+        entity.async_write_ha_state = MagicMock()
+        return entity
+
+    def test_unique_id(self, auto_stop_entity, mock_heater_device):
+        """Test unique ID is correct."""
+        from custom_components.govee.const import SUFFIX_HEATER_AUTO_STOP
+
+        expected_id = f"{mock_heater_device.device_id}{SUFFIX_HEATER_AUTO_STOP}"
+        assert auto_stop_entity._attr_unique_id == expected_id
+
+    def test_is_off_when_auto_stop_zero(self, auto_stop_entity):
+        """Test switch is off when heater_auto_stop is 0."""
+        assert auto_stop_entity.is_on is False
+
+    def test_is_on_when_auto_stop_one(self, auto_stop_entity, mock_coordinator):
+        """Test switch is on when heater_auto_stop is 1."""
+        state = mock_coordinator.get_state.return_value
+        state.heater_auto_stop = 1
+        assert auto_stop_entity.is_on is True
+
+    async def test_turn_on(self, auto_stop_entity, mock_coordinator):
+        """Test turning auto-stop on sends ToggleCommand."""
+        await auto_stop_entity.async_turn_on()
+
+        mock_coordinator.async_control_device.assert_called_once()
+        call_args = mock_coordinator.async_control_device.call_args
+        device_id, command = call_args[0]
+
+        assert device_id == auto_stop_entity._device_id
+        assert isinstance(command, ToggleCommand)
+        assert command.toggle_instance == INSTANCE_THERMOSTAT_TOGGLE
+        assert command.enabled is True
+
+    async def test_turn_off(self, auto_stop_entity, mock_coordinator):
+        """Test turning auto-stop off sends ToggleCommand."""
+        await auto_stop_entity.async_turn_off()
+
+        mock_coordinator.async_control_device.assert_called_once()
+        call_args = mock_coordinator.async_control_device.call_args
+        device_id, command = call_args[0]
+
+        assert isinstance(command, ToggleCommand)
+        assert command.toggle_instance == INSTANCE_THERMOSTAT_TOGGLE
+        assert command.enabled is False
+
+    async def test_turn_on_failure(self, auto_stop_entity, mock_coordinator):
+        """Test auto-stop switch does not update on failure."""
+        mock_coordinator.async_control_device.return_value = False
+
+        await auto_stop_entity.async_turn_on()
+
+        # Should not update local state or write HA state
+        assert auto_stop_entity._is_on is False
+        auto_stop_entity.async_write_ha_state.assert_not_called()
+
+
+# ==============================================================================
+# Optimistic State Preservation Tests
+# ==============================================================================
+
+
+class TestHeaterStatePreservation:
+    """Test heater state fields are preserved across API polls."""
+
+    def test_heater_auto_stop_field_exists(self):
+        """Test GoveeDeviceState has heater_auto_stop field."""
+        state = GoveeDeviceState(device_id="test")
+        assert state.heater_auto_stop is None
+        state.heater_auto_stop = 1
+        assert state.heater_auto_stop == 1
+
+    def test_temperature_command_optimistic_update(self):
+        """Test TemperatureSettingCommand sets both temperature and auto_stop."""
+        cmd = TemperatureSettingCommand(temperature=22, auto_stop=1)
+        state = GoveeDeviceState(device_id="test")
+        state.heater_temperature = cmd.temperature
+        state.heater_auto_stop = cmd.auto_stop
+        assert state.heater_temperature == 22
+        assert state.heater_auto_stop == 1

@@ -108,6 +108,7 @@ class GoveeDeviceState:
 
     # Heater state
     heater_temperature: int | None = None  # Target temperature in Celsius
+    heater_auto_stop: int | None = None  # Auto-stop setting (0=Maintain, 1=Auto-stop)
     fan_speed: int | None = None  # Fan speed mode value (1=Low, 2=Medium, 3=High)
 
     # Purifier state

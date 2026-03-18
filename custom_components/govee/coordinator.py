@@ -45,7 +45,11 @@ from .models.commands import (
     WorkModeCommand,
     create_dreamview_command,
 )
-from .models.device import INSTANCE_DREAMVIEW, INSTANCE_HDMI_SOURCE
+from .models.device import (
+    INSTANCE_DREAMVIEW,
+    INSTANCE_HDMI_SOURCE,
+    INSTANCE_THERMOSTAT_TOGGLE,
+)
 from .protocols import IStateObserver
 from .scene_cache import SceneCacheManager
 from .repairs import (
@@ -487,6 +491,12 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                     state.last_scene_id = existing_state.last_scene_id
                 if existing_state.last_scene_name is not None:
                     state.last_scene_name = existing_state.last_scene_name
+
+                # Heater state: preserve across polls (API doesn't reliably return these)
+                if existing_state.heater_temperature is not None:
+                    state.heater_temperature = existing_state.heater_temperature
+                if existing_state.heater_auto_stop is not None:
+                    state.heater_auto_stop = existing_state.heater_auto_stop
 
                 self._preserve_optimistic_field(
                     existing_state, state, device_id, "dreamview_enabled", "DreamView"
@@ -965,6 +975,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 state.apply_optimistic_hdmi_source(command.value)
         elif isinstance(command, TemperatureSettingCommand):
             state.heater_temperature = command.temperature
+            state.heater_auto_stop = command.auto_stop
         elif isinstance(command, WorkModeCommand):
             state.apply_optimistic_work_mode(command.work_mode, command.mode_value)
         elif isinstance(command, MusicModeCommand):
@@ -982,9 +993,11 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 mode_name,
             )
         elif isinstance(command, ToggleCommand):
-            # Handle toggle commands (DreamView, night light, etc)
+            # Handle toggle commands (DreamView, night light, thermostat, etc)
             if command.toggle_instance == INSTANCE_DREAMVIEW:
                 state.apply_optimistic_dreamview(command.enabled)
+            elif command.toggle_instance == INSTANCE_THERMOSTAT_TOGGLE:
+                state.heater_auto_stop = 1 if command.enabled else 0
 
     async def async_get_scenes(
         self,
@@ -1046,7 +1059,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
         success = False
         if color and device.supports_rgb:
-            success = await self.async_control_device(device_id, ColorCommand(color=color))
+            success = await self.async_control_device(
+                device_id, ColorCommand(color=color)
+            )
         elif color_temp and device.supports_color_temp:
             success = await self.async_control_device(
                 device_id, ColorTempCommand(kelvin=color_temp)
