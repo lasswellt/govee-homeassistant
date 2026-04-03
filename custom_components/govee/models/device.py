@@ -31,6 +31,7 @@ DEVICE_TYPE_HEATER = "devices.types.heater"
 DEVICE_TYPE_HUMIDIFIER = "devices.types.humidifier"
 DEVICE_TYPE_FAN = "devices.types.fan"
 DEVICE_TYPE_PURIFIER = "devices.types.purifier"
+DEVICE_TYPE_AIR_PURIFIER = "devices.types.air_purifier"
 
 # Instance constants
 INSTANCE_POWER = "powerSwitch"
@@ -290,8 +291,8 @@ class GoveeDevice:
 
     @property
     def is_fan(self) -> bool:
-        """Check if device is a fan."""
-        return self.device_type == DEVICE_TYPE_FAN
+        """Check if device is a fan or air purifier (uses same work mode controls)."""
+        return self.device_type in (DEVICE_TYPE_FAN, DEVICE_TYPE_AIR_PURIFIER)
 
     @property
     def is_heater(self) -> bool:
@@ -301,7 +302,7 @@ class GoveeDevice:
     @property
     def is_purifier(self) -> bool:
         """Check if device is an air purifier."""
-        return self.device_type == DEVICE_TYPE_PURIFIER
+        return self.device_type in (DEVICE_TYPE_PURIFIER, DEVICE_TYPE_AIR_PURIFIER)
 
     @property
     def supports_oscillation(self) -> bool:
