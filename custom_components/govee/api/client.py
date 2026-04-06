@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+import json
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
@@ -153,64 +154,64 @@ class GoveeApiClient:
             except (ValueError, TypeError):
                 pass
 
+
     async def _handle_response(
         self,
         response: aiohttp.ClientResponse,
+        *,
+        allow_empty_success: bool = False,
     ) -> dict[str, Any]:
-        """Handle API response and raise appropriate exceptions.
-
-        Args:
-            response: aiohttp response object.
-
-        Returns:
-            Parsed JSON response data.
-
-        Raises:
-            GoveeAuthError: 401 Unauthorized.
-            GoveeRateLimitError: 429 Too Many Requests.
-            GoveeDeviceNotFoundError: 400 for missing device.
-            GoveeApiError: Other API errors.
-        """
+        """Handle API response and raise appropriate exceptions."""
         self._update_rate_limits(response.headers)
-
+    
+        text = await response.text()
+        text = text.strip()
+    
+        if not text:
+            if allow_empty_success and response.status < 400:
+                return {}
+            raise GoveeApiError("Empty response from API", code=response.status)
+    
         try:
-            data: dict[str, Any] = await response.json()
-        except aiohttp.ContentTypeError:
-            text = await response.text()
+            data: dict[str, Any] = json.loads(text)
+        except json.JSONDecodeError:
+            if allow_empty_success and response.status < 400:
+                _LOGGER.debug(
+                    "Non-JSON success response accepted for status=%d body=%r",
+                    response.status,
+                    text[:200],
+                )
+                return {}
             raise GoveeApiError(f"Invalid JSON response: {text[:200]}")
-
-        # Check HTTP status
+    
         if response.status == 401:
             raise GoveeAuthError("Invalid API key")
-
+    
         if response.status == 429:
             retry_after = response.headers.get("Retry-After")
             raise GoveeRateLimitError(
                 "Rate limit exceeded",
                 retry_after=float(retry_after) if retry_after else None,
             )
-
+    
         if response.status == 400:
-            # Govee API uses both "message" and "msg" for errors
             message = data.get("message") or data.get("msg", "Bad request")
             _LOGGER.debug("API 400 error response: %s", data)
-            # Check for "devices not exist" error (expected for groups)
             if "not exist" in message.lower():
                 raise GoveeDeviceNotFoundError(message)
             raise GoveeApiError(message, code=400)
-
+    
         if response.status >= 400:
             message = data.get("message") or data.get("msg", f"HTTP {response.status}")
             raise GoveeApiError(message, code=response.status)
-
-        # Check response code within JSON
+    
         code = data.get("code")
         if code is not None and code != 200:
             message = data.get("message") or data.get("msg", f"API error code {code}")
             if code == 401:
                 raise GoveeAuthError(message)
             raise GoveeApiError(message, code=code)
-
+    
         return data
 
     async def get_devices(self) -> list[GoveeDevice]:
@@ -298,33 +299,22 @@ class GoveeApiClient:
 
     async def control_device(
         self,
-        device_id: str,
-        sku: str,
-        command: DeviceCommand,
+        device: str,
+        model: str,
+        capability: dict[str, Any],
+        value: Any,
     ) -> bool:
-        """Send control command to device.
-
-        Args:
-            device_id: Device identifier.
-            sku: Device SKU.
-            command: Command to execute.
-
-        Returns:
-            True if command was accepted by API.
-
-        Raises:
-            GoveeApiError: If command fails.
-        """
+        """Control a device capability."""
         client = await self._ensure_client()
+        capability_payload = dict(capability)
+        capability_payload["value"] = value
 
-        # Build request payload
-        cmd_payload = command.to_api_payload()
         payload = {
             "requestId": str(uuid.uuid4()),
             "payload": {
-                "sku": sku,
-                "device": device_id,
-                "capability": cmd_payload,
+                "sku": model,
+                "device": device,
+                "capability": capability_payload,
             },
         }
 
@@ -334,9 +324,8 @@ class GoveeApiClient:
                 headers=self._get_headers(),
                 json=payload,
             ) as response:
-                await self._handle_response(response)
+                await self._handle_response(response, allow_empty_success=True)
                 return True
-
         except aiohttp.ClientError as err:
             raise GoveeConnectionError(f"Connection error: {err}") from err
 

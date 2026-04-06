@@ -144,6 +144,15 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
         # Track rate limit state to avoid spamming repair issues
         self._rate_limited: bool = False
+        
+        # Serialize control commands per physical device.
+        # This avoids racing segment/group commands against each other when
+        # Home Assistant sends many updates at once.
+        self._device_command_locks: dict[str, asyncio.Lock] = {}
+
+        # Small delay after each successful command so Govee can process
+        # segment/group updates more reliably.
+        self._device_command_delay = 0.18
 
         # Store original poll interval for restoring after rate limit backoff
         self._original_update_interval = timedelta(seconds=poll_interval)
@@ -217,6 +226,193 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         """Unregister a state change observer."""
         if observer in self._observers:
             self._observers.remove(observer)
+
+    def _get_device_command_lock(self, device_id: str) -> asyncio.Lock:
+        """Return per-device lock for serializing control commands."""
+        lock = self._device_command_locks.get(device_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._device_command_locks[device_id] = lock
+        return lock
+
+    def _command_to_capability_value(
+        self,
+        command: DeviceCommand,
+    ) -> tuple[dict[str, Any], Any]:
+        """Convert command object to API capability/value payload."""
+
+        # Standard device power
+        if isinstance(command, PowerCommand):
+            return (
+                {
+                    "type": "devices.capabilities.on_off",
+                    "instance": "powerSwitch",
+                },
+                1 if command.power_on else 0,
+            )
+
+        # Standard brightness
+        if isinstance(command, BrightnessCommand):
+            return (
+                {
+                    "type": "devices.capabilities.range",
+                    "instance": "brightness",
+                },
+                command.brightness,
+            )
+
+        # Standard RGB color
+        if isinstance(command, ColorCommand):
+            return (
+                {
+                    "type": "devices.capabilities.color_setting",
+                    "instance": "colorRgb",
+                },
+                command.color.as_packed_int,
+            )
+
+        # Standard color temperature
+        if isinstance(command, ColorTempCommand):
+            return (
+                {
+                    "type": "devices.capabilities.color_setting",
+                    "instance": "colorTemperatureK",
+                },
+                command.kelvin,
+            )
+
+        # Built-in scenes
+        if isinstance(command, SceneCommand):
+            return (
+                {
+                    "type": "devices.capabilities.dynamic_scene",
+                    "instance": "lightScene",
+                },
+                command.scene_id,
+            )
+
+        # DIY scenes
+        if isinstance(command, DIYSceneCommand):
+            return (
+                {
+                    "type": "devices.capabilities.dynamic_scene",
+                    "instance": "diyScene",
+                },
+                command.scene_id,
+            )
+
+        # Generic mode commands
+        if isinstance(command, ModeCommand):
+            return (
+                {
+                    "type": "devices.capabilities.mode",
+                    "instance": command.mode_instance,
+                },
+                command.value,
+            )
+
+        # Work mode commands
+        if isinstance(command, WorkModeCommand):
+            return (
+                {
+                    "type": "devices.capabilities.work_mode",
+                    "instance": "workMode",
+                },
+                {
+                    "workMode": command.work_mode,
+                    "modeValue": command.mode_value,
+                },
+            )
+
+        # Music mode STRUCT command
+        if isinstance(command, MusicModeCommand):
+            value = {
+                "musicMode": command.music_mode,
+                "sensitivity": command.sensitivity,
+            }
+            if getattr(command, "auto_color", None) is not None:
+                value["autoColor"] = command.auto_color
+
+            return (
+                {
+                    "type": "devices.capabilities.music_setting",
+                    "instance": "musicMode",
+                },
+                value,
+            )
+
+        # Toggle commands (DreamView etc.)
+        if isinstance(command, ToggleCommand):
+            return (
+                {
+                    "type": "devices.capabilities.toggle",
+                    "instance": command.toggle_instance,
+                },
+                1 if command.enabled else 0,
+            )
+
+        # Heater temperature / thermostat setting
+        if isinstance(command, TemperatureSettingCommand):
+            value = {
+                "temperature": command.temperature,
+            }
+            if command.auto_stop is not None:
+                value["autoStop"] = command.auto_stop
+
+            return (
+                {
+                    "type": "devices.capabilities.temperature_setting",
+                    "instance": "targetTemperature",
+                },
+                value,
+            )
+
+        # Segment commands (duck-typed so we don't depend on exact class imports)
+        command_name = type(command).__name__
+
+        if command_name == "SegmentColorCommand":
+            segments = list(getattr(command, "segment_indices", []))
+            color = getattr(command, "color", None)
+            if color is None:
+                raise ValueError("SegmentColorCommand missing color")
+            return (
+                {
+                    "type": "devices.capabilities.segment_color_setting",
+                    "instance": "segmentedColorRgb",
+                },
+                {
+                    "segment": segments,
+                    "rgb": color.as_packed_int,
+                },
+            )
+
+        if command_name == "SegmentBrightnessCommand":
+            return (
+                {
+                    "type": "devices.capabilities.segment_color_setting",
+                    "instance": "segmentedBrightness",
+                },
+                {
+                    "segment": list(getattr(command, "segment_indices", [])),
+                    "brightness": getattr(command, "brightness"),
+                },
+            )
+
+        if command_name == "SegmentPowerCommand":
+            return (
+                {
+                    "type": "devices.capabilities.segment_color_setting",
+                    "instance": "segmentedBrightness",
+                },
+                {
+                    "segment": list(getattr(command, "segment_indices", [])),
+                    "brightness": 0 if not getattr(command, "power_on", True) else 100,
+                },
+            )
+
+        raise ValueError(
+            f"Unsupported command type for API conversion: {type(command).__name__}"
+        )
 
     def _notify_observers(self, device_id: str, state: GoveeDeviceState) -> None:
         """Notify all observers of state change."""
@@ -583,53 +779,91 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         except Exception as err:
             return err
 
-    async def async_control_device(
-        self,
-        device_id: str,
-        command: DeviceCommand,
-    ) -> bool:
-        """Send control command to device with optimistic update.
 
-        Args:
-            device_id: Device identifier.
-            command: Command to execute.
-
-        Returns:
-            True if command succeeded.
-        """
+    async def async_control_device(self, device_id: str, command: DeviceCommand) -> bool:
+        """Send a command through the API client and apply optimistic state updates."""
         device = self._devices.get(device_id)
         if not device:
-            _LOGGER.error("Unknown device: %s", device_id)
+            _LOGGER.error("Unknown device for control command: %s", device_id)
             return False
 
-        # Track power-off commands so segment entities can detect them
-        # before the first await, ensuring concurrent coroutines see the flag.
-        is_power_off = isinstance(command, PowerCommand) and not command.power_on
-        if is_power_off:
-            self._pending_power_off.add(device_id)
+        capability, value = self._command_to_capability_value(command)
+        device_lock = self._get_device_command_lock(device_id)
+        power_off_pending = isinstance(command, PowerCommand) and not command.power_on
 
-        try:
-            success = await self._api_client.control_device(
-                device_id,
-                device.sku,
-                command,
-            )
+        async with device_lock:
+            if power_off_pending:
+                self._pending_power_off.add(device_id)
 
-            if success:
-                # Apply optimistic update
-                self._apply_optimistic_update(device_id, command)
-                self.async_set_updated_data(self._states)
+            try:
+                success = await self._api_client.control_device(
+                    device=device_id,
+                    model=device.sku,
+                    capability=capability,
+                    value=value,
+                )
+            except GoveeAuthError as err:
+                await async_create_auth_issue(self.hass, self._config_entry)
+                raise ConfigEntryAuthFailed("Invalid API key") from err
+            except GoveeRateLimitError as err:
+                _LOGGER.warning("Rate limit hit while sending command to %s", device_id)
+                if not self._rate_limited:
+                    self._rate_limited = True
+                    backoff_seconds = int(err.retry_after) if err.retry_after else 120
+                    self.update_interval = timedelta(seconds=backoff_seconds)
+                    await async_create_rate_limit_issue(
+                        self.hass,
+                        self._config_entry,
+                        f"{backoff_seconds} seconds" if err.retry_after else "unknown",
+                    )
+                return False
+            except GoveeApiError as err:
+                _LOGGER.warning(
+                    "Failed to send %s to %s: %s",
+                    type(command).__name__,
+                    device.name,
+                    err,
+                )
+                return False
+            except Exception:
+                _LOGGER.exception(
+                    "Unexpected error sending %s to %s",
+                    type(command).__name__,
+                    device.name,
+                )
+                return False
+            finally:
+                if power_off_pending:
+                    self._pending_power_off.discard(device_id)
 
-            return success
+            if not success:
+                return False
 
-        except GoveeAuthError as err:
-            raise ConfigEntryAuthFailed("Invalid API key") from err
-        except GoveeApiError as err:
-            _LOGGER.error("Control command failed: %s", err)
-            return False
-        finally:
-            if is_power_off:
-                self._pending_power_off.discard(device_id)
+            self._apply_optimistic_update(device_id, command)
+            state = self._states.get(device_id)
+            if state:
+                self._notify_observers(device_id, state)
+
+            if self._device_command_delay > 0:
+                await asyncio.sleep(self._device_command_delay)
+
+            return True
+
+    async def control_device(
+        self,
+        device: str,
+        model: str,
+        capability: dict[str, Any],
+        value: Any,
+    ) -> bool:
+        """Backward-compatible raw control helper."""
+        return await self._api_client.control_device(
+            device=device,
+            model=model,
+            capability=capability,
+            value=value,
+        )
+
 
     async def _ensure_device_topic(self, device_id: str) -> str | None:
         """Get device MQTT topic, refreshing if needed.
