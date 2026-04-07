@@ -85,7 +85,7 @@ GOVEE_VERIFICATION_URL = (
 GOVEE_IOT_KEY_URL = "https://app2.govee.com/app/v1/account/iot/key"
 GOVEE_DEVICE_LIST_URL = "https://app2.govee.com/device/rest/devices/v1/list"
 GOVEE_CLIENT_TYPE = "1"
-GOVEE_APP_VERSION = "7.4.10"
+GOVEE_APP_VERSION = "6.5.02"
 GOVEE_IOT_VERSION = "0"
 GOVEE_USER_AGENT = (
     f"GoveeHome/{GOVEE_APP_VERSION} "
