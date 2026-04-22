@@ -1,7 +1,7 @@
 # Runtime dependencies (from manifest.json)
 aiohttp-retry>=2.8.3
 aiomqtt>=2.0.0
-cryptography>=41.0.0
+cryptography>=46.0.7
 
 # Test dependencies
 asynctest
