@@ -1,5 +1,5 @@
 # Runtime dependencies (from manifest.json)
-aiohttp-retry>=2.8.3
+aiohttp-retry>=2.9.1
 aiomqtt>=2.0.0
 cryptography>=41.0.0
 
