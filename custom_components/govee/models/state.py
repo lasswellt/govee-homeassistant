@@ -125,7 +125,7 @@ class GoveeDeviceState:
 
     # Read-only sensor properties (devices.capabilities.property) for
     # stand-alone sensors like H5109/H5179. None until first poll lands.
-    sensor_temperature: float | None = None  # Celsius (always; entity converts)
+    sensor_temperature: float | None = None  # Raw from API (°C or °F; entity may normalize)
     sensor_humidity: float | None = None  # Relative humidity 0-100 %
 
     # Last activated scene (for restoring after music mode off)

@@ -26,7 +26,11 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import (
+    CONF_API_TEMPERATURE_UNIT,
+    DEFAULT_API_TEMPERATURE_UNIT,
+    DOMAIN,
+)
 from .coordinator import GoveeCoordinator
 from .entity import GoveeEntity
 from .models import GoveeDevice
@@ -182,7 +186,24 @@ class GoveeTemperatureSensor(GoveeEntity, SensorEntity):
     @property
     def native_value(self) -> float | None:
         state = self.device_state
-        return state.sensor_temperature if state else None
+        if not state or state.sensor_temperature is None:
+            return None
+
+        value = float(state.sensor_temperature)
+
+        # Some thermometer/hygrometer devices report temperature in Fahrenheit
+        # via the Govee Cloud API, but without unit metadata. Normalize to
+        # Celsius here so HA displays the correct value under a Celsius native
+        # unit (and can still convert if the user's system is Fahrenheit).
+        api_unit = self.coordinator.config_entry.options.get(
+            CONF_API_TEMPERATURE_UNIT,
+            DEFAULT_API_TEMPERATURE_UNIT,
+        )
+        if api_unit == "fahrenheit":
+            # Avoid HA-version-specific helpers; keep conversion local.
+            return (value - 32.0) * (5.0 / 9.0)
+
+        return value
 
 
 class GoveeHumiditySensor(GoveeEntity, SensorEntity):

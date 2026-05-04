@@ -34,6 +34,7 @@ from .api.auth import _derive_client_id
 from .api.client import validate_api_key
 from .const import (
     CONF_API_KEY,
+    CONF_API_TEMPERATURE_UNIT,
     CONF_EMAIL,
     CONF_ENABLE_DIY_SCENES,
     CONF_ENABLE_GROUPS,
@@ -44,6 +45,7 @@ from .const import (
     CONF_POLL_INTERVAL,
     CONF_SEGMENT_MODE,
     CONFIG_VERSION,
+    DEFAULT_API_TEMPERATURE_UNIT,
     DEFAULT_ENABLE_DIY_SCENES,
     DEFAULT_ENABLE_GROUPS,
     DEFAULT_ENABLE_SCENES,
@@ -696,6 +698,12 @@ class GoveeOptionsFlow(OptionsFlow):
                             DEFAULT_EXPOSE_TRANSPORT_ENTITIES,
                         ),
                     ): bool,
+                    vol.Optional(
+                        CONF_API_TEMPERATURE_UNIT,
+                        default=options.get(
+                            CONF_API_TEMPERATURE_UNIT, DEFAULT_API_TEMPERATURE_UNIT
+                        ),
+                    ): vol.In(["celsius", "fahrenheit"]),
                 }
             ),
         )

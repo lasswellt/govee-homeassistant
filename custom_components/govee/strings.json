@@ -79,6 +79,7 @@
         "description": "If you have RGBIC devices, per-device segment settings will appear after submitting.",
         "data": {
           "poll_interval": "Polling interval (seconds)",
+          "api_temperature_unit": "Temperature unit from Govee API (thermometers)",
           "enable_groups": "Enable group devices",
           "enable_scenes": "Enable scene selector",
           "enable_diy_scenes": "Enable DIY scene selector",
