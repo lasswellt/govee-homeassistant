@@ -461,7 +461,7 @@ class GoveeApiClient:
             raise GoveeConnectionError(f"Connection error: {err}") from err
 
 
-async def validate_api_key(api_key: str) -> bool:
+async def validate_api_key(api_key: str, hass: HomeAssistant | None = None) -> bool:
     """Validate a Govee API key by making a test request.
 
     Args:
@@ -474,7 +474,7 @@ async def validate_api_key(api_key: str) -> bool:
         GoveeAuthError: Invalid API key.
         GoveeApiError: Other errors.
     """
-    async with GoveeApiClient(api_key) as client:
+    async with GoveeApiClient(api_key, hass=hass) as client:
         # get_devices will raise GoveeAuthError if key is invalid
         await client.get_devices()
         return True
