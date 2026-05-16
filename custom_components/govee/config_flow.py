@@ -128,7 +128,7 @@ class GoveeConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = format_error
             else:
                 try:
-                    await validate_api_key(cleaned_key)
+                    await validate_api_key(cleaned_key, self.hass)
                     self._api_key = cleaned_key
 
                     # Proceed to optional account step for MQTT
@@ -437,7 +437,7 @@ class GoveeConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = format_error
             else:
                 try:
-                    await validate_api_key(cleaned_key)
+                    await validate_api_key(cleaned_key, self.hass)
 
                     # Update existing entry
                     entry = self.hass.config_entries.async_get_entry(
@@ -496,7 +496,7 @@ class GoveeConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = format_error
             else:
                 try:
-                    await validate_api_key(cleaned_key)
+                    await validate_api_key(cleaned_key, self.hass)
 
                     # Build updated data
                     new_data: dict[str, Any] = {
