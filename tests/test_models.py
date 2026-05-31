@@ -246,6 +246,39 @@ class TestGoveeDevice:
         """Test plug detection."""
         assert mock_plug_device.is_plug is True
 
+    def test_plain_plug_not_light_device(self, mock_plug_device):
+        """A plain plug (on/off only) must NOT be a light device (guards #54)."""
+        assert mock_plug_device.is_plug is True
+        assert mock_plug_device.supports_rgb is False
+        assert mock_plug_device.is_light_device is False
+
+    def test_socket_with_color_nightlight_is_light_device(self):
+        """An outlet extender with an RGB nightlight (H5089) IS a light (#59).
+
+        The #54 appliance filter excluded all sockets, removing the H5089's
+        color light entity. A socket with color capability must be a light.
+        """
+        device = GoveeDevice(
+            device_id="03:9C:DC:06:75:4B:10:7C",
+            sku="H5089",
+            name="Smart Outlet Extender",
+            device_type="devices.types.socket",
+            capabilities=(
+                GoveeCapability(
+                    type=CAPABILITY_ON_OFF, instance=INSTANCE_POWER, parameters={}
+                ),
+                GoveeCapability(
+                    type=CAPABILITY_COLOR_SETTING,
+                    instance=INSTANCE_COLOR_RGB,
+                    parameters={},
+                ),
+            ),
+            is_group=False,
+        )
+        assert device.is_plug is True
+        assert device.supports_rgb is True
+        assert device.is_light_device is True
+
     def test_is_group(self, mock_group_device):
         """Test group device detection."""
         assert mock_group_device.is_group is True

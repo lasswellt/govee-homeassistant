@@ -674,15 +674,23 @@ class GoveeDevice:
 
     @property
     def is_light_device(self) -> bool:
-        """Check if device is a light (not a plug, fan, or other appliance)."""
+        """Check if device is a light (not a plain plug, fan, or other appliance).
+
+        An outlet extender that exposes an RGB / tunable-white nightlight
+        (e.g. H5089) IS a light for that nightlight, so a plug is only
+        excluded when it has no color capability. Plain plugs (on/off only)
+        stay switch-only. Fixes #59 — the #54 appliance filter over-reached
+        and removed the H5089's color light entity.
+        """
         if (
             self.is_fan
-            or self.is_plug
             or self.is_heater
             or self.is_purifier
             or self.is_humidifier
             or self.is_kettle
         ):
+            return False
+        if self.is_plug and not (self.supports_rgb or self.supports_color_temp):
             return False
         return (
             self.device_type == DEVICE_TYPE_LIGHT
