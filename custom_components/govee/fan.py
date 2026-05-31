@@ -12,10 +12,16 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from homeassistant.components.fan import FanEntity, FanEntityFeature
+from homeassistant.components.fan import (
+    DIRECTION_FORWARD,
+    DIRECTION_REVERSE,
+    FanEntity,
+    FanEntityFeature,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util.percentage import (
     ordered_list_item_to_percentage,
     percentage_to_ordered_list_item,
@@ -23,7 +29,19 @@ from homeassistant.util.percentage import (
 
 from .coordinator import GoveeCoordinator
 from .entity import GoveeEntity
-from .models import GoveeDevice, OscillationCommand, PowerCommand, WorkModeCommand
+from .models import (
+    GoveeDevice,
+    ModeCommand,
+    OscillationCommand,
+    PowerCommand,
+    ToggleCommand,
+    WorkModeCommand,
+)
+from .models.device import (
+    INSTANCE_FAN_SPEED_MODE,
+    INSTANCE_FAN_TOGGLE,
+    INSTANCE_REVERSE_AIRFLOW,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -59,6 +77,19 @@ async def async_setup_entry(
                 device.supports_work_mode,
             )
             entities.append(GoveeFanEntity(coordinator, device))
+
+        # Ceiling-fan-with-light combos (e.g. H1310) report as
+        # devices.types.light, so they get a light entity from the light
+        # platform AND a fan entity here for the integrated fan (issue #74).
+        elif device.supports_ceiling_fan:
+            _LOGGER.debug(
+                "Creating ceiling fan entity for %s (%s): reverse=%s, speeds=%d",
+                device.name,
+                device.sku,
+                device.supports_reverse_airflow,
+                len(device.get_ceiling_fan_speed_options()),
+            )
+            entities.append(GoveeCeilingFanEntity(coordinator, device))
 
     async_add_entities(entities)
     _LOGGER.debug("Set up %d Govee fan entities", len(entities))
@@ -241,3 +272,153 @@ class GoveeFanEntity(GoveeEntity, FanEntity):
             self._device_id,
             OscillationCommand(oscillating=oscillating),
         )
+
+
+class GoveeCeilingFanEntity(GoveeEntity, FanEntity, RestoreEntity):
+    """Fan entity for ceiling-fan-with-light combos (e.g. H1310).
+
+    Controls the integrated fan via the ``fanToggle`` / ``fanSpeedMode`` /
+    ``reverseAirflowToggle`` capabilities — separate from the device's light
+    entity (the H1310 reports as devices.types.light). Govee's state poll
+    does not return these fan values, so state is optimistic and restored
+    across restarts via RestoreEntity (issue #74).
+    """
+
+    _attr_icon = "mdi:ceiling-fan-light"
+
+    def __init__(
+        self,
+        coordinator: GoveeCoordinator,
+        device: GoveeDevice,
+    ) -> None:
+        """Initialize the ceiling fan entity."""
+        super().__init__(coordinator, device)
+
+        # Distinct unique_id — the device_id alone backs the light entity.
+        self._attr_unique_id = f"{device.device_id}_fan"
+        self._attr_name = "Fan"
+
+        # Speed values from fanSpeedMode options (e.g. [1, 2, 3, 4, 5, 6]).
+        options = device.get_ceiling_fan_speed_options()
+        self._speed_values: list[int] = (
+            [int(o["value"]) for o in options if "value" in o] if options else [1, 2, 3]
+        )
+        self._attr_speed_count = len(self._speed_values)
+
+        features = (
+            FanEntityFeature.TURN_ON
+            | FanEntityFeature.TURN_OFF
+            | FanEntityFeature.SET_SPEED
+        )
+        if device.supports_reverse_airflow:
+            features |= FanEntityFeature.DIRECTION
+        self._attr_supported_features = features
+
+        # Optimistic state — Govee does not report fan state on poll.
+        self._is_on = False
+        self._speed_value: int | None = None
+        self._direction = DIRECTION_FORWARD
+
+    async def async_added_to_hass(self) -> None:
+        """Restore optimistic state on startup."""
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state is None:
+            return
+        self._is_on = last_state.state == "on"
+        pct = last_state.attributes.get("percentage")
+        if pct is not None:
+            try:
+                self._speed_value = percentage_to_ordered_list_item(
+                    self._speed_values, int(pct)
+                )
+            except (ValueError, TypeError):
+                self._speed_value = None
+        direction = last_state.attributes.get("direction")
+        if direction in (DIRECTION_FORWARD, DIRECTION_REVERSE):
+            self._direction = direction
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if the fan is on (optimistic)."""
+        return self._is_on
+
+    @property
+    def percentage(self) -> int | None:
+        """Return current speed as a percentage (optimistic)."""
+        if not self._is_on or self._speed_value is None:
+            return 0 if not self._is_on else None
+        try:
+            return ordered_list_item_to_percentage(
+                self._speed_values, self._speed_value
+            )
+        except ValueError:
+            return None
+
+    @property
+    def current_direction(self) -> str | None:
+        """Return the current airflow direction (optimistic)."""
+        if not self._device.supports_reverse_airflow:
+            return None
+        return self._direction
+
+    async def async_turn_on(
+        self,
+        percentage: int | None = None,
+        preset_mode: str | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Turn the fan on, optionally at a given speed."""
+        success = await self.coordinator.async_control_device(
+            self._device_id,
+            ToggleCommand(toggle_instance=INSTANCE_FAN_TOGGLE, enabled=True),
+        )
+        if success:
+            self._is_on = True
+            self.async_write_ha_state()
+        if percentage is not None:
+            await self.async_set_percentage(percentage)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn the fan off."""
+        success = await self.coordinator.async_control_device(
+            self._device_id,
+            ToggleCommand(toggle_instance=INSTANCE_FAN_TOGGLE, enabled=False),
+        )
+        if success:
+            self._is_on = False
+            self.async_write_ha_state()
+
+    async def async_set_percentage(self, percentage: int) -> None:
+        """Set the fan speed from a percentage. 0% turns off."""
+        if percentage == 0:
+            await self.async_turn_off()
+            return
+
+        speed_value = percentage_to_ordered_list_item(self._speed_values, percentage)
+        _LOGGER.debug(
+            "Setting ceiling fan speed: percentage=%d, fanSpeedMode=%d",
+            percentage,
+            speed_value,
+        )
+        success = await self.coordinator.async_control_device(
+            self._device_id,
+            ModeCommand(mode_instance=INSTANCE_FAN_SPEED_MODE, value=speed_value),
+        )
+        if success:
+            self._speed_value = speed_value
+            # Setting a speed implies the fan is running.
+            self._is_on = True
+            self.async_write_ha_state()
+
+    async def async_set_direction(self, direction: str) -> None:
+        """Set the airflow direction (reverse airflow toggle)."""
+        reverse = direction == DIRECTION_REVERSE
+        _LOGGER.debug("Setting ceiling fan direction: %s", direction)
+        success = await self.coordinator.async_control_device(
+            self._device_id,
+            ToggleCommand(toggle_instance=INSTANCE_REVERSE_AIRFLOW, enabled=reverse),
+        )
+        if success:
+            self._direction = DIRECTION_REVERSE if reverse else DIRECTION_FORWARD
+            self.async_write_ha_state()

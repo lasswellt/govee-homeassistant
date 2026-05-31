@@ -60,6 +60,12 @@ INSTANCE_DREAMVIEW = "dreamViewToggle"
 INSTANCE_TEMPERATURE = "temperature"
 INSTANCE_TARGET_TEMPERATURE = "targetTemperature"
 INSTANCE_FAN_SPEED = "fanSpeed"
+# Ceiling-fan-with-light combo instances (e.g. H1310, reported as
+# devices.types.light with an integrated fan). Distinct from the standalone
+# fan shape (workMode / fanSpeed / oscillationToggle) — issue #74.
+INSTANCE_FAN_TOGGLE = "fanToggle"
+INSTANCE_FAN_SPEED_MODE = "fanSpeedMode"
+INSTANCE_REVERSE_AIRFLOW = "reverseAirflowToggle"
 INSTANCE_PURIFIER_MODE = "purifierMode"
 INSTANCE_THERMOSTAT_TOGGLE = "thermostatToggle"
 INSTANCE_HUMIDITY = "humidity"
@@ -483,6 +489,40 @@ class GoveeDevice:
     def supports_work_mode(self) -> bool:
         """Check if device supports work mode (fans)."""
         return any(cap.is_work_mode for cap in self.capabilities)
+
+    @property
+    def supports_ceiling_fan(self) -> bool:
+        """Check if device has an integrated ceiling fan (e.g. H1310).
+
+        These report as devices.types.light but carry a ``fanToggle`` toggle
+        plus a ``fanSpeedMode`` mode capability. Distinct from standalone fans
+        (workMode / fanSpeed / oscillation) — issue #74.
+        """
+        has_toggle = any(
+            cap.type == CAPABILITY_TOGGLE and cap.instance == INSTANCE_FAN_TOGGLE
+            for cap in self.capabilities
+        )
+        has_speed = any(
+            cap.type == CAPABILITY_MODE and cap.instance == INSTANCE_FAN_SPEED_MODE
+            for cap in self.capabilities
+        )
+        return has_toggle and has_speed
+
+    @property
+    def supports_reverse_airflow(self) -> bool:
+        """Check if the integrated ceiling fan supports reverse airflow."""
+        return any(
+            cap.type == CAPABILITY_TOGGLE and cap.instance == INSTANCE_REVERSE_AIRFLOW
+            for cap in self.capabilities
+        )
+
+    def get_ceiling_fan_speed_options(self) -> list[dict[str, Any]]:
+        """Get ``fanSpeedMode`` speed options as {"name", "value"} dicts."""
+        for cap in self.capabilities:
+            if cap.type == CAPABILITY_MODE and cap.instance == INSTANCE_FAN_SPEED_MODE:
+                options: list[dict[str, Any]] = cap.parameters.get("options", [])
+                return options
+        return []
 
     @property
     def supports_hdmi_source(self) -> bool:

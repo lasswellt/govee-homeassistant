@@ -351,3 +351,172 @@ class TestGoveeFanEntity8Speed:
         assert isinstance(call_args[0][1], WorkModeCommand)
         assert call_args[0][1].work_mode == WORK_MODE_GEAR
         assert call_args[0][1].mode_value == 4
+
+
+# ==============================================================================
+# Ceiling Fan (H1310) Tests — issue #74
+# ==============================================================================
+
+
+def _h1310_device():
+    """Build an H1310-shaped ceiling-fan-with-light device."""
+    from custom_components.govee.models import GoveeDevice, GoveeCapability
+    from custom_components.govee.models.device import (
+        CAPABILITY_ON_OFF,
+        CAPABILITY_TOGGLE,
+        CAPABILITY_MODE,
+        INSTANCE_POWER,
+        INSTANCE_FAN_TOGGLE,
+        INSTANCE_FAN_SPEED_MODE,
+        INSTANCE_REVERSE_AIRFLOW,
+    )
+
+    on_off = {"name": "on", "value": 1}
+    off = {"name": "off", "value": 0}
+    return GoveeDevice(
+        device_id="AA:BB:CC:DD:EE:FF:13:10",
+        sku="H1310",
+        name="Room1 Ceiling Fan",
+        device_type="devices.types.light",
+        capabilities=(
+            GoveeCapability(type=CAPABILITY_ON_OFF, instance=INSTANCE_POWER, parameters={}),
+            GoveeCapability(
+                type=CAPABILITY_TOGGLE,
+                instance=INSTANCE_FAN_TOGGLE,
+                parameters={"dataType": "ENUM", "options": [on_off, off]},
+            ),
+            GoveeCapability(
+                type=CAPABILITY_MODE,
+                instance=INSTANCE_FAN_SPEED_MODE,
+                parameters={
+                    "dataType": "ENUM",
+                    "options": [{"name": f"Speed {i}", "value": i} for i in range(1, 7)],
+                },
+            ),
+            GoveeCapability(
+                type=CAPABILITY_TOGGLE,
+                instance=INSTANCE_REVERSE_AIRFLOW,
+                parameters={"dataType": "ENUM", "options": [on_off, off]},
+            ),
+        ),
+        is_group=False,
+    )
+
+
+class TestGoveeCeilingFanEntity:
+    """Test GoveeCeilingFanEntity (H1310) — issue #74."""
+
+    @pytest.fixture
+    def device(self):
+        return _h1310_device()
+
+    @pytest.fixture
+    def mock_coordinator(self, device):
+        coordinator = MagicMock()
+        coordinator.devices = {device.device_id: device}
+        coordinator.get_state = MagicMock(return_value=MagicMock(online=True))
+        coordinator.async_control_device = AsyncMock(return_value=True)
+        return coordinator
+
+    @pytest.fixture
+    def fan_entity(self, mock_coordinator, device):
+        from custom_components.govee.fan import GoveeCeilingFanEntity
+
+        return GoveeCeilingFanEntity(mock_coordinator, device)
+
+    def test_detection(self, device):
+        """H1310 is a ceiling fan and NOT a standalone fan, but IS a light."""
+        assert device.supports_ceiling_fan is True
+        assert device.supports_reverse_airflow is True
+        assert device.is_fan is False
+        assert device.is_light_device is True
+
+    def test_speed_options(self, device):
+        """fanSpeedMode exposes 6 speed values."""
+        opts = device.get_ceiling_fan_speed_options()
+        assert [o["value"] for o in opts] == [1, 2, 3, 4, 5, 6]
+
+    def test_unique_id_suffixed(self, fan_entity, device):
+        """Fan unique_id must differ from the light entity (bare device_id)."""
+        assert fan_entity.unique_id == f"{device.device_id}_fan"
+
+    def test_supported_features(self, fan_entity):
+        from homeassistant.components.fan import FanEntityFeature
+
+        features = fan_entity.supported_features
+        assert features & FanEntityFeature.TURN_ON
+        assert features & FanEntityFeature.TURN_OFF
+        assert features & FanEntityFeature.SET_SPEED
+        assert features & FanEntityFeature.DIRECTION
+
+    def test_speed_count(self, fan_entity):
+        assert fan_entity.speed_count == 6
+
+    @pytest.mark.asyncio
+    async def test_turn_on_sends_fan_toggle(self, fan_entity, mock_coordinator):
+        from custom_components.govee.models import ToggleCommand
+        from custom_components.govee.models.device import INSTANCE_FAN_TOGGLE
+
+        fan_entity.async_write_ha_state = MagicMock()
+        await fan_entity.async_turn_on()
+
+        call_args = mock_coordinator.async_control_device.call_args
+        cmd = call_args[0][1]
+        assert isinstance(cmd, ToggleCommand)
+        assert cmd.toggle_instance == INSTANCE_FAN_TOGGLE
+        assert cmd.enabled is True
+        assert fan_entity.is_on is True
+
+    @pytest.mark.asyncio
+    async def test_turn_off_sends_fan_toggle(self, fan_entity, mock_coordinator):
+        from custom_components.govee.models import ToggleCommand
+
+        fan_entity.async_write_ha_state = MagicMock()
+        await fan_entity.async_turn_off()
+
+        cmd = mock_coordinator.async_control_device.call_args[0][1]
+        assert isinstance(cmd, ToggleCommand)
+        assert cmd.enabled is False
+        assert fan_entity.is_on is False
+
+    @pytest.mark.asyncio
+    async def test_set_percentage_sends_mode_command(self, fan_entity, mock_coordinator):
+        from custom_components.govee.models import ModeCommand
+        from custom_components.govee.models.device import INSTANCE_FAN_SPEED_MODE
+
+        fan_entity.async_write_ha_state = MagicMock()
+        await fan_entity.async_set_percentage(100)
+
+        cmd = mock_coordinator.async_control_device.call_args[0][1]
+        assert isinstance(cmd, ModeCommand)
+        assert cmd.mode_instance == INSTANCE_FAN_SPEED_MODE
+        assert cmd.value == 6  # 100% -> top speed of 6
+        assert fan_entity.is_on is True
+        assert fan_entity.percentage == 100
+
+    @pytest.mark.asyncio
+    async def test_set_percentage_zero_turns_off(self, fan_entity, mock_coordinator):
+        from custom_components.govee.models import ToggleCommand
+
+        fan_entity.async_write_ha_state = MagicMock()
+        await fan_entity.async_set_percentage(0)
+
+        cmd = mock_coordinator.async_control_device.call_args[0][1]
+        assert isinstance(cmd, ToggleCommand)
+        assert cmd.enabled is False
+        assert fan_entity.is_on is False
+
+    @pytest.mark.asyncio
+    async def test_set_direction_reverse(self, fan_entity, mock_coordinator):
+        from homeassistant.components.fan import DIRECTION_REVERSE
+        from custom_components.govee.models import ToggleCommand
+        from custom_components.govee.models.device import INSTANCE_REVERSE_AIRFLOW
+
+        fan_entity.async_write_ha_state = MagicMock()
+        await fan_entity.async_set_direction(DIRECTION_REVERSE)
+
+        cmd = mock_coordinator.async_control_device.call_args[0][1]
+        assert isinstance(cmd, ToggleCommand)
+        assert cmd.toggle_instance == INSTANCE_REVERSE_AIRFLOW
+        assert cmd.enabled is True
+        assert fan_entity.current_direction == DIRECTION_REVERSE
