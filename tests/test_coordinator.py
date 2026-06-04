@@ -1851,3 +1851,32 @@ class TestSensorReadingChangeTracking:
         coord._note_sensor_reading_change("x", new, prev)
         assert coord.sensor_reading_changed_at("x").year > 2020
         assert t1 is not None
+
+
+class TestCoordinatorAlwaysUpdate:
+    """Regression for #93: poll-only devices (BLE thermometers like H5109 with
+    no MQTT push) froze until reload because the coordinator returned the same
+    self._states dict every poll while always_update=False — HA's refresh gate
+    (previous_data != self.data) compared the object to itself and never fired
+    listeners after the first poll. always_update=True forces the notify."""
+
+    def _build(self):
+        import custom_components.govee.coordinator as coord_mod
+
+        hass = MagicMock()
+        config_entry = MagicMock()
+        config_entry.entry_id = "test_entry"
+        api_client = MagicMock()
+        return coord_mod.GoveeCoordinator(
+            hass=hass,
+            config_entry=config_entry,
+            api_client=api_client,
+            iot_credentials=None,
+            poll_interval=60,
+        )
+
+    def test_always_update_is_true(self):
+        """always_update must stay True so each successful poll notifies
+        listeners even when _async_update_data returns the same dict instance."""
+        coord = self._build()
+        assert coord.always_update is True

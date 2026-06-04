@@ -144,7 +144,13 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             config_entry=config_entry,
             name=DOMAIN,
             update_interval=timedelta(seconds=poll_interval),
-            always_update=False,
+            # _async_update_data mutates and returns the same self._states dict
+            # every poll. With always_update=False, HA's refresh gate compares
+            # previous_data != self.data by identity (same object) and never
+            # fires listeners after the first poll, so poll-only devices (BLE
+            # thermometers like H5109 with no MQTT push) freeze until reload.
+            # MQTT devices are masked via async_set_updated_data. (fixes #93)
+            always_update=True,
         )
 
         self._config_entry = config_entry
