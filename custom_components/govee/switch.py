@@ -19,6 +19,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from .const import (
     SUFFIX_DREAMVIEW,
     SUFFIX_HEATER_AUTO_STOP,
+    SUFFIX_LIGHT_ZONE,
     SUFFIX_MUSIC_MODE,
     SUFFIX_NIGHT_LIGHT,
 )
@@ -114,6 +115,23 @@ async def async_setup_entry(
                 "Created DreamView switch entity for %s (REST-first with BLE fallback)",
                 device.name,
             )
+
+        # Per-zone on/off switches for multi-zone lamps (e.g. H60B2's three
+        # light{1,2,3}Toggle zones — issue #104). Distinct from RGBIC color
+        # segments, which the segment platform owns.
+        if not device.is_group:
+            for zone_index, instance in enumerate(device.light_toggle_instances):
+                entities.append(
+                    GoveeLightZoneSwitchEntity(
+                        coordinator, device, instance, zone_index
+                    )
+                )
+                _LOGGER.debug(
+                    "Created light zone switch %d (%s) for %s",
+                    zone_index + 1,
+                    instance,
+                    device.name,
+                )
 
     async_add_entities(entities)
     _LOGGER.debug("Set up %d Govee switch entities", len(entities))
@@ -211,6 +229,76 @@ class GoveeNightLightSwitchEntity(GoveeEntity, SwitchEntity, RestoreEntity):
         success = await self.coordinator.async_control_device(
             self._device_id,
             create_night_light_command(enabled=False),
+        )
+        if success:
+            self._is_on = False
+            self.async_write_ha_state()
+
+
+class GoveeLightZoneSwitchEntity(GoveeEntity, SwitchEntity, RestoreEntity):
+    """On/off switch for one independently switchable light zone (issue #104).
+
+    Multi-zone fixtures like the H60B2 3-segment lamp expose each zone as a
+    ``light{N}Toggle`` capability. Govee doesn't reliably report the per-zone
+    state on poll, so state is optimistic and restored across restarts via
+    RestoreEntity — the same approach as the night-light switch.
+    """
+
+    _attr_translation_key = "govee_light_zone"
+    _attr_icon = "mdi:lightbulb-multiple"
+
+    def __init__(
+        self,
+        coordinator: GoveeCoordinator,
+        device: GoveeDevice,
+        toggle_instance: str,
+        zone_index: int,
+    ) -> None:
+        """Initialize the light zone switch entity.
+
+        Args:
+            coordinator: Govee data coordinator.
+            device: Device this switch controls.
+            toggle_instance: The ``light{N}Toggle`` capability instance.
+            zone_index: Zero-based zone index (for unique_id + name).
+        """
+        super().__init__(coordinator, device)
+
+        self._toggle_instance = toggle_instance
+        self._zone_index = zone_index
+        self._attr_unique_id = f"{device.device_id}{SUFFIX_LIGHT_ZONE}{zone_index}"
+        self._attr_translation_placeholders = {"zone": str(zone_index + 1)}
+
+        # Optimistic state — Govee does not report per-zone state on poll.
+        self._is_on = False
+
+    async def async_added_to_hass(self) -> None:
+        """Restore optimistic state on startup."""
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state:
+            self._is_on = last_state.state == "on"
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if the zone is on (optimistic)."""
+        return self._is_on
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn the light zone on."""
+        success = await self.coordinator.async_control_device(
+            self._device_id,
+            ToggleCommand(toggle_instance=self._toggle_instance, enabled=True),
+        )
+        if success:
+            self._is_on = True
+            self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn the light zone off."""
+        success = await self.coordinator.async_control_device(
+            self._device_id,
+            ToggleCommand(toggle_instance=self._toggle_instance, enabled=False),
         )
         if success:
             self._is_on = False

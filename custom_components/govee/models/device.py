@@ -6,6 +6,7 @@ Frozen dataclass for immutability - device properties don't change at runtime.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -303,6 +304,27 @@ class GoveeDevice:
     def supports_segments(self) -> bool:
         """Check if device supports segment control (RGBIC)."""
         return any(cap.is_segment_color for cap in self.capabilities)
+
+    @property
+    def light_toggle_instances(self) -> list[str]:
+        """Independently switchable light-zone toggles (issue #104).
+
+        Some multi-zone fixtures (e.g. the H60B2 3-segment lamp) expose each
+        physical zone as a ``light{N}Toggle`` ``devices.capabilities.toggle``
+        — distinct from RGBIC color segments (``segmentedColorRgb``) and from
+        single-purpose toggles like ``dreamViewToggle``/``nightlightToggle``.
+        Returns the matching instance names sorted by zone number, e.g.
+        ``["light1Toggle", "light2Toggle", "light3Toggle"]``.
+        """
+        pattern = re.compile(r"light(\d+)Toggle")
+        matches: list[tuple[int, str]] = []
+        for cap in self.capabilities:
+            if cap.type != CAPABILITY_TOGGLE:
+                continue
+            m = pattern.fullmatch(cap.instance)
+            if m:
+                matches.append((int(m.group(1)), cap.instance))
+        return [instance for _, instance in sorted(matches)]
 
     @property
     def supports_scenes(self) -> bool:

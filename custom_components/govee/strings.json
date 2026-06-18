@@ -160,6 +160,9 @@
       },
       "govee_appliance_power": {
         "name": "{device_name}"
+      },
+      "govee_light_zone": {
+        "name": "Light Zone {zone}"
       }
     },
     "sensor": {
