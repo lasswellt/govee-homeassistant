@@ -177,6 +177,10 @@ class GoveeDeviceState:
     # HDMI source state (for devices like AI Sync Box H6604)
     hdmi_source: int | None = None  # HDMI port: 1, 2, 3, 4
 
+    # Aroma diffuser preset scene (H7161, issue #99): integer id of the active
+    # named scene. Often "" on poll, so the select is optimistic like HDMI/scene.
+    preset_scene: int | None = None
+
     # DreamView (Movie Mode) state
     dreamview_enabled: bool | None = None  # DreamView on/off
 
@@ -290,6 +294,8 @@ class GoveeDeviceState:
             elif cap_type == "devices.capabilities.mode":
                 if instance == "hdmiSource":
                     self.hdmi_source = _coerce_int(value)
+                elif instance == "presetScene":
+                    self.preset_scene = _coerce_int(value)
 
             elif cap_type == "devices.capabilities.property":
                 # Read-only sensor properties on devices like H5109 and

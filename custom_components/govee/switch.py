@@ -101,7 +101,7 @@ async def async_setup_entry(
         if (
             device.supports_power
             and not device.is_group
-            and (device.is_heater or device.is_kettle)
+            and (device.is_heater or device.is_kettle or device.is_aroma_diffuser)
         ):
             entities.append(GoveeAppliancePowerSwitchEntity(coordinator, device))
 

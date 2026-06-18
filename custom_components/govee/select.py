@@ -25,6 +25,7 @@ from .const import (
     SUFFIX_HDMI_SOURCE_SELECT,
     SUFFIX_HEATER_FAN_SPEED,
     SUFFIX_MUSIC_MODE_SELECT,
+    SUFFIX_PRESET_SCENE_SELECT,
     SUFFIX_PURIFIER_MODE_SELECT,
     SUFFIX_SCENE_SELECT,
 )
@@ -37,7 +38,11 @@ from .models import (
     SceneCommand,
     WorkModeCommand,
 )
-from .models.device import INSTANCE_HDMI_SOURCE, INSTANCE_PURIFIER_MODE
+from .models.device import (
+    INSTANCE_HDMI_SOURCE,
+    INSTANCE_PRESET_SCENE,
+    INSTANCE_PURIFIER_MODE,
+)
 
 # DIY Style options for select entity
 DIY_STYLE_OPTIONS = list(DIY_STYLE_NAMES.keys())
@@ -192,6 +197,23 @@ async def async_setup_entry(
                     "Created purifier mode select entity for %s with %d modes",
                     device.name,
                     len(purifier_options),
+                )
+
+        # Aroma diffuser preset scene selector (H7161, issue #99)
+        if device.is_aroma_diffuser:
+            preset_scene_options = device.get_preset_scene_options()
+            if preset_scene_options:
+                entities.append(
+                    GoveePresetSceneSelectEntity(
+                        coordinator=coordinator,
+                        device=device,
+                        options=preset_scene_options,
+                    )
+                )
+                _LOGGER.debug(
+                    "Created preset scene select entity for %s with %d scenes",
+                    device.name,
+                    len(preset_scene_options),
                 )
 
     async_add_entities(entities)
@@ -895,6 +917,93 @@ class GoveePurifierModeSelectEntity(GoveeEntity, SelectEntity):
         else:
             _LOGGER.warning(
                 "Failed to set purifier mode '%s' on %s",
+                option,
+                self._device.name,
+            )
+
+
+class GoveePresetSceneSelectEntity(GoveeEntity, SelectEntity):
+    """Govee aroma diffuser preset scene select entity (H7161, issue #99).
+
+    Provides a dropdown of the diffuser's named light+mist scenes (e.g. Bach,
+    Morgen). Scene names are localized, so the entity maps the display name to
+    the integer id the control payload requires. Like the HDMI/purifier selects,
+    the active scene is not reliably returned by the cloud, so current_option is
+    optimistic — it reflects the last selection.
+    """
+
+    _attr_translation_key = "govee_preset_scene_select"
+    _attr_icon = "mdi:scent"
+
+    def __init__(
+        self,
+        coordinator: GoveeCoordinator,
+        device: GoveeDevice,
+        options: list[dict[str, Any]],
+    ) -> None:
+        """Initialize the preset scene select entity.
+
+        Args:
+            coordinator: Govee data coordinator.
+            device: Device this select belongs to.
+            options: Preset scene options from the capability parameters.
+        """
+        super().__init__(coordinator, device)
+
+        # Build option mapping: localized display name -> integer scene id.
+        self._option_map: dict[str, int] = {}
+        option_names: list[str] = []
+
+        for opt in options:
+            name = opt.get("name", "")
+            value = opt.get("value")
+            if name and value is not None:
+                self._option_map[name] = value
+                option_names.append(name)
+
+        self._attr_options = option_names
+
+        self._attr_unique_id = f"{device.device_id}{SUFFIX_PRESET_SCENE_SELECT}"
+
+    @property
+    def current_option(self) -> str | None:
+        """Return current selected scene from state (optimistic)."""
+        state = self.coordinator.get_state(self._device_id)
+        if state and state.preset_scene is not None:
+            for name, value in self._option_map.items():
+                if value == state.preset_scene:
+                    return name
+        # Default to the first scene when the cloud reports nothing.
+        return self._attr_options[0] if self._attr_options else None
+
+    async def async_select_option(self, option: str) -> None:
+        """Handle preset scene selection."""
+        value = self._option_map.get(option)
+        if value is None:
+            _LOGGER.warning("Unknown preset scene option: %s", option)
+            return
+
+        command = ModeCommand(
+            mode_instance=INSTANCE_PRESET_SCENE,
+            value=value,
+        )
+
+        success = await self.coordinator.async_control_device(
+            self._device_id,
+            command,
+        )
+
+        if success:
+            self.async_write_ha_state()
+            _LOGGER.debug(
+                "Set preset scene '%s' (value=%d) on %s",
+                option,
+                value,
+                self._device.name,
+            )
+        else:
+            _LOGGER.warning(
+                "Failed to set preset scene '%s' on %s",
                 option,
                 self._device.name,
             )

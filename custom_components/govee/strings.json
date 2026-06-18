@@ -140,6 +140,9 @@
       },
       "govee_music_mode_select": {
         "name": "Music Mode"
+      },
+      "govee_preset_scene_select": {
+        "name": "Scene"
       }
     },
     "switch": {

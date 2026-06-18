@@ -54,6 +54,7 @@ DEVICE_TYPE_DEHUMIDIFIER = "devices.types.dehumidifier"
 DEVICE_TYPE_FAN = "devices.types.fan"
 DEVICE_TYPE_PURIFIER = "devices.types.air_purifier"
 DEVICE_TYPE_KETTLE = "devices.types.kettle"
+DEVICE_TYPE_AROMA_DIFFUSER = "devices.types.aroma_diffuser"
 
 # Instance constants
 INSTANCE_POWER = "powerSwitch"
@@ -81,6 +82,10 @@ INSTANCE_FAN_TOGGLE = "fanToggle"
 INSTANCE_FAN_SPEED_MODE = "fanSpeedMode"
 INSTANCE_REVERSE_AIRFLOW = "reverseAirflowToggle"
 INSTANCE_PURIFIER_MODE = "purifierMode"
+# Aroma diffuser (H7161) named light+mist scenes (e.g. Bach, Morgen) — a
+# devices.capabilities.mode whose options carry the localized name + integer id
+# the control payload uses (issue #99).
+INSTANCE_PRESET_SCENE = "presetScene"
 INSTANCE_THERMOSTAT_TOGGLE = "thermostatToggle"
 INSTANCE_HUMIDITY = "humidity"
 INSTANCE_WATER_FULL_EVENT = "waterFullEvent"
@@ -375,6 +380,11 @@ class GoveeDevice:
     def is_kettle(self) -> bool:
         """Check if device is a smart kettle (e.g. H717A Smart Kettle Pro)."""
         return self.device_type == DEVICE_TYPE_KETTLE
+
+    @property
+    def is_aroma_diffuser(self) -> bool:
+        """Check if device is an aroma diffuser (e.g. H7161)."""
+        return self.device_type == DEVICE_TYPE_AROMA_DIFFUSER
 
     @property
     def is_dehumidifier(self) -> bool:
@@ -750,6 +760,20 @@ class GoveeDevice:
                                     return gear_options
         return []
 
+    def get_preset_scene_options(self) -> list[dict[str, Any]]:
+        """Extract presetScene options for aroma diffusers (H7161, issue #99).
+
+        Returns the capability's ``options`` list — each a
+        ``{"name": "Bach", "value": 171396}`` dict. ``name`` is localized; the
+        control payload must key on the integer ``value``. Empty list if the
+        device has no presetScene mode capability.
+        """
+        for cap in self.capabilities:
+            if cap.type == CAPABILITY_MODE and cap.instance == INSTANCE_PRESET_SCENE:
+                options: list[dict[str, Any]] = cap.parameters.get("options", [])
+                return options
+        return []
+
     @property
     def is_light_device(self) -> bool:
         """Check if device is a light (not a plain plug, fan, or other appliance).
@@ -766,6 +790,7 @@ class GoveeDevice:
             or self.is_purifier
             or self.is_humidifier
             or self.is_kettle
+            or self.is_aroma_diffuser
         ):
             return False
         if self.is_plug and not (self.supports_rgb or self.supports_color_temp):
