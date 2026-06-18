@@ -49,13 +49,10 @@ from .ble_advertisement import BleAdvertisementHandler
 from .ble_advertisement import sku_from_ble_name as _sku_from_ble_name  # noqa: F401
 from .api.mqtt_control import command_to_mqtt
 from .const import (
-    CONF_API_TEMPERATURE_UNIT,
     CONF_ENABLE_MQTT_CONTROL,
-    DEFAULT_API_TEMPERATURE_UNIT,
     DEFAULT_ENABLE_MQTT_CONTROL,
     DOMAIN,
     OPTIMISTIC_GRACE_CAP_SECONDS,
-    resolve_fahrenheit_conversion,
 )
 from .models import (
     GoveeDevice,
@@ -745,15 +742,19 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                     len({s.hub_device_id for s in self._leak_sensors.values()}),
                 )
 
-            # Apply initial BFF live readings to Developer-API thermometers we
-            # actually discovered (e.g. H5110 via H5151). The Developer
-            # /device/state value is stale for these BLE-bridged sensors (#83).
+            # Track which Developer-API thermometers (e.g. H5110 via H5151/H5044)
+            # the BFF list carries a reading for. We DON'T apply the BFF value:
+            # the BFF `tem`/`hum` scale varies by gateway/firmware (tenths vs
+            # hundredths) and a fixed divisor mis-scaled humidity 10x (#102).
+            # The BFF call is kept purely as a *tickle* — it nudges Govee's cloud
+            # to refresh the Developer `/device/state` reading, which the regular
+            # poll then picks up correctly (and with the right °C/°F handling).
+            # This set only gates whether the 5-min tickle poll runs (#83).
             self._thermo_bff_devices = set(thermo_readings) & set(self._devices)
-            for device_id in self._thermo_bff_devices:
-                self._apply_bff_thermo_reading(device_id, thermo_readings[device_id])
             if self._thermo_bff_devices:
                 _LOGGER.info(
-                    "BFF live readings available for %d thermometer device(s)",
+                    "BFF tickle enabled for %d thermometer device(s); readings "
+                    "come from the Developer API poll",
                     len(self._thermo_bff_devices),
                 )
 
@@ -987,7 +988,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 (
                     sensor_data,
                     _hub_data,
-                    thermo_readings,
+                    _thermo_readings,
                 ) = await auth_client.fetch_bff_leak_sensors(
                     self._iot_credentials.token
                 )
@@ -1034,69 +1035,17 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 )
                 state.is_wet = True
 
-        # Apply refreshed BFF live readings to Developer-API thermometers and
-        # push to HA so the sensor entities pick them up (#83). Only fires an
-        # update when a reading actually changed (avoids 5-min churn).
-        thermo_changed = False
-        for device_id in self._thermo_bff_devices:
-            reading = thermo_readings.get(device_id)
-            if reading and self._apply_bff_thermo_reading(device_id, reading):
-                thermo_changed = True
-        if thermo_changed:
-            self.async_set_updated_data(self._states)
+        # The BFF device-list call above already tickled Govee's cloud into
+        # refreshing the Developer `/device/state` reading for these BLE-bridged
+        # thermometers; the regular Developer poll picks up the fresh, correctly
+        # scaled value. We deliberately do NOT apply the BFF `tem`/`hum` here —
+        # its scale varies by gateway and a fixed divisor over-scaled humidity
+        # 10x on every BFF cycle (#102). The reading is discarded (`_thermo_
+        # readings`); the tickle alone is what these thermometers need (#83).
 
         # Notify leak sensor entities only (avoids churning unrelated
         # light / switch entities that also subscribe to the coordinator).
         async_dispatcher_send(self.hass, f"{DOMAIN}_leak_update")
-
-    def _apply_bff_thermo_reading(
-        self, device_id: str, reading: dict[str, Any]
-    ) -> bool:
-        """Apply a BFF ``lastDeviceData`` reading to a thermometer's state (#83).
-
-        BFF scale: ``tem`` is hundredths of °C (2800 -> 28.00), ``hum`` is
-        tenths of % (393 -> 39.3) — confirmed against a real H5110 via H5151.
-
-        Temperature is stored in the SAME unit the entity expects as its raw
-        ``sensor_temperature``: the entity converts °F→°C for SKUs the #96
-        Fahrenheit logic flags, so for those we store the BFF °C back-converted
-        to °F (it round-trips to the right °C); otherwise we store °C directly.
-        Returns True if a reading actually changed.
-        """
-        device = self._devices.get(device_id)
-        state = self._states.get(device_id)
-        if device is None or state is None:
-            return False
-
-        tem = reading.get("tem")
-        hum = reading.get("hum")
-        if tem is None and hum is None:
-            return False
-
-        existing = dataclasses.replace(state)
-
-        if tem is not None:
-            temp_celsius = tem / 100.0
-            api_unit = (
-                self._config_entry.options.get(
-                    CONF_API_TEMPERATURE_UNIT, DEFAULT_API_TEMPERATURE_UNIT
-                )
-                if self._config_entry is not None
-                else DEFAULT_API_TEMPERATURE_UNIT
-            )
-            if resolve_fahrenheit_conversion(device.sku, api_unit):
-                state.sensor_temperature = temp_celsius * 9.0 / 5.0 + 32.0
-            else:
-                state.sensor_temperature = temp_celsius
-
-        if hum is not None:
-            state.sensor_humidity = hum / 10.0
-
-        self._note_sensor_reading_change(device_id, state, existing)
-        return (
-            state.sensor_temperature != existing.sensor_temperature
-            or state.sensor_humidity != existing.sensor_humidity
-        )
 
     @property
     def _water_detectors(self) -> list[GoveeDevice]:

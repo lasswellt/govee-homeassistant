@@ -2214,63 +2214,103 @@ class TestBffThermometerDiscovery:
         device_reg.async_get_or_create.assert_not_called()
 
 
-class TestBffThermoLiveReadings:
-    """BFF live tem/hum applied to Developer-API thermometers (issue #83)."""
+class TestBffThermoTickleOnly:
+    """BFF list is a *tickle* for Developer-API thermometers (issues #83, #102).
 
-    def _coord(self, options=None):
+    The BFF ``tem``/``hum`` are NOT applied to state: their scale varies by
+    gateway/firmware and a fixed ``/10`` divisor over-scaled humidity 10x
+    (#102). The reading is used only to gate the tickle poll; the correctly
+    scaled, unit-handled value comes from the Developer ``/device/state`` poll.
+    """
+
+    def _coord(self):
         import custom_components.govee.coordinator as coord_mod
 
-        coord = object.__new__(coord_mod.GoveeCoordinator)
-        coord._sensor_reading_changed_at = {}
-        coord._devices = {}
-        coord._states = {}
-        from types import SimpleNamespace
-
-        coord._config_entry = SimpleNamespace(options=options or {})
-        return coord
-
-    def _add_device(self, coord, device_id, sku):
-        coord._devices[device_id] = GoveeDevice.synthetic_thermometer(
-            device_id, sku, sku
+        hass = MagicMock()
+        config_entry = MagicMock()
+        config_entry.entry_id = "test_entry"
+        coord = coord_mod.GoveeCoordinator(
+            hass=hass,
+            config_entry=config_entry,
+            api_client=MagicMock(),
+            iot_credentials=MagicMock(token="tok"),
+            poll_interval=60,
         )
-        coord._states[device_id] = GoveeDeviceState.create_empty(device_id)
+        coord.async_update_listeners = MagicMock()
+        coord.async_set_updated_data = MagicMock()
+        coord._schedule_bff_poll = MagicMock()
+        return coord, coord_mod
 
-    def test_celsius_sku_stores_celsius_and_tenths_humidity(self):
-        # H5052 not in FAHRENHEIT_REPORTING_SKUS -> auto = no conversion.
-        coord = self._coord()
-        self._add_device(coord, "D1", "H5052")
+    @pytest.mark.asyncio
+    async def test_poll_does_not_overwrite_developer_reading(self, monkeypatch):
+        """The 5-min BFF poll must leave the Developer-API reading intact (#102)."""
+        coord, coord_mod = self._coord()
+        did = "AA:BB:CC:DD:EE:FF:00:22"
+        coord._devices[did] = GoveeDevice.synthetic_thermometer(did, "H5110", "Garage")
+        state = GoveeDeviceState.create_empty(did)
+        # The correct values the Developer /device/state poll wrote.
+        state.sensor_temperature = 75.02
+        state.sensor_humidity = 83.0
+        coord._states[did] = state
+        coord._thermo_bff_devices = {did}
 
-        changed = coord._apply_bff_thermo_reading("D1", {"tem": 2800, "hum": 393})
+        inner = MagicMock()
+        # raw hum=8300 (hundredths) -> the old /10 bug surfaced 830.0.
+        inner.fetch_bff_leak_sensors = _make_async(
+            ([], {}, {did: {"tem": 7502, "hum": 8300}})
+        )
+        monkeypatch.setattr(coord_mod, "GoveeAuthClient", lambda **kw: _AsyncCM(inner))
+        monkeypatch.setattr(coord_mod, "async_dispatcher_send", MagicMock())
 
-        assert changed is True
-        assert coord._states["D1"].sensor_temperature == 28.0
-        assert coord._states["D1"].sensor_humidity == 39.3
+        await coord._poll_bff_leak_state()
 
-    def test_fahrenheit_sku_auto_stores_fahrenheit_roundtrip(self):
-        # H5110 IS in FAHRENHEIT_REPORTING_SKUS; auto -> entity will convert
-        # °F->°C, so we must store °F (28.00°C -> 82.4°F).
-        coord = self._coord()
-        self._add_device(coord, "D1", "H5110")
+        assert coord._states[did].sensor_humidity == 83.0
+        assert coord._states[did].sensor_temperature == 75.02
+        coord.async_set_updated_data.assert_not_called()
 
-        coord._apply_bff_thermo_reading("D1", {"tem": 2800, "hum": 393})
+    @pytest.mark.asyncio
+    async def test_discover_keeps_tickle_without_leak_sensors(self, monkeypatch):
+        """A bridged thermometer with no leak sensors still starts the tickle
+        poll, and the BFF value is not applied at discovery time (#83/#102)."""
+        coord, coord_mod = self._coord()
+        did = "AA:BB:CC:DD:EE:FF:00:22"
+        coord._devices[did] = GoveeDevice.synthetic_thermometer(did, "H5110", "Garage")
+        coord._states[did] = GoveeDeviceState.create_empty(did)
 
-        assert coord._states["D1"].sensor_temperature == 82.4
+        inner = MagicMock()
+        inner.fetch_bff_leak_sensors = _make_async(
+            ([], {}, {did: {"tem": 7502, "hum": 8300}})
+        )
+        inner.bff_device_census = MagicMock(return_value=[])
+        inner.bff_response_skeleton = MagicMock(return_value=None)
+        monkeypatch.setattr(coord_mod, "GoveeAuthClient", lambda **kw: _AsyncCM(inner))
 
-    def test_celsius_option_forces_no_conversion(self):
-        coord = self._coord(options={"api_temperature_unit": "celsius"})
-        self._add_device(coord, "D1", "H5110")
+        await coord._discover_leak_sensors()
 
-        coord._apply_bff_thermo_reading("D1", {"tem": 2800})
+        # Gate set so the 5-min tickle poll runs (#83) ...
+        assert coord._thermo_bff_devices == {did}
+        coord._schedule_bff_poll.assert_called_once()
+        # ... but the BFF reading is never written to state (#102).
+        assert coord._states[did].sensor_humidity is None
+        assert coord._states[did].sensor_temperature is None
 
-        assert coord._states["D1"].sensor_temperature == 28.0
+    @pytest.mark.asyncio
+    async def test_developer_poll_not_skipped_for_bridged_thermo(self, monkeypatch):
+        """Bridged thermometers (in _thermo_bff_devices, not _bff_thermometer_ids)
+        keep getting their Developer /device/state poll, which owns the value."""
+        coord, coord_mod = self._coord()
+        did = "AA:BB:CC:DD:EE:FF:00:22"
+        device = GoveeDevice.synthetic_thermometer(did, "H5110", "Garage")
+        coord._devices[did] = device
+        coord._thermo_bff_devices = {did}
+        coord._states[did] = GoveeDeviceState.create_empty(did)
+        from unittest.mock import AsyncMock
 
-    def test_no_tem_hum_is_noop(self):
-        coord = self._coord()
-        self._add_device(coord, "D1", "H5052")
+        fresh = GoveeDeviceState.create_empty(did)
+        fresh.sensor_humidity = 84.0
+        coord._api_client.get_device_state = AsyncMock(return_value=fresh)
 
-        assert coord._apply_bff_thermo_reading("D1", {}) is False
-        assert coord._states["D1"].sensor_temperature is None
+        result = await coord._fetch_device_state(did, device)
 
-    def test_unknown_device_is_noop(self):
-        coord = self._coord()
-        assert coord._apply_bff_thermo_reading("missing", {"tem": 2800}) is False
+        coord._api_client.get_device_state.assert_called_once()
+        assert result.sensor_humidity == 84.0

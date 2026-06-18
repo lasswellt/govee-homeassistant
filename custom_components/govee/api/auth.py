@@ -885,16 +885,19 @@ class GoveeAuthClient:
                         "name": device.get("deviceName", sku),
                     }
 
-                # Collect live temperature/humidity from lastDeviceData for
-                # non-leak, Developer-API thermometers (e.g. H5110/H5075 via an
-                # H5151 gateway, H5179). The Developer /device/state endpoint
-                # returns a stale cached reading for these BLE-bridged sensors
-                # and only refreshes lazily — but calling this BFF endpoint
-                # tickles Govee's cloud into refreshing, and lastDeviceData is
-                # the live value the app uses (issue #83, confirmed by @davcamer).
-                # Scale: tem = hundredths of °C (2800 -> 28.00); hum = tenths of
-                # % (393 -> 39.3) — note hum differs from the H5301/H5310 path.
-                # H5301/H5310 are skipped here; the dedicated thermo path owns them.
+                # Note which non-leak, Developer-API thermometers (e.g. H5110/
+                # H5075 via an H5151/H5044 gateway, H5179) the BFF list carries a
+                # reading for. The Developer /device/state endpoint returns a
+                # stale cached reading for these BLE-bridged sensors and only
+                # refreshes lazily — but calling THIS BFF endpoint tickles Govee's
+                # cloud into refreshing it (issue #83, confirmed by @davcamer).
+                # We return the raw tem/hum so the coordinator knows which devices
+                # to keep the tickle running for, but the values are NOT applied:
+                # the BFF scale varies by gateway/firmware (e.g. hum is hundredths
+                # for H5110-via-H5044/H5151 and H5179, not the tenths once assumed),
+                # and a fixed divisor mis-scaled humidity 10x (issue #102). The
+                # correctly scaled, unit-handled value comes from the Developer
+                # poll. H5301/H5310 are skipped; the dedicated thermo path owns them.
                 thermo_readings: dict[str, dict[str, Any]] = {}
                 for device in devices:
                     sku = device.get("sku", "")
