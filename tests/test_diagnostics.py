@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -22,6 +22,20 @@ from custom_components.govee.models.device import (
     GoveeLeakSensorState,
 )
 from custom_components.govee.models.transport import TransportHealth
+
+
+@pytest.fixture(autouse=True)
+def _stub_lan_scan(monkeypatch):
+    """Stub the LAN scan so entry-diagnostics tests stay fast + offline (#57).
+
+    async_get_config_entry_diagnostics now runs a real UDP discovery scan;
+    default it to "no devices" so the existing tests don't bind a socket or
+    wait on the scan timeout. Tests that exercise the LAN block override this.
+    """
+    monkeypatch.setattr(
+        "custom_components.govee.diagnostics.async_scan_lan_devices",
+        AsyncMock(return_value=[]),
+    )
 
 
 def _coordinator_stub(**overrides):
@@ -447,3 +461,57 @@ class TestDeviceDiagnostics:
         assert hub_mac not in rendered
         assert sensor_mac not in rendered
         assert _MAC_RE.search(rendered) is None
+
+
+class TestLanDiscoveryDiag:
+    """Entry diagnostics include a read-only LAN scan, with IP redacted (#57)."""
+
+    @pytest.mark.asyncio
+    async def test_lan_block_present_and_ip_redacted(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "custom_components.govee.diagnostics.async_scan_lan_devices",
+            AsyncMock(
+                return_value=[
+                    {
+                        "ip": "192.168.1.23",
+                        "device": "1F:80:C5:32:32:36:72:4E",
+                        "sku": "H6072",
+                        "wifiVersionSoft": "1.02.03",
+                    }
+                ]
+            ),
+        )
+        coordinator = _coordinator_stub()
+        out = await async_get_config_entry_diagnostics(
+            MagicMock(), _entry_stub(coordinator)
+        )
+
+        lan = out["lan_discovery"]
+        assert lan["scan_attempted"] is True
+        assert lan["device_count"] == 1
+        device = lan["devices"][0]
+        # SKU + firmware are kept (the useful signal); IP + MAC are redacted.
+        assert device["sku"] == "H6072"
+        assert device["wifiVersionSoft"] == "1.02.03"
+        assert device["ip"] == "**REDACTED**"
+        assert device["device"] == "**REDACTED**"
+        rendered = json.dumps(out, default=str)
+        assert "192.168.1.23" not in rendered
+        assert "1F:80:C5:32:32:36:72:4E" not in rendered
+
+    @pytest.mark.asyncio
+    async def test_lan_scan_failure_is_isolated(self, monkeypatch) -> None:
+        # A scan error must not break the diagnostics download.
+        monkeypatch.setattr(
+            "custom_components.govee.diagnostics.async_scan_lan_devices",
+            AsyncMock(side_effect=OSError("port 4002 in use")),
+        )
+        coordinator = _coordinator_stub()
+        out = await async_get_config_entry_diagnostics(
+            MagicMock(), _entry_stub(coordinator)
+        )
+
+        lan = out["lan_discovery"]
+        assert lan["scan_attempted"] is True
+        assert lan["device_count"] == 0
+        assert "port 4002 in use" in lan["error"]

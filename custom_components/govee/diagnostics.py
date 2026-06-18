@@ -18,6 +18,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntry
 
+from .api.lan import async_scan_lan_devices
 from .const import CONF_API_KEY, CONF_EMAIL, CONF_PASSWORD, DOMAIN
 from .coordinator import GoveeCoordinator
 from .models.transport import TRANSPORT_KINDS
@@ -42,6 +43,9 @@ TO_REDACT = {
     "deviceName",
     "hub_device_id",
     "mac",
+    # Local network address from the LAN-discovery scan (#57) — a private IP is
+    # still PII in a publicly-attached diagnostics download.
+    "ip",
 }
 
 # Govee device IDs are MAC-derived: 8 colon-separated hex octets
@@ -200,6 +204,31 @@ def _runtime_diag(coordinator: GoveeCoordinator) -> dict[str, Any]:
     }
 
 
+async def _lan_discovery_diag() -> dict[str, Any]:
+    """Run one read-only LAN scan for the diagnostics download (issue #57).
+
+    Captures which of the user's devices answer Govee's local UDP discovery and
+    what they report, so the community can supply the data the full LAN feature
+    needs. Never raises — diagnostics must always produce output; the IP of each
+    responder is redacted by the shared ``_redact`` pass.
+    """
+    try:
+        devices = await async_scan_lan_devices()
+        return {
+            "scan_attempted": True,
+            "device_count": len(devices),
+            "devices": devices,
+            "error": None,
+        }
+    except Exception as err:  # never break the diagnostics download
+        return {
+            "scan_attempted": True,
+            "device_count": 0,
+            "devices": [],
+            "error": str(err),
+        }
+
+
 def _redact(data: dict[str, Any]) -> dict[str, Any]:
     """Redact sensitive keys, then hash any MAC-format device-map keys."""
     redacted: dict[str, Any] = async_redact_data(data, TO_REDACT)
@@ -235,6 +264,8 @@ async def async_get_config_entry_diagnostics(
         # Verbatim device-list response from the most recent discovery poll.
         "raw_api_devices": coordinator.api_client.last_raw_devices,
         "leak_sensors": _leak_diag(coordinator),
+        # Read-only local-network scan to seed the LAN-API work (issue #57).
+        "lan_discovery": await _lan_discovery_diag(),
         **_runtime_diag(coordinator),
     }
     return _redact(diagnostics_data)
