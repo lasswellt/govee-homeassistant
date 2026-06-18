@@ -51,6 +51,7 @@ from .api.mqtt_control import command_to_mqtt
 from .const import (
     CONF_ENABLE_MQTT_CONTROL,
     DEFAULT_ENABLE_MQTT_CONTROL,
+    DEVICE_REDISCOVERY_INTERVAL,
     DOMAIN,
     OPTIMISTIC_GRACE_CAP_SECONDS,
 )
@@ -252,6 +253,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         self._sensor_reading_changed_at: dict[str, datetime] = {}
         self._leak_hubs: dict[str, dict[str, Any]] = {}
         self._sno_to_sensor_id: dict[tuple[str, int], str] = {}
+        # Last time the account device list was re-checked for newly added
+        # devices (#101). Seeded to "now" so the first re-check waits a full
+        # interval rather than firing right after setup discovery.
+        self._last_rediscovery_check: float = time.monotonic()
         # Per-device queued button presses (supports multiple presses per tick)
         self._pending_button_presses: dict[str, int] = {}
         self._bff_poll_unsub: CALLBACK_TYPE | None = None
@@ -629,6 +634,52 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             raise ConfigEntryAuthFailed("Invalid API key") from err
         except GoveeApiError as err:
             raise UpdateFailed(f"Failed to discover devices: {err}") from err
+
+    async def _async_maybe_rediscover_devices(self) -> None:
+        """Re-check the account device list and reload when new devices appear.
+
+        Device discovery is otherwise one-shot at setup, so a device added to
+        the Govee account after Home Assistant started stays invisible until a
+        manual reload (issue #101). Here we re-fetch the device list on a slow
+        cadence (``DEVICE_REDISCOVERY_INTERVAL``, to respect the API rate
+        limits); if any genuinely new device id appears, we schedule a config
+        entry reload, which re-runs the existing, tested discovery + platform
+        setup so the new entities are created.
+
+        Only additions trigger a reload — removals stay tied to reload/restart
+        and the existing orphan-cleanup pass, to keep entity churn minimal. The
+        method never raises: a discovery hiccup must not fail the state poll.
+        """
+        now = time.monotonic()
+        if now - self._last_rediscovery_check < DEVICE_REDISCOVERY_INTERVAL:
+            return
+        self._last_rediscovery_check = now
+
+        try:
+            devices = await self._api_client.get_devices()
+        except Exception as err:
+            # Non-fatal: the regular state poll continues on the known devices.
+            _LOGGER.debug("Periodic device re-discovery failed: %s", err)
+            return
+
+        # Apply the same group filter discovery uses, so a group device left
+        # disabled doesn't look "new" on every pass and reload-loop.
+        candidate_ids = {
+            device.device_id
+            for device in devices
+            if not (device.is_group and not self._enable_groups)
+        }
+        new_ids = candidate_ids - set(self._devices)
+        if not new_ids:
+            return
+
+        _LOGGER.info(
+            "Detected %d new Govee device(s) since startup (%s) — reloading the "
+            "integration to add them (#101)",
+            len(new_ids),
+            ", ".join(sorted(new_ids)),
+        )
+        self.hass.config_entries.async_schedule_reload(self._config_entry.entry_id)
 
     async def _start_mqtt(self) -> None:
         """Start MQTT client for real-time updates."""
@@ -1286,6 +1337,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
         Called by DataUpdateCoordinator on poll interval.
         """
+        # Pick up devices added to the account since setup (#101). Throttled and
+        # failure-isolated inside the method so it never disrupts the state poll.
+        await self._async_maybe_rediscover_devices()
+
         if not self._devices:
             return self._states
 

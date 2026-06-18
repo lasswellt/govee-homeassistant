@@ -67,6 +67,12 @@ DEFAULT_API_TEMPERATURE_UNIT: Final = "auto"
 # confirmations clear the window early.
 OPTIMISTIC_GRACE_CAP_SECONDS: Final = 15
 
+# How often (seconds) the coordinator re-checks the Govee account device list to
+# pick up devices added after startup (issue #101). Throttled well above the
+# poll interval to respect the 100/min, 10k/day API rate limits — a new device
+# appears within this window without a manual reload.
+DEVICE_REDISCOVERY_INTERVAL: Final = 300
+
 # BLE constants
 # Govee AWS/BLE advert manufacturer ID. Verified against
 # Bluetooth-Devices/govee-ble (used by H5127 and related). Additional IDs

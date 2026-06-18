@@ -2314,3 +2314,117 @@ class TestBffThermoTickleOnly:
 
         coord._api_client.get_device_state.assert_called_once()
         assert result.sensor_humidity == 84.0
+
+
+class TestPeriodicRediscovery:
+    """New devices added after startup are picked up via reload (issue #101)."""
+
+    def _coord(self):
+        import custom_components.govee.coordinator as coord_mod
+
+        hass = MagicMock()
+        config_entry = MagicMock()
+        config_entry.entry_id = "test_entry"
+        coord = coord_mod.GoveeCoordinator(
+            hass=hass,
+            config_entry=config_entry,
+            api_client=MagicMock(),
+            iot_credentials=None,
+            poll_interval=60,
+        )
+        coord._enable_groups = False
+        return coord, coord_mod
+
+    @staticmethod
+    def _device(device_id, is_group=False):
+        return GoveeDevice(
+            device_id=device_id,
+            sku="H6001",
+            name=device_id,
+            device_type="devices.types.light",
+            capabilities=(),
+            is_group=is_group,
+        )
+
+    @pytest.mark.asyncio
+    async def test_schedules_reload_on_new_device(self):
+        import time
+        from unittest.mock import AsyncMock
+
+        coord, _ = self._coord()
+        dev_a = self._device("A")
+        coord._devices = {"A": dev_a}
+        coord._last_rediscovery_check = time.monotonic() - 10_000  # force elapsed
+        coord._api_client.get_devices = AsyncMock(
+            return_value=[dev_a, self._device("B")]
+        )
+
+        await coord._async_maybe_rediscover_devices()
+
+        coord.hass.config_entries.async_schedule_reload.assert_called_once_with(
+            "test_entry"
+        )
+
+    @pytest.mark.asyncio
+    async def test_no_reload_when_device_set_unchanged(self):
+        import time
+        from unittest.mock import AsyncMock
+
+        coord, _ = self._coord()
+        dev_a = self._device("A")
+        coord._devices = {"A": dev_a}
+        coord._last_rediscovery_check = time.monotonic() - 10_000
+        coord._api_client.get_devices = AsyncMock(return_value=[dev_a])
+
+        await coord._async_maybe_rediscover_devices()
+
+        coord.hass.config_entries.async_schedule_reload.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_throttle_skips_when_recent(self):
+        import time
+        from unittest.mock import AsyncMock
+
+        coord, _ = self._coord()
+        coord._devices = {"A": self._device("A")}
+        coord._last_rediscovery_check = time.monotonic()  # just checked
+        coord._api_client.get_devices = AsyncMock(return_value=[])
+
+        await coord._async_maybe_rediscover_devices()
+
+        coord._api_client.get_devices.assert_not_called()
+        coord.hass.config_entries.async_schedule_reload.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_failure_is_isolated(self):
+        import time
+        from unittest.mock import AsyncMock
+
+        coord, _ = self._coord()
+        coord._devices = {"A": self._device("A")}
+        coord._last_rediscovery_check = time.monotonic() - 10_000
+        coord._api_client.get_devices = AsyncMock(side_effect=RuntimeError("boom"))
+
+        # Must not raise.
+        await coord._async_maybe_rediscover_devices()
+
+        coord.hass.config_entries.async_schedule_reload.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_disabled_group_is_not_treated_as_new(self):
+        import time
+        from unittest.mock import AsyncMock
+
+        coord, _ = self._coord()
+        dev_a = self._device("A")
+        coord._devices = {"A": dev_a}
+        coord._enable_groups = False
+        coord._last_rediscovery_check = time.monotonic() - 10_000
+        # A new group device, but groups are disabled -> not "new", no reload.
+        coord._api_client.get_devices = AsyncMock(
+            return_value=[dev_a, self._device("11825917", is_group=True)]
+        )
+
+        await coord._async_maybe_rediscover_devices()
+
+        coord.hass.config_entries.async_schedule_reload.assert_not_called()

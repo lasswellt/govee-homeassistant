@@ -116,7 +116,10 @@ rules:
     comment: Use case examples could be expanded
   dynamic-devices:
     status: done
-    comment: Devices discovered and updated via API polling
+    comment: >-
+      Devices added to the account after startup are picked up by a throttled
+      re-check of the device list in the poll loop, which schedules a config
+      entry reload when new devices appear (issue #101).
   entity-category:
     status: done
     comment: Diagnostic entities use EntityCategory.DIAGNOSTIC
