@@ -38,6 +38,7 @@ from .models import (
     WorkModeCommand,
 )
 from .models.device import (
+    INSTANCE_FAN_OSCILLATE,
     INSTANCE_FAN_SPEED_MODE,
     INSTANCE_FAN_TOGGLE,
     INSTANCE_REVERSE_AIRFLOW,
@@ -312,12 +313,15 @@ class GoveeCeilingFanEntity(GoveeEntity, FanEntity, RestoreEntity):
         )
         if device.supports_reverse_airflow:
             features |= FanEntityFeature.DIRECTION
+        if device.supports_fan_oscillation:
+            features |= FanEntityFeature.OSCILLATE
         self._attr_supported_features = features
 
         # Optimistic state — Govee does not report fan state on poll.
         self._is_on = False
         self._speed_value: int | None = None
         self._direction = DIRECTION_FORWARD
+        self._oscillating = False
 
     async def async_added_to_hass(self) -> None:
         """Restore optimistic state on startup."""
@@ -337,6 +341,9 @@ class GoveeCeilingFanEntity(GoveeEntity, FanEntity, RestoreEntity):
         direction = last_state.attributes.get("direction")
         if direction in (DIRECTION_FORWARD, DIRECTION_REVERSE):
             self._direction = direction
+        oscillating = last_state.attributes.get("oscillating")
+        if oscillating is not None:
+            self._oscillating = bool(oscillating)
 
     @property
     def is_on(self) -> bool:
@@ -361,6 +368,13 @@ class GoveeCeilingFanEntity(GoveeEntity, FanEntity, RestoreEntity):
         if not self._device.supports_reverse_airflow:
             return None
         return self._direction
+
+    @property
+    def oscillating(self) -> bool | None:
+        """Return whether the fan is oscillating (optimistic)."""
+        if not self._device.supports_fan_oscillation:
+            return None
+        return self._oscillating
 
     async def async_turn_on(
         self,
@@ -421,4 +435,15 @@ class GoveeCeilingFanEntity(GoveeEntity, FanEntity, RestoreEntity):
         )
         if success:
             self._direction = DIRECTION_REVERSE if reverse else DIRECTION_FORWARD
+            self.async_write_ha_state()
+
+    async def async_oscillate(self, oscillating: bool) -> None:
+        """Start or stop oscillation (fanOscillateToggle)."""
+        _LOGGER.debug("Setting ceiling fan oscillation: %s", oscillating)
+        success = await self.coordinator.async_control_device(
+            self._device_id,
+            ToggleCommand(toggle_instance=INSTANCE_FAN_OSCILLATE, enabled=oscillating),
+        )
+        if success:
+            self._oscillating = oscillating
             self.async_write_ha_state()

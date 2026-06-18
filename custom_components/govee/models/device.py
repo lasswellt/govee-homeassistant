@@ -80,6 +80,11 @@ INSTANCE_FAN_SPEED = "fanSpeed"
 INSTANCE_FAN_TOGGLE = "fanToggle"
 INSTANCE_FAN_SPEED_MODE = "fanSpeedMode"
 INSTANCE_REVERSE_AIRFLOW = "reverseAirflowToggle"
+# Ceiling-fan oscillation. Distinct from the standalone fan's
+# ``oscillationToggle`` (INSTANCE_OSCILLATION) — the H1370 light/fan combo uses
+# ``fanOscillateToggle`` (issue #105). Kept separate so the two fan code paths
+# don't cross-wire.
+INSTANCE_FAN_OSCILLATE = "fanOscillateToggle"
 INSTANCE_PURIFIER_MODE = "purifierMode"
 INSTANCE_THERMOSTAT_TOGGLE = "thermostatToggle"
 INSTANCE_HUMIDITY = "humidity"
@@ -551,6 +556,18 @@ class GoveeDevice:
         """Check if the integrated ceiling fan supports reverse airflow."""
         return any(
             cap.type == CAPABILITY_TOGGLE and cap.instance == INSTANCE_REVERSE_AIRFLOW
+            for cap in self.capabilities
+        )
+
+    @property
+    def supports_fan_oscillation(self) -> bool:
+        """Check if the integrated ceiling fan supports oscillation (H1370, #105).
+
+        Keyed on ``fanOscillateToggle`` — the combo-fan instance — NOT the
+        standalone fan's ``oscillationToggle`` (see supports_oscillation).
+        """
+        return any(
+            cap.type == CAPABILITY_TOGGLE and cap.instance == INSTANCE_FAN_OSCILLATE
             for cap in self.capabilities
         )
 

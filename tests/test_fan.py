@@ -407,6 +407,66 @@ def _h1310_device():
     )
 
 
+def _h1370_device():
+    """Build an H1370-shaped ceiling-fan-with-light device (issue #105).
+
+    Like the H1310 but its oscillation uses ``fanOscillateToggle`` (not the
+    standalone fan's ``oscillationToggle``) and it adds main/background light
+    zone toggles.
+    """
+    from custom_components.govee.models import GoveeDevice, GoveeCapability
+    from custom_components.govee.models.device import (
+        CAPABILITY_ON_OFF,
+        CAPABILITY_TOGGLE,
+        CAPABILITY_MODE,
+        INSTANCE_POWER,
+        INSTANCE_FAN_TOGGLE,
+        INSTANCE_FAN_SPEED_MODE,
+        INSTANCE_REVERSE_AIRFLOW,
+        INSTANCE_FAN_OSCILLATE,
+    )
+
+    on_off = {"name": "on", "value": 1}
+    off = {"name": "off", "value": 0}
+    return GoveeDevice(
+        device_id="AA:BB:CC:DD:EE:FF:13:70",
+        sku="H1370",
+        name="Office Fan",
+        device_type="devices.types.light",
+        capabilities=(
+            GoveeCapability(
+                type=CAPABILITY_ON_OFF, instance=INSTANCE_POWER, parameters={}
+            ),
+            GoveeCapability(
+                type=CAPABILITY_TOGGLE,
+                instance=INSTANCE_FAN_TOGGLE,
+                parameters={"dataType": "ENUM", "options": [on_off, off]},
+            ),
+            GoveeCapability(
+                type=CAPABILITY_MODE,
+                instance=INSTANCE_FAN_SPEED_MODE,
+                parameters={
+                    "dataType": "ENUM",
+                    "options": [
+                        {"name": f"Speed {i}", "value": i} for i in range(1, 7)
+                    ],
+                },
+            ),
+            GoveeCapability(
+                type=CAPABILITY_TOGGLE,
+                instance=INSTANCE_REVERSE_AIRFLOW,
+                parameters={"dataType": "ENUM", "options": [on_off, off]},
+            ),
+            GoveeCapability(
+                type=CAPABILITY_TOGGLE,
+                instance=INSTANCE_FAN_OSCILLATE,
+                parameters={"dataType": "ENUM", "options": [on_off, off]},
+            ),
+        ),
+        is_group=False,
+    )
+
+
 class TestGoveeCeilingFanEntity:
     """Test GoveeCeilingFanEntity (H1310) — issue #74."""
 
@@ -526,3 +586,80 @@ class TestGoveeCeilingFanEntity:
         assert cmd.toggle_instance == INSTANCE_REVERSE_AIRFLOW
         assert cmd.enabled is True
         assert fan_entity.current_direction == DIRECTION_REVERSE
+
+
+class TestGoveeCeilingFanOscillation:
+    """H1370 ceiling-fan oscillation via fanOscillateToggle (issue #105)."""
+
+    @pytest.fixture
+    def device(self):
+        return _h1370_device()
+
+    @pytest.fixture
+    def mock_coordinator(self, device):
+        coordinator = MagicMock()
+        coordinator.devices = {device.device_id: device}
+        coordinator.get_state = MagicMock(return_value=MagicMock(online=True))
+        coordinator.async_control_device = AsyncMock(return_value=True)
+        return coordinator
+
+    @pytest.fixture
+    def fan_entity(self, mock_coordinator, device):
+        from custom_components.govee.fan import GoveeCeilingFanEntity
+
+        entity = GoveeCeilingFanEntity(mock_coordinator, device)
+        entity.async_write_ha_state = MagicMock()
+        return entity
+
+    def test_detection(self, device):
+        """H1370 is a ceiling fan that also oscillates and reverses."""
+        assert device.supports_ceiling_fan is True
+        assert device.supports_fan_oscillation is True
+        assert device.supports_reverse_airflow is True
+        # Must NOT be confused with the standalone-fan oscillationToggle.
+        assert device.supports_oscillation is False
+
+    def test_h1310_has_no_fan_oscillation(self):
+        """The H1310 (no fanOscillateToggle) must not report oscillation."""
+        device = _h1310_device()
+        assert device.supports_fan_oscillation is False
+
+    def test_supported_features_includes_oscillate(self, fan_entity):
+        from homeassistant.components.fan import FanEntityFeature
+
+        assert fan_entity.supported_features & FanEntityFeature.OSCILLATE
+
+    def test_h1310_entity_has_no_oscillate_feature(self, mock_coordinator):
+        from homeassistant.components.fan import FanEntityFeature
+        from custom_components.govee.fan import GoveeCeilingFanEntity
+
+        device = _h1310_device()
+        mock_coordinator.devices = {device.device_id: device}
+        entity = GoveeCeilingFanEntity(mock_coordinator, device)
+        assert not (entity.supported_features & FanEntityFeature.OSCILLATE)
+        assert entity.oscillating is None
+
+    @pytest.mark.asyncio
+    async def test_oscillate_on_sends_toggle(self, fan_entity, mock_coordinator):
+        from custom_components.govee.models import ToggleCommand
+        from custom_components.govee.models.device import INSTANCE_FAN_OSCILLATE
+
+        await fan_entity.async_oscillate(True)
+
+        cmd = mock_coordinator.async_control_device.call_args[0][1]
+        assert isinstance(cmd, ToggleCommand)
+        assert cmd.toggle_instance == INSTANCE_FAN_OSCILLATE
+        assert cmd.enabled is True
+        assert fan_entity.oscillating is True
+
+    @pytest.mark.asyncio
+    async def test_oscillate_off_sends_toggle(self, fan_entity, mock_coordinator):
+        from custom_components.govee.models import ToggleCommand
+
+        fan_entity._oscillating = True
+        await fan_entity.async_oscillate(False)
+
+        cmd = mock_coordinator.async_control_device.call_args[0][1]
+        assert isinstance(cmd, ToggleCommand)
+        assert cmd.enabled is False
+        assert fan_entity.oscillating is False
