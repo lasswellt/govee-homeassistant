@@ -181,3 +181,71 @@ class TestLightFilterExcludesAppliances:
             ),
         )
         assert device.is_light_device is True
+
+
+class TestFahrenheitHeaterStructParsing:
+    """Heaters that run in °F report the temperature_setting STRUCT with
+    ``unit: Fahrenheit`` and the ``targetTemperature`` field name (H713B,
+    issue #129)."""
+
+    def test_parses_fahrenheit_state_shape_h713b(self):
+        # Verbatim shape from H713B diagnostics: field is named
+        # ``targetTemperature`` (not ``temperature``) and unit is Fahrenheit.
+        state = GoveeDeviceState.create_empty("dev1")
+        state.update_from_api(
+            {
+                "capabilities": [
+                    {
+                        "type": "devices.capabilities.temperature_setting",
+                        "instance": "targetTemperature",
+                        "state": {
+                            "value": {
+                                "unit": "Fahrenheit",
+                                "targetTemperature": 41,
+                            }
+                        },
+                    }
+                ]
+            }
+        )
+        # 41°F == 5°C — heater_temperature is canonical Celsius.
+        assert state.heater_temperature == 5
+        assert state.heater_temperature_unit == "Fahrenheit"
+
+    def test_celsius_struct_stays_unconverted(self):
+        state = GoveeDeviceState.create_empty("dev1")
+        state.update_from_api(
+            {
+                "capabilities": [
+                    {
+                        "type": "devices.capabilities.temperature_setting",
+                        "instance": "targetTemperature",
+                        "state": {
+                            "value": {
+                                "temperature": 22,
+                                "autoStop": 1,
+                                "unit": "Celsius",
+                            }
+                        },
+                    }
+                ]
+            }
+        )
+        assert state.heater_temperature == 22
+        assert state.heater_temperature_unit == "Celsius"
+
+    def test_unit_absent_defaults_to_no_conversion(self):
+        state = GoveeDeviceState.create_empty("dev1")
+        state.update_from_api(
+            {
+                "capabilities": [
+                    {
+                        "type": "devices.capabilities.temperature_setting",
+                        "instance": "targetTemperature",
+                        "state": {"value": {"temperature": 18}},
+                    }
+                ]
+            }
+        )
+        assert state.heater_temperature == 18
+        assert state.heater_temperature_unit is None

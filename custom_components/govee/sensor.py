@@ -306,6 +306,9 @@ class GoveeTemperatureSensor(_BffThermometerAvailabilityMixin, SensorEntity):
         # tagged °C — surfacing e.g. 101°F as 213.5°F (issues #72, #78, #96).
         # "auto" (default) converts those SKUs out-of-the-box; "fahrenheit"
         # forces conversion for any SKU; "celsius" trusts the API value as-is.
+        # Heaters additionally report their own unit in the
+        # temperature_setting STRUCT — in "auto" mode that explicit metadata
+        # beats the SKU allowlist (H713B, issue #129).
         config_entry = self.coordinator.config_entry
         api_unit = (
             config_entry.options.get(
@@ -315,7 +318,11 @@ class GoveeTemperatureSensor(_BffThermometerAvailabilityMixin, SensorEntity):
             if config_entry is not None
             else DEFAULT_API_TEMPERATURE_UNIT
         )
-        if resolve_fahrenheit_conversion(self._device.sku, api_unit):
+        if resolve_fahrenheit_conversion(
+            self._device.sku,
+            api_unit,
+            getattr(state, "heater_temperature_unit", None),
+        ):
             return (value - 32.0) * (5.0 / 9.0)
 
         return value

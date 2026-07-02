@@ -2189,6 +2189,13 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                     state.heater_temperature = existing_state.heater_temperature
                 if existing_state.heater_auto_stop is not None:
                     state.heater_auto_stop = existing_state.heater_auto_stop
+                if (
+                    existing_state.heater_temperature_unit is not None
+                    and state.heater_temperature_unit is None
+                ):
+                    state.heater_temperature_unit = (
+                        existing_state.heater_temperature_unit
+                    )
 
                 # Stand-alone thermometer/hygrometer readings (H5179, H5109,
                 # H5110, HS5108, HS5106): battery-powered sensors push to the

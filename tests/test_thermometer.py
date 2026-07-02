@@ -618,3 +618,32 @@ class TestDeveloperThermometerBattery:
         await sensor_mod.async_setup_entry(MagicMock(), entry, lambda e: added.extend(e))
 
         assert not [e for e in added if type(e).__name__ == "GoveeThermoBatterySensor"]
+
+
+class TestResolveFahrenheitDeviceUnitHint:
+    """auto mode: explicit device-reported unit metadata beats the static
+    SKU allowlist (H713B heater, issue #129)."""
+
+    def test_auto_with_fahrenheit_hint_converts(self):
+        from custom_components.govee.const import resolve_fahrenheit_conversion
+
+        assert resolve_fahrenheit_conversion("H713B", "auto", "Fahrenheit") is True
+
+    def test_auto_with_celsius_hint_beats_allowlist(self):
+        from custom_components.govee.const import resolve_fahrenheit_conversion
+
+        # H5179 is in FAHRENHEIT_REPORTING_SKUS, but the device itself says
+        # Celsius — explicit metadata wins.
+        assert resolve_fahrenheit_conversion("H5179", "auto", "Celsius") is False
+
+    def test_auto_without_hint_uses_allowlist(self):
+        from custom_components.govee.const import resolve_fahrenheit_conversion
+
+        assert resolve_fahrenheit_conversion("H5179", "auto", None) is True
+        assert resolve_fahrenheit_conversion("H713B", "auto", None) is False
+
+    def test_explicit_override_ignores_hint(self):
+        from custom_components.govee.const import resolve_fahrenheit_conversion
+
+        assert resolve_fahrenheit_conversion("H713B", "celsius", "Fahrenheit") is False
+        assert resolve_fahrenheit_conversion("H713B", "fahrenheit", "Celsius") is True

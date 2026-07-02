@@ -213,6 +213,13 @@ class GoveeDeviceState:
     heater_temperature: int | None = None  # Target temperature in Celsius
     heater_auto_stop: int | None = None  # Auto-stop setting (0=Maintain, 1=Auto-stop)
     fan_speed: int | None = None  # Fan speed mode value (1=Low, 2=Medium, 3=High)
+    # Unit reported by the temperature_setting STRUCT state ("Celsius" /
+    # "Fahrenheit"). Heaters like the H713B run in °F internally and report
+    # sensorTemperature in the SAME unit — but the property capability itself
+    # carries no unit metadata. Capturing the STRUCT's unit lets the
+    # temperature sensor entity normalize without a SKU allowlist entry
+    # (issue #129).
+    heater_temperature_unit: str | None = None
 
     # Purifier state
     purifier_mode: int | None = (
@@ -438,12 +445,31 @@ class GoveeDeviceState:
                 # preserve the user's choice instead of resetting it to 0
                 # (issue #29).
                 if instance == "targetTemperature" and isinstance(value, dict):
+                    unit = value.get("unit")
+                    if isinstance(unit, str) and unit:
+                        self.heater_temperature_unit = unit
+                    # The capability definition names the field ``temperature``
+                    # (and commands are sent that way), but the polled STATE
+                    # carries it as ``targetTemperature`` on devices like the
+                    # H713B — accept both shapes (issue #129).
                     temp_val = value.get("temperature")
+                    if temp_val is None:
+                        temp_val = value.get("targetTemperature")
                     if temp_val is not None:
                         try:
-                            self.heater_temperature = int(temp_val)
+                            temp_int = int(temp_val)
                         except (TypeError, ValueError):
                             pass
+                        else:
+                            # heater_temperature is canonical °C (commands are
+                            # always sent with unit=Celsius) — normalize a
+                            # Fahrenheit-reporting device on read (issue #129).
+                            if (
+                                isinstance(unit, str)
+                                and unit.lower() == "fahrenheit"
+                            ):
+                                temp_int = round((temp_int - 32) * 5 / 9)
+                            self.heater_temperature = temp_int
                     auto_stop = value.get("autoStop")
                     if auto_stop is not None:
                         try:
