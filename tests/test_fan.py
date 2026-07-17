@@ -758,7 +758,7 @@ class TestFanDuplicatePreset:
         modes = h7106_entity.preset_modes
         # Presets come directly from capabilities with no duplicates.
         assert modes.count(PRESET_MODE_AUTO) == 1
-        assert "FanSpeed" in modes
+        assert PRESET_MODE_NORMAL in modes
         assert "Sleep" in modes
         assert "Nature" in modes
         assert "Custom" in modes
@@ -768,7 +768,7 @@ class TestFanDuplicatePreset:
         assert h7106_entity._auto_work_mode == 2
         assert h7106_entity._preset_work_modes.get("Auto") == 2
         assert h7106_entity._manual_work_mode == 1
-        assert h7106_entity._manual_preset_name == "FanSpeed"
+        assert h7106_entity._manual_preset_name == PRESET_MODE_NORMAL
         assert h7106_entity._preset_work_modes.get("Sleep") == 5
 
     def test_speed_count_and_percentage_step_from_fanspeed_modevalue(self, h7106_entity):
@@ -794,7 +794,7 @@ class TestFanDuplicatePreset:
         state.work_mode = work_mode
         state.mode_value = 3
 
-        await h7106_entity.async_set_preset_mode("FanSpeed")
+        await h7106_entity.async_set_preset_mode(PRESET_MODE_NORMAL)
         state.work_mode = 1
         state.mode_value = 4
 
@@ -960,7 +960,7 @@ class TestFanSpeedManualModeDiscovery:
         assert min(h7107_entity._fan_speeds) == 1
         assert h7107_entity.percentage_step == pytest.approx(100 / 12)
         assert h7107_entity.preset_modes == [
-            "FanSpeed",
+            PRESET_MODE_NORMAL,
             "Auto",
             "Sleep",
             "Nature",
@@ -996,7 +996,7 @@ class TestFanSpeedManualModeDiscovery:
         state.work_mode = 2
         state.mode_value = 6
 
-        await h7107_entity.async_set_preset_mode("FanSpeed")
+        await h7107_entity.async_set_preset_mode(PRESET_MODE_NORMAL)
 
         cmd = h7107_entity.coordinator.async_control_device.call_args[0][1]
         assert isinstance(cmd, WorkModeCommand)
@@ -1011,7 +1011,7 @@ class TestFanSpeedManualModeDiscovery:
         state.work_mode = 2
         state.mode_value = 0
 
-        await h7107_entity.async_set_preset_mode("FanSpeed")
+        await h7107_entity.async_set_preset_mode(PRESET_MODE_NORMAL)
 
         cmd = h7107_entity.coordinator.async_control_device.call_args[0][1]
         assert isinstance(cmd, WorkModeCommand)
@@ -1069,7 +1069,7 @@ class TestFanSpeedManualModeDiscovery:
         state.work_mode = 2
         state.mode_value = 1
 
-        await h7107_entity.async_set_preset_mode("FanSpeed")
+        await h7107_entity.async_set_preset_mode(PRESET_MODE_NORMAL)
 
         cmd = h7107_entity.coordinator.async_control_device.call_args[0][1]
         assert isinstance(cmd, WorkModeCommand)
@@ -1101,7 +1101,7 @@ class TestFanSpeedManualModeDiscovery:
         state.work_mode = work_mode
         state.mode_value = 8
 
-        await h7107_entity.async_set_preset_mode("FanSpeed")
+        await h7107_entity.async_set_preset_mode(PRESET_MODE_NORMAL)
         state.work_mode = 4
         state.mode_value = 6
 
@@ -1123,7 +1123,7 @@ class TestFanSpeedManualModeDiscovery:
         state = h7107_entity.coordinator.get_state.return_value
         state.work_mode = work_mode
         state.mode_value = 8
-        await h7107_entity.async_set_preset_mode("FanSpeed")
+        await h7107_entity.async_set_preset_mode(PRESET_MODE_NORMAL)
         assert h7107_entity._last_mode_values[work_mode] == 0
         assert h7107_entity.percentage is None
 
