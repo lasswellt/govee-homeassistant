@@ -38,7 +38,7 @@ from .const import (
 )
 from .coordinator import GoveeCoordinator
 from .entity import GoveeEntity
-from .models import GoveeDevice
+from .models import GoveeDevice, TransportKind
 from .models.device import GoveeLeakSensor, leak_sensor_device_info
 
 try:  # HA >= 2026.7 (CONCENTRATION_PARTS_PER_MILLION is deprecated there)
@@ -53,6 +53,15 @@ except ImportError:  # hacs.json still declares 2024.11.0 as the minimum
 _LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 0
+
+_PRIORITY_ORDER: tuple[TransportKind, ...] = ("ble", "lan", "mqtt", "cloud_api")
+_ICON_BY_VALUE: dict[str, str] = {
+    "lan": "mdi:lan",
+    "mqtt": "mdi:cloud-sync",
+    "cloud_api": "mdi:cloud",
+    "ble": "mdi:bluetooth",
+    "unavailable": "mdi:lan-pending",
+}
 
 
 async def async_setup_entry(
@@ -77,6 +86,7 @@ async def async_setup_entry(
     # corresponding `property` capability gets the entity, regardless of
     # device_type — the integration shouldn't have to know about every SKU.
     for device in coordinator.devices.values():
+        entities.append(GoveeConnectionModeSensor(coordinator, device))
         if device.is_group:
             continue
         # Per-device connectivity diagnostics for every physical device:
@@ -580,6 +590,59 @@ class GoveeLastCommandSentSensor(GoveeEntity, SensorEntity):
     @property
     def native_value(self) -> datetime | None:
         return self.coordinator.device_last_command_sent(self._device.device_id)
+
+
+class GoveeConnectionModeSensor(GoveeEntity, SensorEntity):
+    """Show the best currently reachable transport for a device."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "connection_mode"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = ["lan", "mqtt", "cloud_api", "ble", "unavailable"]
+
+    def __init__(self, coordinator: GoveeCoordinator, device: GoveeDevice) -> None:
+        """Initialize the connection-mode sensor."""
+        super().__init__(coordinator, device)
+        self._attr_unique_id = f"{device.device_id}_connection_mode"
+
+    @property
+    def native_value(self) -> str:
+        """Return the highest-priority transport currently available."""
+        if self._device.is_group:
+            health = self.coordinator.get_transport_health(self._device_id, "cloud_api")
+            return "cloud_api" if health is not None and health.is_available else "unavailable"
+
+        for kind in _PRIORITY_ORDER:
+            health = self.coordinator.get_transport_health(self._device_id, kind)
+            if health is not None and health.is_available:
+                return kind
+        return "unavailable"
+
+    @property
+    def icon(self) -> str:
+        """Return the icon for the current connection mode."""
+        return _ICON_BY_VALUE[self.native_value]
+
+    @property
+    def available(self) -> bool:
+        """Return availability based only on coordinator health."""
+        return self.coordinator.last_update_success
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str]:
+        """Return bridge identity and the time of the latest evaluation."""
+        attrs = {"last_evaluated_at": datetime.now(timezone.utc).isoformat()}
+        if self._device.hub_device_id:
+            attrs["via_gateway"] = self._device.hub_device_id
+            return attrs
+
+        route = self.coordinator.gateway_route(self._device_id)
+        if route:
+            gateway_device = route.get("device")
+            if gateway_device:
+                attrs["via_gateway"] = gateway_device
+        return attrs
 
 
 class GoveeLeakBatterySensor(SensorEntity):
