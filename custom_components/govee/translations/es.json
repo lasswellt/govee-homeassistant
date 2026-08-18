@@ -1,0 +1,389 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Clave de API de Govee",
+        "description": "Introduce tu clave de API de desarrollador de Govee desde {api_url}\n\nEsta NO es la contraseña de tu cuenta de Govee: es una clave de desarrollador independiente.",
+        "data": {
+          "api_key": "Clave de API"
+        },
+        "data_description": {
+          "api_key": "La clave de API de tu cuenta de desarrollador de Govee (una cadena larga de letras y números)"
+        }
+      },
+      "account": {
+        "title": "Cuenta de Govee (opcional)",
+        "description": "Para recibir actualizaciones en tiempo real, introduce abajo las credenciales de la app móvil de Govee.\n\n**Importante:** usa el correo electrónico y la contraseña de la app móvil de Govee. La contraseña de la app puede ser distinta de la del sitio web de Govee.\n\nPara omitir este paso, deja ambos campos vacíos y envía.",
+        "data": {
+          "email": "Correo de la app de Govee",
+          "password": "Contraseña de la app de Govee"
+        },
+        "data_description": {
+          "email": "La dirección de correo con la que inicias sesión en la app móvil de Govee",
+          "password": "La contraseña con la que inicias sesión en la app móvil de Govee (no la del sitio web)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Volver a autenticar Govee",
+        "description": "Tu clave de API no es válida. Introduce una nueva.",
+        "data": {
+          "api_key": "Clave de API"
+        }
+      },
+      "verification_code": {
+        "title": "Código de verificación de Govee",
+        "description": "Se ha enviado un código de verificación a **{email}**. Introdúcelo abajo. El código caduca en aproximadamente 15 minutos.",
+        "data": {
+          "verification_code": "Código de verificación"
+        },
+        "data_description": {
+          "verification_code": "Busca en tu correo un código enviado por Govee"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigurar Govee",
+        "description": "Actualiza tus credenciales. Correo actual: {current_email}",
+        "data": {
+          "api_key": "Clave de API",
+          "email": "Correo de la app de Govee (opcional)",
+          "password": "Contraseña de la app de Govee (opcional)"
+        },
+        "data_description": {
+          "api_key": "Tu clave de API de desarrollador de Govee, desde developer.govee.com",
+          "email": "Correo de la app móvil de Govee (déjalo vacío para desactivar MQTT)",
+          "password": "Contraseña de la app móvil de Govee (déjala vacía para conservar la actual)"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Clave de API no válida. Asegúrate de usar la clave de desarrollador de developer.govee.com, no la contraseña de tu cuenta.",
+      "invalid_account": "Credenciales de la app de Govee no válidas. Asegúrate de usar la contraseña de la app móvil de Govee (no la del sitio web).",
+      "invalid_api_key_format": "La clave de API no parece válida. Debe ser una cadena larga (36+ caracteres) de developer.govee.com.",
+      "invalid_email_format": "Introduce una dirección de correo electrónico válida.",
+      "password_without_email": "Introduce tanto el correo como la contraseña, o deja ambos vacíos para omitir.",
+      "email_without_password": "Introduce tanto el correo como la contraseña, o deja ambos vacíos para omitir.",
+      "cannot_connect": "No se pudo conectar con la API de Govee. Comprueba tu conexión a internet.",
+      "invalid_verification_code": "Código de verificación no válido o caducado. Revisa tu correo electrónico e inténtalo de nuevo.",
+      "login_rejected": "Govee rechazó la solicitud de inicio de sesión. Puede deberse a un problema temporal del servidor; vuelve a intentarlo más tarde.",
+      "unknown": "Se ha producido un error inesperado"
+    },
+    "abort": {
+      "reauth_successful": "La reautenticación fue correcta",
+      "reconfigure_successful": "La reconfiguración fue correcta"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opciones de Govee",
+        "description": "Si tienes dispositivos RGBIC, los ajustes de segmentos por dispositivo aparecerán al enviar.",
+        "data": {
+          "poll_interval": "Intervalo de sondeo (segundos)",
+          "water_detector_poll_interval": "Intervalo de sondeo del sensor de fugas (segundos)",
+          "api_temperature_unit": "Unidad de temperatura de la API de Govee (termómetros)",
+          "enable_groups": "Activar dispositivos en grupo",
+          "enable_scenes": "Activar selector de escenas",
+          "enable_diy_scenes": "Activar selector de escenas DIY",
+          "expose_transport_entities": "Exponer sensores de conectividad de transporte por dispositivo",
+          "enable_mqtt_control": "Enviar encendido, brillo y color por MQTT (más rápido, experimental)",
+          "lan_targets": "Direcciones IP o subredes LAN de dispositivos (avanzado)"
+        },
+        "data_description": {
+          "api_temperature_unit": "«Auto» (predeterminado) convierte automáticamente los termómetros conocidos que notifican en Fahrenheit (p. ej. H5179, H5109, H5111, H5075, H5100). Elige Fahrenheit si otro termómetro marca aproximadamente 1,8× más de lo esperado (p. ej. 74 en lugar de 23), o Celsius para forzar la no conversión. La API de Govee omite los metadatos de unidad, por lo que el valor no siempre se puede autodetectar.",
+          "water_detector_poll_interval": "Cada cuánto se consultan los detectores de agua o fugas autónomos de Govee (p. ej. H5054) para ver si hay una fuga. Estos sensores solo RF no tienen canal de envío, por lo que una fuga puede tardar hasta ese intervalo en aparecer. Un valor menor reacciona antes, pero hace más llamadas a la API de la cuenta; súbelo si tienes muchos detectores. Rango: 60–3600 segundos, valor predeterminado: 120. Requiere inicio de sesión con correo y contraseña; se ignora si no tienes detectores de este tipo.",
+          "enable_groups": "Muestra los grupos de dispositivos que creaste en la app de Govee como entidades de luz únicas. Un comando al grupo se envía una sola vez y la nube de Govee lo sincroniza con todos los miembros, así que se sincroniza mejor que agrupar las luces con helpers de Home Assistant. El estado es aproximado (los grupos no se pueden sondear) y las luces en grupo solo admiten encendido, brillo y color.",
+          "enable_mqtt_control": "Envía los comandos de encendido, brillo y color por el canal MQTT de Govee en lugar de la API REST en la nube, lo que reduce la latencia y evita los límites de velocidad de REST. Requiere inicio de sesión con correo y contraseña (credenciales MQTT). Si MQTT no está disponible, vuelve automáticamente a REST. Experimental: usa un canal no documentado; desactívalo si los comandos se comportan de forma inesperada.",
+          "lan_targets": "Solo es necesario cuando los dispositivos Govee compatibles con LAN están en una subred o VLAN distinta a la de Home Assistant, de modo que el escaneo de descubrimiento local no llega a ellos. Introduce una lista separada por comas con IPs de dispositivos (10.20.0.51), direcciones de difusión (10.20.0.255) o subredes en CIDR (10.20.0.0/24, /24 o más específico). Las subredes se escanean dispositivo por dispositivo, ya que la mayoría de los routers descartan los broadcasts entre VLAN. Déjalo en blanco si todos los dispositivos comparten la red de Home Assistant."
+        }
+      },
+      "select_segment_devices": {
+        "title": "Seleccionar dispositivos con segmentos",
+        "description": "Elige para qué dispositivos RGBIC quieres configurar los modos de segmento.",
+        "data": {
+          "devices": "Dispositivos a configurar"
+        }
+      },
+      "configure_device_mode": {
+        "title": "Modo de segmento: {device_name}",
+        "description": "Elige cómo se crean los segmentos de **{device_name}** (`{device_id}`): **desactivado** no crea entidades de segmento, **agrupado** crea una sola entidad para todos los segmentos, **individual** crea una entidad separada por cada segmento.",
+        "data": {
+          "segment_mode": "Modo de segmento"
+        }
+      }
+    },
+    "error": {
+      "invalid_lan_targets": "Una de las direcciones LAN no es una IP, una dirección de difusión ni una subred válidas (/24 o más específica). Ejemplo: 10.20.0.51, 10.20.0.255, 10.20.0.0/24"
+    }
+  },
+  "entity": {
+    "light": {
+      "govee_light": {
+        "name": "{device_name}"
+      },
+      "govee_nightlight": {
+        "name": "Luz nocturna"
+      },
+      "govee_segment": {
+        "name": "Segmento {segment_index} de {device_name}"
+      },
+      "govee_grouped_segment": {
+        "name": "Segmentos de {device_name}"
+      }
+    },
+    "number": {
+      "govee_music_sensitivity": {
+        "name": "Sensibilidad del modo música"
+      }
+    },
+    "select": {
+      "govee_scene_select": {
+        "name": "Escena"
+      },
+      "govee_snapshot_select": {
+        "name": "Instantánea"
+      },
+      "govee_diy_scene_select": {
+        "name": "Escena DIY"
+      },
+      "govee_diy_style_select": {
+        "name": "Estilo DIY"
+      },
+      "govee_hdmi_source_select": {
+        "name": "Fuente HDMI"
+      },
+      "govee_music_mode_select": {
+        "name": "Modo música"
+      },
+      "govee_preset_scene_select": {
+        "name": "Escena"
+      },
+      "govee_nightlight_scene_select": {
+        "name": "Escena de luz nocturna"
+      }
+    },
+    "switch": {
+      "govee_plug": {
+        "name": "{device_name}"
+      },
+      "govee_night_light": {
+        "name": "Luz nocturna"
+      },
+      "govee_music_mode": {
+        "name": "Modo música"
+      },
+      "govee_dreamview": {
+        "name": "DreamView"
+      },
+      "govee_heater_auto_stop": {
+        "name": "Apagado automático"
+      },
+      "govee_appliance_power": {
+        "name": "{device_name}"
+      },
+      "govee_light_zone": {
+        "name": "Zona de luz {zone}"
+      },
+      "govee_socket": {
+        "name": "Toma {socket}"
+      },
+      "govee_main_light": {
+        "name": "Luz principal"
+      },
+      "govee_background_light": {
+        "name": "Luz de fondo"
+      },
+      "govee_nebula_light": {
+        "name": "Luz nebulosa"
+      },
+      "govee_side_light": {
+        "name": "Luz lateral"
+      },
+      "govee_bottom_light": {
+        "name": "Luz inferior"
+      }
+    },
+    "sensor": {
+      "rate_limit_remaining": {
+        "name": "Límite de API restante"
+      },
+      "mqtt_status": {
+        "name": "Estado de MQTT"
+      },
+      "mqtt_last_received": {
+        "name": "Último mensaje MQTT"
+      },
+      "sensor_temperature": {
+        "name": "Temperatura"
+      },
+      "sensor_humidity": {
+        "name": "Humedad"
+      },
+      "sensor_air_quality": {
+        "name": "Calidad del aire"
+      },
+      "sensor_co2": {
+        "name": "CO2"
+      },
+      "sensor_filter_life": {
+        "name": "Vida del filtro"
+      },
+      "sensor_battery": {
+        "name": "Batería"
+      },
+      "sensor_reading_changed": {
+        "name": "Último cambio"
+      },
+      "all_data_last_updated": {
+        "name": "Última actualización recibida"
+      },
+      "last_command_sent": {
+        "name": "Último comando enviado"
+      },
+      "leak_battery": {
+        "name": "Batería"
+      },
+      "leak_last_wet": {
+        "name": "Última fuga detectada"
+      },
+      "leak_alert_status": {
+        "name": "Estado de la alerta"
+      },
+      "ieee_address": {
+        "name": "Dirección IEEE"
+      }
+    },
+    "binary_sensor": {
+      "device_connectivity": {
+        "name": "Conectividad"
+      },
+      "cloud_api_connectivity": {
+        "name": "API en la nube"
+      },
+      "mqtt_connectivity": {
+        "name": "MQTT"
+      },
+      "ble_connectivity": {
+        "name": "Bluetooth"
+      },
+      "lan_connectivity": {
+        "name": "LAN"
+      },
+      "govee_water_full": {
+        "name": "Depósito de agua lleno"
+      },
+      "govee_water_leak": {
+        "name": "Fuga de agua"
+      },
+      "govee_occupancy": {
+        "name": "Ocupación"
+      },
+      "leak_online": {
+        "name": "LoRa"
+      },
+      "leak_hub_online": {
+        "name": "Internet"
+      }
+    },
+    "fan": {
+      "govee_fan": {
+        "name": "{device_name}",
+        "state_attributes": {
+          "preset_mode": {
+            "state": {
+              "normal": "Normal",
+              "nature": "Natural",
+              "sleep": "Reposo",
+              "auto": "Automático",
+              "custom": "Personalizado",
+              "turbo": "Turbo"
+            }
+          }
+        }
+      }
+    },
+    "humidifier": {
+      "govee_humidifier": {
+        "name": "{device_name}",
+        "state_attributes": {
+          "mode": {
+            "state": {
+              "low": "Bajo",
+              "medium": "Medio",
+              "high": "Alto",
+              "auto": "Automático",
+              "dryer": "Secado"
+            }
+          }
+        }
+      }
+    },
+    "button": {
+      "refresh_scenes": {
+        "name": "Actualizar escenas"
+      },
+      "clear_water_full": {
+        "name": "Borrar alerta de agua"
+      }
+    },
+    "event": {
+      "leak_button": {
+        "name": "Botón",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "press": "Pulsación"
+            }
+          }
+        }
+      }
+    }
+  },
+  "services": {
+    "refresh_scenes": {
+      "name": "Actualizar escenas",
+      "description": "Actualiza las escenas disponibles desde la API de Govee",
+      "fields": {
+        "device_id": {
+          "name": "ID del dispositivo",
+          "description": "Dispositivo concreto a actualizar (opcional)"
+        }
+      }
+    },
+    "set_segment_color": {
+      "name": "Establecer color del segmento",
+      "description": "Define el color de segmentos específicos en dispositivos RGBIC",
+      "fields": {
+        "device_id": {
+          "name": "ID del dispositivo",
+          "description": "ID del dispositivo de la luz RGBIC"
+        },
+        "segments": {
+          "name": "Segmentos",
+          "description": "Lista de índices de segmento (empezando en 0)"
+        },
+        "rgb_color": {
+          "name": "Color RGB",
+          "description": "Color como valores [R, G, B]"
+        }
+      }
+    }
+  },
+  "issues": {
+    "auth_failed": {
+      "title": "Falló la autenticación con Govee",
+      "description": "La clave de API de {entry_title} ya no es válida. La integración no podrá comunicarse con Govee hasta que vuelvas a autenticarte."
+    },
+    "rate_limited": {
+      "title": "API de Govee limitada por frecuencia",
+      "description": "La API de Govee ha limitado la frecuencia de solicitudes para {entry_title}. El funcionamiento normal se reanudará en aproximadamente {reset_time}. Considera aumentar el intervalo de sondeo en las opciones de la integración para reducir las llamadas a la API."
+    },
+    "mqtt_disconnected": {
+      "title": "MQTT de Govee desconectado",
+      "description": "Las actualizaciones en tiempo real de {entry_title} no están disponibles. Motivo: {reason}. La integración seguirá funcionando mediante sondeo. Si el problema persiste, revisa las credenciales de tu cuenta de Govee."
+    },
+    "mqtt_2fa_required": {
+      "title": "La cuenta de Govee requiere verificación",
+      "description": "Tu cuenta de Govee ahora requiere verificación por correo electrónico (2FA) para habilitar las actualizaciones MQTT en tiempo real de {entry_title}. Ve a la página de la integración y selecciona **Reconfigurar** para volver a introducir tus credenciales con un código de verificación.\n\nLa integración seguirá funcionando mediante sondeo hasta que se resuelva."
+    }
+  }
+}
