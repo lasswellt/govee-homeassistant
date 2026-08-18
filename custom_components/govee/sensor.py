@@ -38,7 +38,7 @@ from .const import (
 )
 from .coordinator import GoveeCoordinator
 from .entity import GoveeEntity
-from .models import GoveeDevice, TransportKind
+from .models import GoveeDevice, TransportHealth, TransportKind
 from .models.device import GoveeLeakSensor, leak_sensor_device_info
 
 try:  # HA >= 2026.7 (CONCENTRATION_PARTS_PER_MILLION is deprecated there)
@@ -62,6 +62,16 @@ _ICON_BY_VALUE: dict[str, str] = {
     "ble": "mdi:bluetooth",
     "unavailable": "mdi:lan-pending",
 }
+
+
+def _is_delivering(health: TransportHealth | None) -> bool:
+    """True only when ``is_available`` AND ``last_success_ts`` is set.
+
+    MQTT, for example, marks itself available on broker connect even for
+    devices that never push state — without the timestamp gate the sensor
+    would surface a transport the device is not actually using.
+    """
+    return health is not None and health.is_available and health.last_success_ts is not None
 
 
 async def async_setup_entry(
@@ -608,14 +618,22 @@ class GoveeConnectionModeSensor(GoveeEntity, SensorEntity):
 
     @property
     def native_value(self) -> str:
-        """Return the highest-priority transport currently available."""
+        """Return the highest-priority transport currently delivering state.
+
+        ``is_available`` alone is insufficient — MQTT marks itself available
+        on broker connect even for devices that never push state. We require
+        a ``last_success_ts`` stamp so the surfaced transport has actually
+        delivered state for this device.
+        """
         if self._device.is_group:
-            health = self.coordinator.get_transport_health(self._device_id, "cloud_api")
-            return "cloud_api" if health is not None and health.is_available else "unavailable"
+            return (
+                "cloud_api"
+                if _is_delivering(self.coordinator.get_transport_health(self._device_id, "cloud_api"))
+                else "unavailable"
+            )
 
         for kind in _PRIORITY_ORDER:
-            health = self.coordinator.get_transport_health(self._device_id, kind)
-            if health is not None and health.is_available:
+            if _is_delivering(self.coordinator.get_transport_health(self._device_id, kind)):
                 return kind
         return "unavailable"
 

@@ -37,7 +37,23 @@ def _device(
 
 
 def _health(**available: bool) -> dict[str, TransportHealth]:
-    return {kind: TransportHealth(transport=kind, is_available=available.get(kind, False)) for kind in _TRANSPORTS}
+    now = datetime.now(timezone.utc)
+    return {
+        kind: TransportHealth(
+            transport=kind,
+            is_available=available.get(kind, False),
+            last_success_ts=now if available.get(kind, False) else None,
+        )
+        for kind in _TRANSPORTS
+    }
+
+
+def _spec(spec: dict[str, tuple[bool, datetime | None]]) -> dict[str, TransportHealth]:
+    """Build a health map from ``{transport: (is_available, last_success_ts)}``."""
+    return {
+        kind: TransportHealth(transport=kind, is_available=available, last_success_ts=ts)
+        for kind, (available, ts) in spec.items()
+    }
 
 
 def _coordinator(
@@ -241,6 +257,7 @@ async def test_refresh_happens_on_coordinator_tick_only() -> None:
     coordinator.async_add_listener(entity._handle_coordinator_update)
 
     health["mqtt"].is_available = True
+    health["mqtt"].last_success_ts = datetime.now(timezone.utc)
     assert entity.native_value == "mqtt"
     entity.async_write_ha_state.assert_not_called()
     coordinator.async_set_updated_data({device.device_id: GoveeDeviceState(device_id=device.device_id)})
@@ -289,3 +306,46 @@ def test_translation_entry_has_all_connection_mode_states() -> None:
         english = json.load(en_file)
     assert strings["entity"]["sensor"]["connection_mode"] == expected
     assert english["entity"]["sensor"]["connection_mode"] == expected
+
+
+def test_mqtt_connected_but_not_delivering_demotes_to_cloud_api() -> None:
+    """FIX-001: H7075 user case — MQTT available but cloud_api is the real deliverer."""
+    now = datetime.now(timezone.utc)
+    health = _spec(
+        {
+            "ble": (False, None),
+            "lan": (False, None),
+            "mqtt": (True, None),
+            "cloud_api": (True, now),
+        }
+    )
+    assert _sensor(_device(), health).native_value == "cloud_api"
+
+
+def test_mqtt_connected_but_only_lan_delivering_returns_lan() -> None:
+    """FIX-002: priority alone cannot win without a receive stamp."""
+    now = datetime.now(timezone.utc)
+    health = _spec(
+        {
+            "ble": (True, None),
+            "lan": (True, now),
+            "mqtt": (True, None),
+            "cloud_api": (True, None),
+        }
+    )
+    assert _sensor(_device(), health).native_value == "lan"
+
+
+def test_all_transports_unreachable_returns_unavailable() -> None:
+    """FIX-003: zero-reachability stays ``unavailable`` under the stricter gate."""
+    health = _spec(
+        {
+            "ble": (False, None),
+            "lan": (False, None),
+            "mqtt": (False, None),
+            "cloud_api": (False, None),
+        }
+    )
+    entity = _sensor(_device(), health)
+    assert entity.native_value == "unavailable"
+    assert entity.icon == "mdi:lan-pending"
