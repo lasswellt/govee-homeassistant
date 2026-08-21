@@ -698,8 +698,25 @@ class GoveeConnectionModeSensor(GoveeEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, str]:
-        """Return bridge identity and the time of the latest evaluation."""
-        attrs = {"last_evaluated_at": datetime.now(timezone.utc).isoformat()}
+        """Return bridge identity and when the reported transport last delivered.
+
+        ``last_delivered_at`` is the chosen transport's own
+        ``last_success_ts``, not the time this property happened to be read.
+        That distinction matters more than it looks: Home Assistant evaluates
+        attributes on every state write and treats any change as a new state,
+        so a value of "now" would record a fresh row for every device on every
+        poll — forever, and carrying no information. Reading the transport's
+        stamp means the attribute changes only when data actually arrives,
+        which is also the thing a user wants to know.
+        """
+        attrs: dict[str, str] = {}
+
+        mode = self.native_value
+        if mode != "unavailable":
+            health = self.coordinator.get_transport_health(self._device_id, mode)
+            if health is not None and health.last_success_ts is not None:
+                attrs["last_delivered_at"] = health.last_success_ts.isoformat()
+
         if self._device.hub_device_id:
             attrs["via_gateway"] = self._device.hub_device_id
             return attrs

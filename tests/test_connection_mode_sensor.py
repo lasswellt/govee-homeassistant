@@ -184,12 +184,46 @@ def test_demoted_lan_is_skipped() -> None:
     assert _sensor(_device(), health).native_value == "mqtt"
 
 
-def test_last_evaluated_at_is_utc_iso_timestamp() -> None:
-    """SCN-018: the diagnostic timestamp is timezone-aware ISO 8601."""
-    timestamp = _sensor(_device(), _health(lan=True)).extra_state_attributes["last_evaluated_at"]
+def test_last_delivered_at_is_the_transports_own_timestamp() -> None:
+    """SCN-018: the attribute reports when the transport last delivered.
+
+    Not when the attribute happened to be read. Home Assistant evaluates
+    attributes on every state write and treats any change as a new state, so a
+    value of "now" would record a fresh row per device per poll, forever, and
+    carry no information. Reading the transport's own stamp means it changes
+    only when data actually arrives.
+    """
+    stamp = datetime(2026, 8, 21, 12, 0, tzinfo=timezone.utc)
+    health = _spec(
+        {
+            "ble": (False, None),
+            "lan": (True, stamp),
+            "mqtt": (False, None),
+            "cloud_api": (False, None),
+        }
+    )
+    sensor = _sensor(_device(), health)
+    assert sensor.native_value == "lan"
+
+    timestamp = sensor.extra_state_attributes["last_delivered_at"]
     parsed = datetime.fromisoformat(timestamp)
+    assert parsed == stamp
     assert parsed.utcoffset() == timedelta(0)
-    assert parsed <= datetime.now(timezone.utc) + timedelta(seconds=2)
+
+
+def test_last_delivered_at_is_stable_across_reads() -> None:
+    """The regression the change exists to prevent: no churn on re-read."""
+    sensor = _sensor(_device(), _health(lan=True))
+    first = sensor.extra_state_attributes
+    second = sensor.extra_state_attributes
+    assert first == second
+
+
+def test_no_timestamp_when_nothing_is_delivering() -> None:
+    """An unavailable device has no transport to report a time for."""
+    sensor = _sensor(_device(), _health())
+    assert sensor.native_value == "unavailable"
+    assert "last_delivered_at" not in sensor.extra_state_attributes
 
 
 @pytest.mark.parametrize(
