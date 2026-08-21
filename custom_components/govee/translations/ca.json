@@ -112,7 +112,8 @@
       }
     },
     "error": {
-      "invalid_lan_targets": "Una de les adreces LAN no és una IP, una adreça de difusió ni una subxarxa vàlides (/24 o més específica). Exemple: 10.20.0.51, 10.20.0.255, 10.20.0.0/24"
+      "invalid_lan_targets": "Una de les adreces LAN no és una IP, una adreça de difusió ni una subxarxa vàlides (/24 o més específica). Exemple: 10.20.0.51, 10.20.0.255, 10.20.0.0/24",
+      "unknown_lan_device": "Una substitució device_id=ip indica un dispositiu que no pertany a aquest compte de Govee. Copia l'ID del dispositiu exactament com apareix al diagnòstic del dispositiu (per exemple, AA:BB:CC:DD:EE:FF:00:11)."
     }
   },
   "entity": {
@@ -250,6 +251,9 @@
       },
       "ieee_address": {
         "name": "Adreça IEEE"
+      },
+      "sensor_temperature_2": {
+        "name": "Temperatura de la sonda 2"
       }
     },
     "binary_sensor": {
@@ -384,6 +388,10 @@
     "mqtt_2fa_required": {
       "title": "El compte de Govee requereix verificació",
       "description": "El teu compte de Govee ara requereix verificació per correu electrònic (2FA) per activar les actualitzacions MQTT en temps real de {entry_title}. Vés a la pàgina de la integració i selecciona **Reconfigurar** per tornar a introduir les teves credencials amb un codi de verificació.\n\nLa integració continuarà funcionant mitjançant sondeig fins que es resolgui."
+    },
+    "mqtt_token_expired": {
+      "title": "La sessió del compte de Govee ha caducat",
+      "description": "La sessió desada del compte de Govee per a {entry_title} ha caducat, i l'intent de tornar a iniciar la sessió s'ha rebutjat, normalment perquè la contrasenya del compte ha canviat.\n\nMentre estigui caducada, els nivells de bateria i les lectures dels sensors que arriben a Govee a través d'una passarel·la (per exemple, un H5310 o un H5112 darrere d'un H5044) deixen d'actualitzar-se. Els llums i tot allò que fa servir la clau d'API no es veuen afectats.\n\nVés a la pàgina de la integració i selecciona **Reconfigurar** per introduir la contrasenya actual del compte."
     }
   }
 }

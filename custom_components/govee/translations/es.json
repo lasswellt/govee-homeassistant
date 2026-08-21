@@ -112,7 +112,8 @@
       }
     },
     "error": {
-      "invalid_lan_targets": "Una de las direcciones LAN no es una IP, una dirección de difusión ni una subred válidas (/24 o más específica). Ejemplo: 10.20.0.51, 10.20.0.255, 10.20.0.0/24"
+      "invalid_lan_targets": "Una de las direcciones LAN no es una IP, una dirección de difusión ni una subred válidas (/24 o más específica). Ejemplo: 10.20.0.51, 10.20.0.255, 10.20.0.0/24",
+      "unknown_lan_device": "Una anulación device_id=ip indica un dispositivo que no pertenece a esta cuenta de Govee. Copia el ID del dispositivo exactamente como aparece en el diagnóstico del dispositivo (por ejemplo, AA:BB:CC:DD:EE:FF:00:11)."
     }
   },
   "entity": {
@@ -250,6 +251,9 @@
       },
       "ieee_address": {
         "name": "Dirección IEEE"
+      },
+      "sensor_temperature_2": {
+        "name": "Temperatura de la sonda 2"
       }
     },
     "binary_sensor": {
@@ -384,6 +388,10 @@
     "mqtt_2fa_required": {
       "title": "La cuenta de Govee requiere verificación",
       "description": "Tu cuenta de Govee ahora requiere verificación por correo electrónico (2FA) para habilitar las actualizaciones MQTT en tiempo real de {entry_title}. Ve a la página de la integración y selecciona **Reconfigurar** para volver a introducir tus credenciales con un código de verificación.\n\nLa integración seguirá funcionando mediante sondeo hasta que se resuelva."
+    },
+    "mqtt_token_expired": {
+      "title": "La sesión de la cuenta de Govee ha caducado",
+      "description": "La sesión guardada de la cuenta de Govee para {entry_title} ha caducado, y el intento de volver a iniciar sesión se ha rechazado, normalmente porque la contraseña de la cuenta ha cambiado.\n\nMientras esté caducada, los niveles de batería y las lecturas de los sensores que llegan a Govee a través de una pasarela (por ejemplo, un H5310 o un H5112 detrás de un H5044) dejan de actualizarse. Las luces y todo lo que usa la clave de API no se ven afectados.\n\nVe a la página de la integración y selecciona **Reconfigurar** para introducir la contraseña actual de la cuenta."
     }
   }
 }
