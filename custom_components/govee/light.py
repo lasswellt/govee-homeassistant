@@ -35,6 +35,7 @@ from .const import (
     DEFAULT_ENABLE_SCENES,
     DEFAULT_SEGMENT_MODE,
     MAIN_LIGHT_TOGGLE_SKUS,
+    SEGMENT_MODE_BOTH,
     SEGMENT_MODE_GROUPED,
     SEGMENT_MODE_INDIVIDUAL,
     SUFFIX_MAIN_LIGHT_TOGGLE,
@@ -120,7 +121,11 @@ async def async_setup_entry(
                 device.segment_count,
             )
 
-            if segment_mode == SEGMENT_MODE_GROUPED:
+            # SEGMENT_MODE_BOTH creates every entity SEGMENT_MODE_GROUPED and
+            # SEGMENT_MODE_INDIVIDUAL would create on their own — the grouped
+            # entity is a convenience "all segments" light layered on top,
+            # never a replacement for the individual per-segment entities.
+            if segment_mode in (SEGMENT_MODE_GROUPED, SEGMENT_MODE_BOTH):
                 _LOGGER.debug(
                     "Creating grouped segment entity for %s",
                     device.name,
@@ -131,7 +136,7 @@ async def async_setup_entry(
                         device=device,
                     )
                 )
-            elif segment_mode == SEGMENT_MODE_INDIVIDUAL:
+            if segment_mode in (SEGMENT_MODE_INDIVIDUAL, SEGMENT_MODE_BOTH):
                 _LOGGER.debug(
                     "Creating %d individual segment entities for %s",
                     device.segment_count,
@@ -452,6 +457,10 @@ class GoveeMainLightEntity(GoveeLightEntity):
     differs, so only on/off is overridden. Scenes are disabled because they are
     a whole-fixture concept and belong to the master entity.
     """
+
+    # Distinct from the switch platform's ``govee_main_light`` key, which
+    # belongs to the (inert on these SKUs) mainLightToggle capability.
+    _attr_translation_key = "govee_main_light_panel"
 
     def __init__(self, coordinator: GoveeCoordinator, device: GoveeDevice) -> None:
         """Initialize the main-panel entity."""

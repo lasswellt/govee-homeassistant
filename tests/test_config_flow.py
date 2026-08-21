@@ -295,6 +295,93 @@ class TestLanTargetsOption:
         assert result["errors"] == {CONF_LAN_TARGETS: "invalid_lan_targets"}
 
 
+class TestLanDeviceOverrideOption:
+    """Form validation for the device_id=ip[!] override syntax (issue #164).
+
+    Runtime parsing skips a malformed override silently so the rest still bind.
+    The form must not: a typo that saves cleanly leaves the user with an
+    accepted form, a stored option and a device that never works, with nothing
+    on screen to say why.
+    """
+
+    DEVICE = "AA:BB:CC:DD:EE:FF:00:11"
+
+    @pytest.mark.asyncio
+    async def test_valid_override_saved(self):
+        flow, entry = _options_flow(devices={self.DEVICE: MagicMock(segment_count=0)})
+        raw = f"{self.DEVICE}=10.20.0.51"
+        result = await _run_init(
+            flow, entry, {CONF_POLL_INTERVAL: 60, CONF_LAN_TARGETS: raw}
+        )
+        assert result["type"] == "create_entry"
+        assert result["data"][CONF_LAN_TARGETS] == raw
+
+    @pytest.mark.asyncio
+    async def test_valid_write_only_override_saved(self):
+        flow, entry = _options_flow(devices={self.DEVICE: MagicMock(segment_count=0)})
+        raw = f"{self.DEVICE}=10.20.0.51!"
+        result = await _run_init(
+            flow, entry, {CONF_POLL_INTERVAL: 60, CONF_LAN_TARGETS: raw}
+        )
+        assert result["type"] == "create_entry"
+        assert result["data"][CONF_LAN_TARGETS] == raw
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "AA:BB:CC:DD:EE:FF:00:11=10.20.0.999",
+            "AA:BB:CC:DD:EE:FF:00:11=",
+            "AA:BB:CC:DD:EE:FF:00:11=not-an-ip!",
+            "=10.20.0.51",
+        ],
+    )
+    async def test_malformed_override_rejected(self, raw):
+        flow, entry = _options_flow(devices={self.DEVICE: MagicMock(segment_count=0)})
+        result = await _run_init(
+            flow, entry, {CONF_POLL_INTERVAL: 60, CONF_LAN_TARGETS: raw}
+        )
+        assert result["type"] == "form"
+        assert result["errors"] == {CONF_LAN_TARGETS: "invalid_lan_targets"}
+
+    @pytest.mark.asyncio
+    async def test_unknown_device_id_rejected(self):
+        """A mistyped device ID binds nothing — catch it at the form."""
+        flow, entry = _options_flow(devices={self.DEVICE: MagicMock(segment_count=0)})
+        result = await _run_init(
+            flow,
+            entry,
+            {CONF_POLL_INTERVAL: 60, CONF_LAN_TARGETS: "AA:BB:CC:DD:EE:FF:00:99=10.20.0.51"},
+        )
+        assert result["type"] == "form"
+        assert result["errors"] == {CONF_LAN_TARGETS: "unknown_lan_device"}
+
+    @pytest.mark.asyncio
+    async def test_unknown_device_check_skipped_without_a_device_list(self):
+        """Options can be opened before discovery has populated devices.
+
+        With no device list to check against, a correct id is indistinguishable
+        from a typo, and rejecting would lock the user out of their own options.
+        """
+        flow, entry = _options_flow(devices={})
+        result = await _run_init(
+            flow,
+            entry,
+            {CONF_POLL_INTERVAL: 60, CONF_LAN_TARGETS: f"{self.DEVICE}=10.20.0.51"},
+        )
+        assert result["type"] == "create_entry"
+
+    @pytest.mark.asyncio
+    async def test_override_mixed_with_plain_targets(self):
+        flow, entry = _options_flow(devices={self.DEVICE: MagicMock(segment_count=0)})
+        raw = f"10.20.0.0/24, {self.DEVICE}=10.20.0.51!"
+        result = await _run_init(
+            flow, entry, {CONF_POLL_INTERVAL: 60, CONF_LAN_TARGETS: raw}
+        )
+        assert result["type"] == "create_entry"
+        assert result["data"][CONF_LAN_TARGETS] == raw
+
+
 class TestWaterDetectorPollIntervalOption:
     """The leak-poll interval is exposed and bounded in the options flow."""
 

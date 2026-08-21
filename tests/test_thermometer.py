@@ -1078,3 +1078,139 @@ class TestBatteryCandidateDevices:
         )
         coordinator = self._coordinator({light.device_id: light})
         assert coordinator._battery_candidate_devices() == set()
+
+
+class TestGatewayThermoFrameRouting:
+    """Applying a decoded H5044 thermo frame to the right entity (issue #151).
+
+    The frames name their sub-device by gateway slot only, so routing depends
+    on the ``sno`` the BFF device list reports for each thermometer.
+    """
+
+    HUB = "07:23:5C:E7:53:5F:6F:0A"
+    DEV = "03:55:01:25:00:00:00:0B:FF:FF:00:41:FF:FF:00:33"
+
+    def _coordinator(self, *, options=None, sku="H5310"):
+        from types import SimpleNamespace
+
+        from custom_components.govee.coordinator import GoveeCoordinator
+        from custom_components.govee.transport_health import TransportHealthTracker
+
+        coordinator = GoveeCoordinator.__new__(GoveeCoordinator)
+        coordinator._config_entry = SimpleNamespace(options=options or {})
+        coordinator._devices = {
+            self.DEV: GoveeDevice.synthetic_thermometer(
+                device_id=self.DEV, sku=sku, name="Pool", hub_device_id=self.HUB
+            )
+        }
+        coordinator._states = {}
+        coordinator._sno_to_thermo_id = {}
+        coordinator._sensor_reading_changed_at = {}
+        coordinator._display_fahrenheit = {}
+        coordinator._bff_thermometer_ids = set()
+        coordinator._transport = TransportHealthTracker()
+        coordinator.async_set_updated_data = lambda _data: None
+        return coordinator
+
+    def _frame(self, *, slot=0, temperature_c=24.9, battery=100):
+        return {
+            "_thermo_frame": True,
+            "hub_device_id": self.HUB,
+            "sensor_slot": slot,
+            "temperature_c": temperature_c,
+            "battery": battery,
+            "frame_ts": 0x6A7ECA3C,
+        }
+
+    def test_slot_is_mapped_from_bff_listing(self):
+        coordinator = self._coordinator()
+        coordinator._note_thermo_slot(self.DEV, {"hub_device_id": self.HUB, "sno": 0})
+        assert coordinator._sno_to_thermo_id == {(self.HUB, 0): self.DEV}
+
+    def test_listing_without_gateway_is_not_mapped(self):
+        """A direct-WiFi thermometer has no gateway slot to route to."""
+        coordinator = self._coordinator()
+        coordinator._note_thermo_slot(self.DEV, {"hub_device_id": "", "sno": 0})
+        coordinator._note_thermo_slot(self.DEV, {"hub_device_id": self.HUB})
+        assert coordinator._sno_to_thermo_id == {}
+
+    def test_frame_lands_on_the_mapped_device(self):
+        coordinator = self._coordinator()
+        coordinator._note_thermo_slot(self.DEV, {"hub_device_id": self.HUB, "sno": 0})
+        coordinator._handle_thermo_frame(self._frame())
+
+        state = coordinator._states[self.DEV]
+        assert state.battery == 100
+        assert state.online is True
+        assert self.DEV in coordinator._sensor_reading_changed_at
+
+    def test_unmapped_slot_is_dropped(self):
+        """A frame for a slot we have no thermometer for creates no state."""
+        coordinator = self._coordinator()
+        coordinator._handle_thermo_frame(self._frame(slot=3))
+        assert coordinator._states == {}
+
+    def test_reading_stored_as_fahrenheit_for_fahrenheit_skus(self):
+        """The H5310's entity converts °F→°C, so the frame must store °F.
+
+        Writing the decoded 24.9 °C straight through would surface the pool at
+        -4 °C — the same double-conversion class as #96/#83.
+        """
+        coordinator = self._coordinator()
+        coordinator._note_thermo_slot(self.DEV, {"hub_device_id": self.HUB, "sno": 0})
+        coordinator._handle_thermo_frame(self._frame(temperature_c=24.9))
+
+        stored = coordinator._states[self.DEV].sensor_temperature
+        assert abs(stored - 76.82) < 0.01
+        # Round-trips back to the decoded value through the entity's conversion.
+        assert abs((stored - 32.0) * (5.0 / 9.0) - 24.9) < 0.01
+
+    def test_reading_stored_as_celsius_when_account_reports_celsius(self):
+        """A °C account's fahOpen=false hint wins over the SKU allowlist."""
+        coordinator = self._coordinator()
+        coordinator._note_display_unit(self.DEV, {"fah_open": False})
+        coordinator._note_thermo_slot(self.DEV, {"hub_device_id": self.HUB, "sno": 0})
+        coordinator._handle_thermo_frame(self._frame(temperature_c=24.9))
+        assert coordinator._states[self.DEV].sensor_temperature == 24.9
+
+    def test_reading_stored_as_celsius_for_bff_owned_device(self):
+        """A BFF-owned device's entity trusts the stored value as °C."""
+        coordinator = self._coordinator()
+        coordinator._bff_thermometer_ids.add(self.DEV)
+        coordinator._note_thermo_slot(self.DEV, {"hub_device_id": self.HUB, "sno": 0})
+        coordinator._handle_thermo_frame(self._frame(temperature_c=24.9))
+        assert coordinator._states[self.DEV].sensor_temperature == 24.9
+
+    def test_frame_records_mqtt_transport_health(self):
+        """The reading arrived over MQTT — diagnostics should say so.
+
+        The #151 reporter saw ``mqtt.last_received = null`` while the frames
+        were being received and discarded.
+        """
+        coordinator = self._coordinator()
+        coordinator._note_thermo_slot(self.DEV, {"hub_device_id": self.HUB, "sno": 0})
+        coordinator._handle_thermo_frame(self._frame())
+
+        health = coordinator.get_transport_health(self.DEV, "mqtt")
+        assert health is not None
+        assert health.last_success_ts is not None
+
+    def test_unchanged_reading_does_not_restamp_change_time(self):
+        """Last Reading is a last-*change* timestamp, not last-poll (#83)."""
+        coordinator = self._coordinator()
+        coordinator._note_thermo_slot(self.DEV, {"hub_device_id": self.HUB, "sno": 0})
+        coordinator._handle_thermo_frame(self._frame(temperature_c=24.9))
+        first = coordinator._sensor_reading_changed_at[self.DEV]
+
+        coordinator._handle_thermo_frame(self._frame(temperature_c=24.9))
+        assert coordinator._sensor_reading_changed_at[self.DEV] == first
+
+        coordinator._handle_thermo_frame(self._frame(temperature_c=25.1))
+        assert coordinator._sensor_reading_changed_at[self.DEV] > first
+
+    def test_dispatched_from_the_mqtt_state_callback(self):
+        """The frame reaches its handler through the normal MQTT entry point."""
+        coordinator = self._coordinator()
+        coordinator._note_thermo_slot(self.DEV, {"hub_device_id": self.HUB, "sno": 0})
+        coordinator._on_mqtt_state_update(self.HUB, self._frame())
+        assert coordinator._states[self.DEV].sensor_temperature is not None

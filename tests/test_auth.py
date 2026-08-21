@@ -2135,6 +2135,9 @@ class TestBffThermoHygrometerDiscovery:
         # Gateway hub for via_device linkage (#86)
         assert s["hub_device_id"] == "11:22:33:44:55:66:77:88"
         assert s["hub_sku"] == "H5044"
+        # Gateway slot — routes the hub's multiSync thermo frames back to this
+        # device, which name their sub-device by slot only (#151)
+        assert s["sno"] == 0
         # Instrumentation only — captured, NOT applied to readings (#86)
         assert s["fah_open"] is True
         assert s["tem_cali"] == -30

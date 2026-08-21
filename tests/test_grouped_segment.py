@@ -68,6 +68,11 @@ def _make_grouped_segment_entity(
     entity._brightness = 255
     entity._rgb_color = (255, 255, 255)
     entity.async_write_ha_state = MagicMock()
+    # async_turn_on/off now also fire a dispatcher signal (SEGMENT_MODE_BOTH
+    # sync, #164-adjacent) — real async_dispatcher_send() needs hass.data to
+    # be an actual dict to safely no-op against zero listeners.
+    entity.hass = MagicMock()
+    entity.hass.data = {}
 
     return entity
 
@@ -258,6 +263,8 @@ class TestGroupedSegmentEntity:
         entity._brightness = 255
         entity._rgb_color = (255, 255, 255)
         entity.async_write_ha_state = MagicMock()
+        entity.hass = MagicMock()
+        entity.hass.data = {}
 
         # Simulate main entity turn_off (sends PowerCommand directly)
         async def main_turn_off() -> None:
@@ -279,3 +286,53 @@ class TestGroupedSegmentEntity:
         # Only PowerCommand should have been sent, not SegmentColorCommand
         assert len(commands_sent) == 1
         assert isinstance(commands_sent[0], PowerCommand)
+
+
+class TestGroupedSegmentOptimisticSync:
+    """SEGMENT_MODE_BOTH: the grouped entity broadcasts its state so the 12
+    individual segment entities don't drift from what the group last set."""
+
+    @pytest.mark.asyncio
+    async def test_turn_on_broadcasts_the_signal_for_this_device(self):
+        entity = _make_grouped_segment_entity()
+        with patch(
+            "custom_components.govee.platforms.grouped_segment.async_dispatcher_send"
+        ) as mock_send:
+            await entity.async_turn_on()
+
+        mock_send.assert_called_once_with(
+            entity.hass,
+            "govee_segments_optimistic_AA:BB:CC:DD:EE:FF:00:11",
+            True,
+            255,
+            (255, 255, 255),
+        )
+
+    @pytest.mark.asyncio
+    async def test_turn_off_broadcasts_off_state(self):
+        entity = _make_grouped_segment_entity()
+        with patch(
+            "custom_components.govee.platforms.grouped_segment.async_dispatcher_send"
+        ) as mock_send:
+            await entity.async_turn_off()
+
+        args = mock_send.call_args[0]
+        assert args[1] == "govee_segments_optimistic_AA:BB:CC:DD:EE:FF:00:11"
+        assert args[2] is False
+
+    @pytest.mark.asyncio
+    async def test_turn_off_still_broadcasts_when_api_call_skipped(self):
+        """Even the already-off/power-off-pending skip path must broadcast —
+        the individual entities need to hear "off" regardless of whether a
+        fresh command was actually sent (issue #164-adjacent)."""
+        entity = _make_grouped_segment_entity(
+            power_state=True, power_off_pending=True
+        )
+        with patch(
+            "custom_components.govee.platforms.grouped_segment.async_dispatcher_send"
+        ) as mock_send:
+            await entity.async_turn_off()
+
+        entity.coordinator.async_control_device.assert_not_called()
+        mock_send.assert_called_once()
+        assert mock_send.call_args[0][2] is False

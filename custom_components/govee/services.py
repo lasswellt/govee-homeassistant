@@ -42,6 +42,56 @@ SERVICE_SET_SEGMENT_COLOR_SCHEMA = vol.Schema(
 )
 
 
+async def async_set_segment_color_handler(
+    hass: HomeAssistant, call: ServiceCall
+) -> None:
+    """Handle ``govee.set_segment_color`` — module-level, testable.
+
+    Rejects any segment index outside the device's effective
+    ``segment_count`` (which already factors in ``SKU_SEGMENT_OVERRIDES``
+    for SKUs like H7075 that the API over-reports). On rejection the
+    service logs a warning and returns without dispatching — this keeps
+    the HA service call visible in the log instead of silently dropping
+    a command that the cloud would refuse anyway.
+    """
+    device_id = call.data["device_id"]
+    segments = call.data["segments"]
+    rgb = call.data["rgb_color"]
+
+    coordinator = _get_coordinator_for_device(hass, device_id)
+    if not coordinator:
+        _LOGGER.error("Device %s not found", device_id)
+        return
+
+    device = coordinator.devices.get(device_id)
+    if device is not None:
+        n = device.segment_count
+        bad = [i for i in segments if i >= n]
+        if bad:
+            _LOGGER.warning(
+                "Rejecting set_segment_color for device %s: indices %s are out "
+                "of range (segment_count=%s)",
+                device_id,
+                bad,
+                n,
+            )
+            return
+
+    color = RGBColor(r=rgb[0], g=rgb[1], b=rgb[2])
+    command = SegmentColorCommand(
+        segment_indices=tuple(segments),
+        color=color,
+    )
+
+    await coordinator.async_control_device(device_id, command)
+    _LOGGER.info(
+        "Set segments %s to color %s on device %s",
+        segments,
+        rgb,
+        device_id,
+    )
+
+
 async def async_setup_services(hass: HomeAssistant) -> None:
     """Set up Govee services."""
 
@@ -65,30 +115,9 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                         await coordinator.async_get_scenes(dev_id, refresh=True)
                 _LOGGER.info("Refreshed scenes for all devices")
 
-    async def async_set_segment_color(call: ServiceCall) -> None:
-        """Set color for specific segments."""
-        device_id = call.data["device_id"]
-        segments = call.data["segments"]
-        rgb = call.data["rgb_color"]
-
-        coordinator = _get_coordinator_for_device(hass, device_id)
-        if not coordinator:
-            _LOGGER.error("Device %s not found", device_id)
-            return
-
-        color = RGBColor(r=rgb[0], g=rgb[1], b=rgb[2])
-        command = SegmentColorCommand(
-            segment_indices=tuple(segments),
-            color=color,
-        )
-
-        await coordinator.async_control_device(device_id, command)
-        _LOGGER.info(
-            "Set segments %s to color %s on device %s",
-            segments,
-            rgb,
-            device_id,
-        )
+    async def _set_segment_color_bound(call: ServiceCall) -> None:
+        """Bind ``hass`` for the registered service handler."""
+        await async_set_segment_color_handler(hass, call)
 
     # Register services
     hass.services.async_register(
@@ -101,7 +130,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
     hass.services.async_register(
         DOMAIN,
         SERVICE_SET_SEGMENT_COLOR,
-        async_set_segment_color,
+        _set_segment_color_bound,
         schema=SERVICE_SET_SEGMENT_COLOR_SCHEMA,
     )
 

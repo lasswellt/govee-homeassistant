@@ -759,7 +759,7 @@ class GoveeAuthClient:
         Returns:
             List of dicts, each with keys: device_id, name, sku, sw_version,
             hw_version, battery, online, temperature (°C or None), humidity
-            (%RH or None).
+            (%RH or None), hub_device_id, hub_sku, sno.
         """
         if self._session is None:
             self._session = aiohttp.ClientSession()
@@ -880,6 +880,10 @@ class GoveeAuthClient:
                             "humidity": _bff_reading(ld, _BFF_HUMIDITY_KEYS),
                             "hub_device_id": gateway_info.get("device", ""),
                             "hub_sku": gateway_info.get("sku", ""),
+                            # Slot on the gateway. Routes the hub's multiSync
+                            # thermo frames back to this device (#151) — the
+                            # frames identify the sub-device by slot only.
+                            "sno": settings.get("sno"),
                             # Instrumentation only — not applied to readings (#86).
                             "fah_open": fah_open,
                             "tem_cali": tem_cali,

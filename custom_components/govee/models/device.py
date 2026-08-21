@@ -12,7 +12,7 @@ from typing import Any
 
 from homeassistant.helpers.device_registry import DeviceInfo
 
-from ..const import MAIN_LIGHT_TOGGLE_SKUS
+from ..const import MAIN_LIGHT_TOGGLE_SKUS, SKU_SEGMENT_OVERRIDES
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -448,6 +448,13 @@ class GoveeDevice:
         nothing — and each is replaced by something that works. The main panel
         gets a dedicated light entity, and the "background light" is the RGBIC
         ring, already controlled by the segment entities (issue #131).
+
+        Dropping them removes two switch entities that existing installs on
+        those SKUs already have. That is deliberate — they never did anything —
+        but it is a breaking change for anyone who wired an automation to one:
+        the automation stops firing rather than erroring, and the registry rows
+        linger as orphans until deleted by hand. Release notes for the version
+        that first ships a new SKU here must say so.
         """
         pattern = re.compile(r"[a-z]+LightToggle")
         dead_on_this_sku = (
@@ -1144,11 +1151,46 @@ class GoveeDevice:
 
     @property
     def segment_count(self) -> int:
-        """Get number of segments for RGBIC devices."""
+        """Get number of segments for RGBIC devices.
+
+        Priority order:
+
+        1. ``SKU_SEGMENT_OVERRIDES`` — authoritative for known SKUs (e.g. H7075
+           has 3 physical sections even though the API reports 15).
+        2. ``fields[].size.max`` — defensive clamp on the API-reported count,
+           since ``size.max`` is the protocol-level array ceiling that matches
+           physical sections on devices where ``elementRange.max`` over-reports.
+        3. The parser's raw ``elementRange.max + 1`` (or ``segmentCount``).
+
+        The size.max clamp is applied to the API count *before* the override
+        lookup so unknown SKUs that follow the same over-reporting pattern as
+        the H7075 are caught automatically, while known SKUs still trust the
+        explicit override entry.
+        """
         for cap in self.capabilities:
             if cap.is_segment_color:
-                seg = SegmentCapability.from_capability({"parameters": cap.parameters})
-                return seg.segment_count if seg else 0
+                params = cap.parameters
+                seg = SegmentCapability.from_capability({"parameters": params})
+                api_count = seg.segment_count if seg else 0
+
+                # Defensive clamp: the API's size.max is the protocol-level
+                # array-size ceiling, which matches the physical sections on
+                # SKUs like the H7075 where elementRange.max over-reports.
+                size_max: int | None = None
+                for f in params.get("fields", []):
+                    if f.get("fieldName") == "segment":
+                        size = f.get("size") or {}
+                        if "max" in size:
+                            size_max = size["max"]
+                            break
+
+                # Apply size.max clamp first so it acts as an automatic
+                # safety net for unknown SKUs; then let SKU_SEGMENT_OVERRIDES
+                # override as the authoritative source for known ones.
+                if size_max is not None:
+                    api_count = min(api_count, size_max)
+                effective = SKU_SEGMENT_OVERRIDES.get(self.sku.upper(), api_count)
+                return effective
         return 0
 
     def get_capability(self, cap_type: str, instance: str) -> GoveeCapability | None:

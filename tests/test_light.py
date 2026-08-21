@@ -544,3 +544,49 @@ class TestBrightnessConversion:
         assert entity._device_to_ha_brightness(254) == 255
         assert entity._device_to_ha_brightness(127) == 127
         assert entity._device_to_ha_brightness(0) == 0
+
+
+class TestSegmentModeSetup:
+    """async_setup_entry's per-device segment_mode dispatch, incl. SEGMENT_MODE_BOTH."""
+
+    async def _setup(self, device, segment_mode):
+        from custom_components.govee import light as light_mod
+
+        coordinator = MagicMock()
+        coordinator.devices = {device.device_id: device}
+        entry = MagicMock()
+        entry.runtime_data = coordinator
+        entry.options = {"segment_mode_by_device": {device.device_id: segment_mode}}
+        added: list = []
+        await light_mod.async_setup_entry(
+            MagicMock(), entry, lambda ents: added.extend(ents)
+        )
+        return added
+
+    def _counts(self, added):
+        grouped = sum(type(e).__name__ == "GoveeGroupedSegmentEntity" for e in added)
+        individual = sum(type(e).__name__ == "GoveeSegmentEntity" for e in added)
+        return grouped, individual
+
+    async def test_grouped_mode_creates_only_the_grouped_entity(
+        self, mock_rgbic_device
+    ):
+        added = await self._setup(mock_rgbic_device, "grouped")
+        assert self._counts(added) == (1, 0)
+
+    async def test_individual_mode_creates_only_individual_entities(
+        self, mock_rgbic_device
+    ):
+        added = await self._setup(mock_rgbic_device, "individual")
+        assert self._counts(added) == (0, mock_rgbic_device.segment_count)
+
+    async def test_both_mode_creates_grouped_and_individual_entities(
+        self, mock_rgbic_device
+    ):
+        """SEGMENT_MODE_BOTH: the grouped entity is additive, not a replacement."""
+        added = await self._setup(mock_rgbic_device, "both")
+        assert self._counts(added) == (1, mock_rgbic_device.segment_count)
+
+    async def test_disabled_mode_creates_no_segment_entities(self, mock_rgbic_device):
+        added = await self._setup(mock_rgbic_device, "disabled")
+        assert self._counts(added) == (0, 0)
