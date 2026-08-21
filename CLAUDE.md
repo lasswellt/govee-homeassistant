@@ -240,6 +240,8 @@ RGBIC segment count is in `fields[].elementRange.max + 1`:
 segment_count = element_range["max"] + 1
 ```
 
+For SKUs the API over-reports (H7075: `elementRange.max=14`, device has 3 sections), `GoveeDevice.segment_count` clamps the parser-derived count against `fields[].size.max` first (auto safety net for unknown SKUs) and then applies `SKU_SEGMENT_OVERRIDES` in `const.py` as the authoritative override for known SKUs — both live in `custom_components/govee/models/device.py:1132+`. To add a new SKU: issue + one-line entry + test case, mirroring `FAHRENHEIT_REPORTING_SKUS` (issues #115 / #128 / #129).
+
 ## API Limitations & State Handling
 
 ### Scene State

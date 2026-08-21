@@ -2497,39 +2497,57 @@ Battery thermo-hygrometer that reaches the cloud through an **H5044 gateway**; n
 - The pool probe is **temperature-only**: `sensorHumidity` comes back as `655.35` (= `0xFFFF / 100`, a "no-data" sentinel). Treat the sentinel as unavailable rather than a real 655% reading (#100).
 - Rides the gateway with **no direct MQTT topic** (`device_topic_count=0`); the H5044 pushes 20-byte `ee34…` multi-sync frames. Richer cached state (`tem`/`hum`/`avgDay…`) is in BFF `lastDeviceData`.
 
-##### Thermo `ee34` frame layout — partially decoded (issues #151, #157)
+##### Thermo `ee34` frame layout — decoded (issues #151, #157)
 
-An H5044 bridging an H5310 pushes an `ee34` frame every ~10 minutes. The
-integration currently decodes `0xEE 0x34` **only** as a leak/dry report, so these
-frames are recorded into the `recent_multisync` diagnostics ring and then
-discarded — which is why a gateway-bridged H5310 whose BFF `lastDeviceData` is
-empty has no reading source at all (#151).
-
-Analysis of 64 consecutive frames from one H5310 (#157 diagnostics, 2026-08-11):
+An H5044 bridging an H5310 pushes an `ee34` frame every ~10 minutes (some
+accounts see one per hour, at hh:56). These frames are the **origin** of the
+reading everything else mirrors: the cloud copy in BFF `lastDeviceData` lands
+5–7 minutes later, and for some accounts Govee never fills it at all, leaving a
+gateway-bridged H5310 with no reading source whatsoever (#151).
 
 ```
-ee 34 00 08 00 64 25 14 A8 6A 7A B5 BE C5 82 CC FF 20 00 60
-└──┬──┘ └─────┬─────┘ └┬ └─────┬─────┘ └┬ └────┬────┘ └┬ └┬
- header    constant    ?    epoch ts    ?   constant   ?  cksum
+ee 34 00 08 00 64 29 15 c2 6a 7e ca 3c 89 ba cc ff 80 00 2a
+└──┬──┘ │  │  │  └──┬──┘ └────┬────┘ │  └────┬────┘ └─┬─┘ │
+ header │  │  │   per-dev   epoch ts   │    per-dev    ?  cksum
+        │  │  battery              temperature
+        │  sub-device class
+        slot (sno)
 ```
 
 | Byte | Finding |
 |------|---------|
-| `0-1` | `0xEE 0x34` header |
-| `2-7` | Constant across every frame (`00 08 00 64 25 14`) — note `0x64` sits where the leak decoder reads battery |
-| `8` | Varies 147-168 across the day, **not** monotone with temperature |
-| `9-12` | **Big-endian Unix epoch seconds**, matching the receive time exactly — confirmed on all 64 frames |
-| `13` | Varies 196-201, **rising monotonically as the day warms** — the temperature candidate |
-| `14-18` | Constant (`82 CC FF 20 00`) |
+| `0-1` | `0xEE 0x34` header — shared with leak reports |
+| `2` | Slot (`sno`) of the sub-device on the gateway |
+| `3` | **Sub-device class: `0x02` = leak sensor, `0x08` = thermometer.** The only byte separating the two frame types |
+| `4-5` | `00 64` — byte 5 is battery %, same slot both frame types use |
+| `6-8` | Per-device constants; byte `8` varies without tracking temperature |
+| `9-12` | **Big-endian Unix epoch seconds.** Within 3 s of receive time across all 44 frames of the #151 capture |
+| `13` | **Temperature: `T[°C] = (byte13 + 112) / 10`** |
+| `14-18` | Per-device constants (`ba cc ff 80 00` here, `82 cc ff 20 00` on the #157 unit) |
 | `19` | Checksum (XOR-style, varies with payload) |
 
-**Not yet decodable.** Byte `13` is temperature-shaped, but the capture carries
-only ONE labelled reading (88.34 °F at the end of the window), and both
-`°F + 113` and `°C + 170` reproduce it exactly. The day's 5-unit swing fits °F
-better than °C for a pool, but that is an argument from plausibility, not proof.
-Shipping either would surface confidently wrong pool temperatures, so the decode
-stays unimplemented until a capture pairs several frames with the temperature the
-Govee app showed at those times.
+**How byte 13 was settled.** @Araknus13 paired 30 on-the-hour frames against
+their own logged cloud history for the same probe — pool water, 24.4–29.5 °C
+over 31 hours. Least squares gives `T = 0.10010 * b13 + 11.1647`, i.e. exactly
+0.1 °C per count, reproducing every point within 0.1 K. The two candidates from
+#157's single-labelled-point capture miss the same data by 19.3 K (`°F + 113`)
+and 38.1 K (`°C + 170`); they had looked indistinguishable only because they
+intersect at 31.25 °C = 88.25 °F, right where that lone 88.34 °F reading sat.
+The formula independently reproduces that #157 point from a different account.
+
+**Known limits.** Byte 13 is unsigned, so the representable span is
+11.2–36.7 °C and the validating capture only covers 24–30 °C — behaviour at
+the ends (whether the byte saturates, or a sign/scale switch exists for
+sub-11 °C readings) is unverified. `0x00` and `0xFF` are treated as the
+frame's own no-data markers rather than 11.2/36.7 °C readings.
+
+**Implementation.** `_decode_thermo_frame` in `api/mqtt.py` diverts byte-3
+`0x08` frames ahead of the leak branch — leak decoding stays the default for
+every other sub-device class, so an unknown leak SKU can never be silenced by
+the discrimination. `coordinator._handle_thermo_frame` routes the reading via
+`(gateway, sno) → device_id` and normalizes the decoded °C into the unit the
+entity reads back, so the frame path coexists with the Developer poll instead
+of claiming ownership of the device.
 
 #### H616C — LED Strip (NOT yet in Developer API backend)
 
@@ -2630,6 +2648,100 @@ DIY Styles:
 - `0x02` = Flicker
 - `0x03` = Marquee
 - `0x04` = Music reactive
+
+### 9.6 SKU Segment Count Overrides
+
+The Govee API exposes RGBIC segment counts through three different shapes
+inside `devices.capabilities.segment_color_setting.parameters`:
+
+1. A direct `segmentCount` integer.
+2. `fields[].elementRange.max` — a **0-based** max index (so `max = 14` ⇒ 15
+   segments).
+3. `fields[].size.max` — the protocol-level array-size ceiling.
+
+For most SKUs the parser picks the first shape that yields a value, and
+`elementRange.max + 1` is what the device actually has. **A handful of SKUs
+over-report in `elementRange` while `size.max` matches the physical sections.**
+The H7075 is the first observed case: `elementRange.max = 14` (so the
+parser would return 15) but `size.max = 3` and the device really only has
+3 physical sections. Spawning 15 segment entities on a 3-section wall light
+produces 12 phantom `light.<name>_segment_{3..14}` entities that the
+cloud silently rejects, which then get stuck on whatever color the
+optimistic state happened to set.
+
+The integration handles this with a two-layer correction in
+`custom_components/govee/models/device.py` (`GoveeDevice.segment_count`),
+applied in this order:
+
+1. **Defensive clamp on the API count.** When `fields[].size.max` is
+   present, the parser-derived count is clamped with
+   `min(api_count, size.max)`. This is the *automatic* safety net — it
+   catches any SKU that follows the H7075 over-reporting pattern without
+   requiring a manual dict entry. The H7075 itself would already come
+   out at 3 from this clamp alone; the override (step 2) makes the
+   intent explicit and survives API shape changes.
+
+   **Caveat.** `size.max` is documented in the API as the maximum array
+   *length* accepted in one command, not the segment count. On every
+   capture we hold, the two agree (`size.max == elementRange.max + 1`),
+   so the clamp only fires on the inconsistency that signals the bug.
+   Should a device ever advertise a genuine per-command batch limit
+   below its real segment count, the clamp would remove working
+   entities — pin the true count in `SKU_SEGMENT_OVERRIDES` to override
+   it.
+
+2. **Authoritative override.** `SKU_SEGMENT_OVERRIDES` (in
+   `custom_components/govee/const.py`) maps a SKU to the physical
+   segment count, compared case-insensitively against `GoveeDevice.sku`.
+   When a SKU is present, the override wins over any clamp-derived
+   value. The shipped entries are:
+
+   ```python
+   SKU_SEGMENT_OVERRIDES: Final = {
+       "H7075": 3,  # API reports 15 (elementRange.max=14), device has 3 physical sections
+       "H7076": 4,  # API reports 15 AND size.max 15; only indices 0-3 do anything
+   }
+   ```
+
+**When the clamp can't help.** The H7076 Outdoor Up/Down Wall Light is
+the counter-case to the H7075: it reports `elementRange.max = 14` *and*
+`size.max = 15`, so the two agree and the clamp is a no-op. Only indices
+0–3 physically move the light — `0` = top, `1` = bottom, `2` = part of
+the left side, `3` = everything else — while `4`–`14` are accepted with
+HTTP 200 `"success"` and do nothing (#160). A SKU like this can only be
+corrected by an explicit override entry.
+
+Note that the override caps entities at the count the *cloud API* can
+address, which is not necessarily what the Govee app can reach. The
+H7076's app exposes 17 selectable segments per side over BLE; the cloud
+`segmentedColorRgb` capability collapses all of that into 4 indices, and
+no integration change can recover the finer granularity while the
+capability is the only channel available.
+
+The `govee.set_segment_color` service also validates its `segments` list
+against the same effective `segment_count` and logs a warning + early
+returns for out-of-range indices, instead of dispatching a command the
+cloud would refuse.
+
+**Adding a new SKU.** When you observe a SKU whose `elementRange.max` is
+higher than its physical section count, open a GitHub issue with the
+SKU, the captured API response, and the confirmed section count from the
+official Govee Android app. The change is a one-line entry in
+`SKU_SEGMENT_OVERRIDES` (with a rationale comment matching the H7075
+style), a test case in `TestSegmentCountOverride`, and a release note.
+Follow the same workflow as `FAHRENHEIT_REPORTING_SKUS` in the same
+file (issues #115 / #128 / #129 are precedents).
+
+**Orphan entities after upgrading.** The first time an existing H7075
+install upgrades to a release that includes this fix, the entity
+registry keeps the 12 phantom `light.<name>_segment_{4..15}` entries
+that the previous (unfixed) version created. They have to be manually
+deleted from **Settings → Devices & Services → Entities** (filter by
+`<device>_segment`, select each, **Delete**). This is a one-time
+operation per affected device — the fix only prevents *future* phantom
+entities; it does not retroactively purge existing ones.
+
+Reference: #160 (H7076), PR #161 (H7075).
 
 ---
 

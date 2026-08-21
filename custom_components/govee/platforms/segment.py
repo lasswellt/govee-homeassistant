@@ -19,12 +19,15 @@ from homeassistant.components.light import (  # type: ignore[attr-defined]
     ColorMode,
     LightEntity,
 )
+from homeassistant.core import callback
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from ..const import SUFFIX_SEGMENT
 from ..coordinator import GoveeCoordinator
 from ..entity import GoveeEntity
 from ..models import GoveeDevice, RGBColor, SegmentColorCommand
+from .grouped_segment import segments_optimistic_signal
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -165,7 +168,13 @@ class GoveeSegmentEntity(GoveeEntity, LightEntity, RestoreEntity):
         self.async_write_ha_state()
 
     async def async_added_to_hass(self) -> None:
-        """Restore previous state."""
+        """Restore previous state, then listen for grouped-entity writes.
+
+        SEGMENT_MODE_BOTH runs this entity alongside GoveeGroupedSegmentEntity
+        for the same segment. Govee never reports real per-segment state, so
+        without this a `light.turn_off` on the grouped "all segments" entity
+        would leave this entity still optimistically showing "on".
+        """
         await super().async_added_to_hass()
 
         last_state = await self.async_get_last_state()
@@ -177,3 +186,24 @@ class GoveeSegmentEntity(GoveeEntity, LightEntity, RestoreEntity):
 
             if last_state.attributes.get("rgb_color"):
                 self._rgb_color = tuple(last_state.attributes["rgb_color"])
+
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                segments_optimistic_signal(self._device_id),
+                self._handle_group_update,
+            )
+        )
+
+    @callback
+    def _handle_group_update(
+        self,
+        is_on: bool,
+        brightness: int,
+        rgb_color: tuple[int, int, int],
+    ) -> None:
+        """Mirror a write made through the grouped "all segments" entity."""
+        self._is_on = is_on
+        self._brightness = brightness
+        self._rgb_color = rgb_color
+        self.async_write_ha_state()

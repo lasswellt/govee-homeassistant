@@ -2043,6 +2043,61 @@ class TestBffReadingHelper:
         )
 
 
+class TestBffInBodyErrorStatus:
+    """A BFF error returned with HTTP 200 must raise, not read as "no devices".
+
+    Govee answers an expired or rejected token with HTTP 200 and an error
+    envelope — ``{"status": 401, "message": "..."}`` with no ``data`` key at
+    all. Before #132 every caller read ``data["data"]["devices"]``, got ``[]``
+    from the missing key, and carried on as though the account owned no
+    devices: battery levels and gateway-bridged readings silently stopped
+    while MQTT (certificate-authenticated, so unaffected) kept the integration
+    looking healthy.
+    """
+
+    ERROR_BODY = {"status": 401, "message": "token is invalid"}
+
+    @pytest.mark.asyncio
+    async def test_thermo_list_raises_auth_error_on_body_401(self):
+        session = make_session_get(make_mock_response(200, self.ERROR_BODY))
+        client = GoveeAuthClient(session=session)
+        with pytest.raises(GoveeAuthError):
+            await client.fetch_bff_thermo_hygrometers(token="tok")
+
+    @pytest.mark.asyncio
+    async def test_leak_list_raises_auth_error_on_body_401(self):
+        session = make_session_get(make_mock_response(200, self.ERROR_BODY))
+        client = GoveeAuthClient(session=session)
+        with pytest.raises(GoveeAuthError):
+            await client.fetch_bff_leak_sensors(token="tok")
+
+    @pytest.mark.asyncio
+    async def test_non_401_body_status_raises_api_error(self):
+        session = make_session_get(
+            make_mock_response(200, {"status": 500, "message": "server busy"})
+        )
+        client = GoveeAuthClient(session=session)
+        with pytest.raises(GoveeApiError):
+            await client.fetch_bff_thermo_hygrometers(token="tok")
+
+    @pytest.mark.asyncio
+    async def test_success_status_is_not_treated_as_an_error(self):
+        body = _bff_response([])
+        body["status"] = 200
+        session = make_session_get(make_mock_response(200, body))
+        client = GoveeAuthClient(session=session)
+        assert await client.fetch_bff_thermo_hygrometers(token="tok") == []
+
+    @pytest.mark.asyncio
+    async def test_missing_status_is_not_treated_as_an_error(self):
+        """Not every BFF endpoint sets a status on success."""
+        body = _bff_response([])
+        body.pop("status", None)
+        session = make_session_get(make_mock_response(200, body))
+        client = GoveeAuthClient(session=session)
+        assert await client.fetch_bff_thermo_hygrometers(token="tok") == []
+
+
 class TestBffThermoHygrometerDiscovery:
     """H5301 thermo-hygrometers are discovered via the BFF list (issue #86)."""
 
@@ -2135,6 +2190,9 @@ class TestBffThermoHygrometerDiscovery:
         # Gateway hub for via_device linkage (#86)
         assert s["hub_device_id"] == "11:22:33:44:55:66:77:88"
         assert s["hub_sku"] == "H5044"
+        # Gateway slot — routes the hub's multiSync thermo frames back to this
+        # device, which name their sub-device by slot only (#151)
+        assert s["sno"] == 0
         # Instrumentation only — captured, NOT applied to readings (#86)
         assert s["fah_open"] is True
         assert s["tem_cali"] == -30

@@ -93,7 +93,7 @@
           "water_detector_poll_interval": "How often standalone Govee water/leak detectors (e.g. H5054) are checked for a leak. These RF-only sensors have no push channel, so a leak surfaces with up to this much delay. Lower reacts faster but makes more account API calls; raise it if you have many detectors. Range 60\u20133600 seconds, default 120. Requires email/password login; ignored if you have no such detectors.",
           "enable_groups": "Surfaces the device groups you created in the Govee app as single light entities. A command to a group is sent once and synced to all members by Govee's cloud, so it syncs better than grouping the lights with Home Assistant helpers. State is best-effort (groups can't be polled), and group lights only support power/brightness/color.",
           "enable_mqtt_control": "Routes power/brightness/color commands through Govee's MQTT channel instead of the REST cloud API, reducing latency and bypassing REST rate limits. Requires email/password login (MQTT credentials). Falls back to REST automatically when MQTT is unavailable. Experimental — uses an undocumented channel; leave off if commands behave unexpectedly.",
-          "lan_targets": "Only needed when LAN-enabled Govee devices are on a different subnet/VLAN than Home Assistant, so the local discovery scan can't reach them. Enter a comma-separated list of device IPs (10.20.0.51), broadcast addresses (10.20.0.255), and/or subnets in CIDR (10.20.0.0/24, /24 or smaller). Subnets are scanned device-by-device since most routers drop cross-VLAN broadcasts. Leave blank if all devices share Home Assistant's network."
+          "lan_targets": "Only needed when LAN-enabled Govee devices are on a different subnet/VLAN than Home Assistant, so the local discovery scan can't reach them. Enter a comma-separated list of device IPs (10.20.0.51), broadcast addresses (10.20.0.255), and/or subnets in CIDR (10.20.0.0/24, /24 or smaller). Subnets are scanned device-by-device since most routers drop cross-VLAN broadcasts. Leave blank if all devices share Home Assistant's network. Advanced: if a device still isn't found because its scan reply can't cross the VLAN, pin it with device_id=ip (AA:BB:CC:DD:EE:FF:00:11=10.20.0.51) to skip discovery for that device. Add a trailing ! (=10.20.0.51!) only for firmware that accepts LAN commands but never answers a status read \u2014 that turns off every LAN health check for the device, so a wrong IP will look like it is working while the device never responds."
         }
       },
       "select_segment_devices": {
@@ -112,7 +112,8 @@
       }
     },
     "error": {
-      "invalid_lan_targets": "One of the LAN device addresses is not a valid IP, broadcast address, or subnet (/24 or smaller). Example: 10.20.0.51, 10.20.0.255, 10.20.0.0/24"
+      "invalid_lan_targets": "One of the LAN device addresses is not a valid IP, broadcast address, subnet (/24 or smaller), or device_id=ip override. Example: 10.20.0.51, 10.20.0.255, 10.20.0.0/24, AA:BB:CC:DD:EE:FF:00:11=10.20.0.51",
+      "unknown_lan_device": "A device_id=ip override names a device that isn't on this Govee account. Copy the device ID exactly as it appears in the device's diagnostics (for example AA:BB:CC:DD:EE:FF:00:11)."
     }
   },
   "entity": {
@@ -214,6 +215,9 @@
       },
       "sensor_temperature": {
         "name": "Temperature"
+      },
+      "sensor_temperature_2": {
+        "name": "Probe 2 temperature"
       },
       "sensor_humidity": {
         "name": "Humidity"
@@ -394,6 +398,10 @@
     "mqtt_2fa_required": {
       "title": "Govee account requires verification",
       "description": "Your Govee account now requires email verification (2FA) to enable real-time MQTT updates for {entry_title}. Go to the integration page and select **Reconfigure** to re-enter your credentials with a verification code.\n\nThe integration will continue to work using polling until this is resolved."
+    },
+    "mqtt_token_expired": {
+      "title": "Govee account sign-in expired",
+      "description": "The saved Govee account sign-in for {entry_title} has expired, and signing in again was rejected \u2014 usually because the account password changed.\n\nWhile it is expired, battery levels and readings for sensors that reach Govee through a gateway (for example an H5310 or H5112 behind an H5044) stop updating. Lights and everything using the API key are unaffected.\n\nGo to the integration page and select **Reconfigure** to enter the current account password."
     }
   }
 }

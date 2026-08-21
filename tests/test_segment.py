@@ -230,3 +230,30 @@ class TestSegmentTurnOffLogic:
         # Only PowerCommand should have been sent, not SegmentColorCommand
         assert len(commands_sent) == 1
         assert isinstance(commands_sent[0], PowerCommand)
+
+
+class TestSegmentOptimisticSync:
+    """SEGMENT_MODE_BOTH: a segment mirrors whatever the grouped "all
+    segments" entity last broadcast, since Govee gives no real per-segment
+    readback to arbitrate between them (issue #164-adjacent)."""
+
+    def test_handle_group_update_mirrors_state_and_writes(self):
+        entity = _make_segment_entity()
+
+        entity._handle_group_update(False, 128, (10, 20, 30))
+
+        assert entity._is_on is False
+        assert entity._brightness == 128
+        assert entity._rgb_color == (10, 20, 30)
+        entity.async_write_ha_state.assert_called_once()
+
+    def test_handle_group_update_on(self):
+        entity = _make_segment_entity()
+        entity._is_on = False
+        entity._brightness = 0
+
+        entity._handle_group_update(True, 255, (255, 255, 255))
+
+        assert entity._is_on is True
+        assert entity._brightness == 255
+        assert entity._rgb_color == (255, 255, 255)

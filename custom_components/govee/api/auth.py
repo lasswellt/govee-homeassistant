@@ -243,6 +243,19 @@ _BFF_HUMIDITY_KEYS = (
     ("sensorHumidity", False),
     ("currentHumidity", False),
 )
+# Second temperature probe. Dual-probe SKUs (the H5112 fridge/freezer
+# thermometer, issue #150) report each probe separately: ``tem`` is probe 1 and
+# ``tem2`` is probe 2, and the settings carry a matching second set of
+# ``probeName2`` / ``temMin2`` / ``temMax2`` / ``temCali2`` fields.
+#
+# Either probe can be absent independently — an unplugged probe 1 reports the
+# ``-1`` sentinel while probe 2 reads normally. Reporter diagnostics on #150
+# showed exactly that on two of three units, which is why they surfaced no
+# temperature at all despite a working probe.
+_BFF_TEMP2_KEYS = (
+    ("tem2", True),
+    ("temperature2", False),
+)
 
 # u16 "no reading / no sensor" sentinels Govee reports for a missing centi value
 # (e.g. the H5310 pool thermometer has no hygrometer and reports hum == 0xFFFF,
@@ -280,6 +293,51 @@ def _bff_reading(
             value /= 100.0
         return value
     return None
+
+
+def _raise_for_bff_status(data: Any, context: str) -> None:
+    """Raise when a BFF response carries an error in its *body* (issue #132).
+
+    Govee's BFF answers an expired or rejected token with **HTTP 200** and an
+    error envelope — ``{"status": 401, "message": "..."}`` with no ``data`` key
+    at all. Every device-list caller then reads ``data["data"]["devices"]``,
+    gets ``[]`` from the missing key, and carries on as though the account
+    genuinely owns no devices.
+
+    Nothing about that is visible to the user. Battery levels and
+    gateway-bridged readings simply stop, MQTT keeps working (it authenticates
+    with long-lived certificates rather than this token), and the integration
+    reports itself healthy. Two accounts on #132 sat in exactly that state,
+    both showing a ``{"status": "int", "message": "str"}`` response skeleton
+    with no ``devices`` anywhere in it.
+
+    The login path has always checked the in-body status; the BFF paths never
+    did. This is that check, shared by all of them.
+
+    Args:
+        data: Parsed JSON body.
+        context: Short description of the call, used in the error message.
+
+    Raises:
+        GoveeAuthError: Body status is 401 — the token is no longer accepted.
+        GoveeApiError: Body status is any other non-success value.
+    """
+    if not isinstance(data, dict):
+        return
+    status = data.get("status")
+    # A missing status is fine: not every BFF endpoint sets one on success.
+    if status is None or status == 200:
+        return
+    message = data.get("message") or f"status {status}"
+    _LOGGER.debug(
+        "BFF %s returned an in-body error: status=%s message=%r",
+        context,
+        status,
+        message,
+    )
+    if status == 401:
+        raise GoveeAuthError(f"BFF {context} rejected the token: {message}", code=401)
+    raise GoveeApiError(f"BFF {context} failed: {message}", code=status)
 
 
 def _derive_client_id(email: str) -> str:
@@ -663,6 +721,7 @@ class GoveeAuthClient:
                 raise GoveeApiError(
                     f"BFF device list failed: {message}", code=response.status
                 )
+            _raise_for_bff_status(data, "device topics")
             devices = data.get("data", {}).get("devices", [])
             self._gateway_routes = self._extract_gateway_routes(devices)
             return self._extract_topics_from_devices(devices)
@@ -758,8 +817,9 @@ class GoveeAuthClient:
 
         Returns:
             List of dicts, each with keys: device_id, name, sku, sw_version,
-            hw_version, battery, online, temperature (°C or None), humidity
-            (%RH or None).
+            hw_version, battery, online, temperature (°C or None),
+            temperature_2 (°C or None — dual-probe SKUs, #150), humidity
+            (%RH or None), hub_device_id, hub_sku, sno.
         """
         if self._session is None:
             self._session = aiohttp.ClientSession()
@@ -792,6 +852,7 @@ class GoveeAuthClient:
                         code=response.status,
                     )
 
+                _raise_for_bff_status(data, "thermo-hygrometer list")
                 devices = data.get("data", {}).get("devices", [])
                 # Retain for the diagnostics census (#87 / #86 triage).
                 self._last_bff_raw_devices = (
@@ -877,9 +938,14 @@ class GoveeAuthClient:
                             "battery": settings.get("battery"),
                             "online": ld.get("online", True),
                             "temperature": _bff_reading(ld, _BFF_TEMP_KEYS),
+                            "temperature_2": _bff_reading(ld, _BFF_TEMP2_KEYS),
                             "humidity": _bff_reading(ld, _BFF_HUMIDITY_KEYS),
                             "hub_device_id": gateway_info.get("device", ""),
                             "hub_sku": gateway_info.get("sku", ""),
+                            # Slot on the gateway. Routes the hub's multiSync
+                            # thermo frames back to this device (#151) — the
+                            # frames identify the sub-device by slot only.
+                            "sno": settings.get("sno"),
                             # Instrumentation only — not applied to readings (#86).
                             "fah_open": fah_open,
                             "tem_cali": tem_cali,
@@ -958,6 +1024,7 @@ class GoveeAuthClient:
                     )
 
                 sensors: list[dict[str, Any]] = []
+                _raise_for_bff_status(data, "leak-sensor list")
                 devices = data.get("data", {}).get("devices", [])
                 # Retain for the diagnostics census + skeleton (PII-free; #87).
                 self._last_bff_raw_devices = (
@@ -1204,6 +1271,7 @@ class GoveeAuthClient:
                         f"BFF device list failed: {message}", code=response.status
                     )
 
+                _raise_for_bff_status(data, "device list")
                 for device in data.get("data", {}).get("devices", []):
                     raw_id = device.get("device", "")
                     key = raw_id.replace(":", "").upper()
