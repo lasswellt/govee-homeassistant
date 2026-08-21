@@ -48,6 +48,39 @@ RECONNECT_MAX = 300
 CONNECTION_TIMEOUT = 60
 MAX_RECONNECT_ATTEMPTS = 50
 
+# --- multiSync 0xEE 0x34 sub-device frames ------------------------------------
+#
+# A leak hub (H5043/H5044) wraps its BLE sub-devices' reports in ``multiSync``
+# 0xEE 0x34 frames. Byte 3 identifies the sub-device class, and it is the ONLY
+# byte separating a leak report from a thermometer report — both share the
+# 0xEE 0x34 header and the byte-5 battery slot:
+#
+#   leak (H5054/H5058/H5059):  ee 34 <slot> 02 00 64 ...   (issue #87)
+#   thermo (H5310 via H5044):  ee 34 <slot> 08 00 64 ...   (issues #151, #157)
+#
+# Only the exact thermo signature is diverted; anything else keeps the leak
+# path, so an unknown leak SKU can never be silenced by this discrimination.
+MULTISYNC_SUBTYPE_THERMO = 0x08
+
+# Thermo frame temperature encoding (issue #151).
+#
+#   T[°C] = (byte13 + THERMO_TEMP_OFFSET) / 10
+#
+# Established by @Araknus13 against 30 on-the-hour frames paired with the
+# cloud reading they produced, spanning 24.4-29.5 °C over 31 hours: least
+# squares gives T = 0.10010 * b13 + 11.1647, reproducing every point within
+# 0.1 K. Two earlier candidates from the single-labelled-point capture in #157
+# (°F + 113 and °C + 170) miss the same data by 19.3 K and 38.1 K — they had
+# been indistinguishable only because they intersect at 31.25 °C, right where
+# that lone reading sat.
+#
+# The byte is unsigned, so the representable span is 11.2-36.7 °C, and the
+# capture only spans 24-30 °C. Both endpoints are treated as sentinels rather
+# than readings (see _decode_thermo_frame) since the rest of the frame uses
+# 0x00/0xFF the same way.
+THERMO_TEMP_OFFSET = 112
+THERMO_TEMP_SCALE = 10.0
+
 # Amazon Root CA 1 - Required for AWS IoT server certificate verification
 # Source: https://www.amazontrust.com/repository/AmazonRootCA1.pem
 AMAZON_ROOT_CA1 = """-----BEGIN CERTIFICATE-----
@@ -77,6 +110,52 @@ StateUpdateCallback = Callable[[str, dict[str, Any]], None]
 GiveUpCallback = Callable[[int, str], None]
 """Invoked when the reconnect loop exhausts MAX_RECONNECT_ATTEMPTS.
 Args: (attempts_made, last_error_message)."""
+
+
+def _decode_thermo_frame(raw: bytes) -> dict[str, Any] | None:
+    """Decode a gateway-bridged thermometer report (issue #151).
+
+    Frame layout, from 64 frames in the #157 diagnostics and 44 in #151::
+
+        ee 34 00 08 00 64 29 15 c2 6a 7e ca 3c 89 ba cc ff 80 00 2a
+        └──┬──┘ │  │  │  └──┬──┘ └────┬────┘ │  └────┬────┘ └─┬─┘ │
+         header │  │  │   per-dev   epoch    │    per-dev    ?  cksum
+                │  │  battery      seconds   temperature
+                │  sub-device class (0x08)
+                slot (sno on the hub)
+
+    Bytes 9-12 are a big-endian Unix timestamp — on the #151 capture it tracks
+    receive time to within 3 seconds across all 44 frames, which is what makes
+    it usable as a staleness check rather than just a decoded curiosity.
+
+    Args:
+        raw: The decoded multiSync packet.
+
+    Returns:
+        ``{"sensor_slot", "temperature_c", "battery", "frame_ts"}``, or None if
+        the frame is too short or byte 13 reads as a sentinel rather than a
+        temperature.
+    """
+    if len(raw) < 14:
+        return None
+
+    temp_byte = raw[13]
+    # 0x00 / 0xFF are the frame's own no-data markers (byte 16 sits at 0xFF
+    # permanently on the temperature-only H5310, and BFF reports its absent
+    # humidity as 0xFFFF). Decoding them would surface a confident 11.2 °C or
+    # 36.7 °C, which is worse than reporting nothing.
+    if temp_byte in (0x00, 0xFF):
+        return None
+
+    battery = raw[5] if raw[5] <= 100 else None
+    frame_ts = int.from_bytes(raw[9:13], "big") if len(raw) >= 13 else None
+
+    return {
+        "sensor_slot": raw[2],
+        "temperature_c": (temp_byte + THERMO_TEMP_OFFSET) / THERMO_TEMP_SCALE,
+        "battery": battery,
+        "frame_ts": frame_ts,
+    }
 
 
 class GoveeAwsIotClient:
@@ -570,7 +649,36 @@ class GoveeAwsIotClient:
 
             sensor_slot = raw[2]
 
-            if raw[1] == 0x34:
+            if raw[1] == 0x34 and raw[3] == MULTISYNC_SUBTYPE_THERMO:
+                # Gateway-bridged thermometer report (H5310 via H5044, #151).
+                # Diverted before the leak branch: these frames carry battery
+                # in the same byte 5 a leak report uses, so letting them fall
+                # through would emit a spurious dry-event for whatever leak
+                # sensor happens to share this slot on the hub.
+                reading = _decode_thermo_frame(raw)
+                if reading is None:
+                    _LOGGER.debug(
+                        "Thermo frame from %s not decodable: %s",
+                        hub_device_id,
+                        raw.hex(),
+                    )
+                    continue
+
+                _LOGGER.debug(
+                    "Thermo report from hub %s: slot=%d temp=%.1f°C battery=%s",
+                    hub_device_id,
+                    reading["sensor_slot"],
+                    reading["temperature_c"],
+                    reading["battery"],
+                )
+
+                event_data = {
+                    "_thermo_frame": True,
+                    "hub_device_id": hub_device_id,
+                    **reading,
+                }
+
+            elif raw[1] == 0x34:
                 # Leak/dry event. Probe-state bytes 14/16 carry the H5059 wet
                 # flag (issue #87); byte 5 is battery. OR both so older SKUs
                 # decoded off byte 5 keep working and H5059 is added.

@@ -61,11 +61,16 @@ from .const import (
     KEY_IOT_LOGIN_FAILED,
     MAX_WATER_DETECTOR_POLL_INTERVAL,
     MIN_WATER_DETECTOR_POLL_INTERVAL,
+    SEGMENT_MODE_BOTH,
     SEGMENT_MODE_DISABLED,
     SEGMENT_MODE_GROUPED,
     SEGMENT_MODE_INDIVIDUAL,
 )
-from .api.lan import LanTargetError, expand_lan_targets
+from .api.lan import (
+    LanTargetError,
+    expand_lan_targets,
+    validate_lan_device_overrides,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -647,6 +652,26 @@ class GoveeOptionsFlow(OptionsFlow):
         self._device_modes: dict[str, str] = {}
         self._device_index: int = 0
 
+    def _unknown_override_device_ids(
+        self, overrides: dict[str, tuple[str, bool]]
+    ) -> set[str]:
+        """Return override device_ids that aren't devices on this account (#164).
+
+        A LAN override binds a coordinator ``device_id`` straight to an IP, so
+        a mistyped id silently binds nothing. The coordinator is the only place
+        that knows the real ids, which is why this check can't live in
+        ``api.lan``. If the entry has no coordinator yet (options opened before
+        setup finished), skip the check rather than reject a correct id we
+        simply can't confirm.
+        """
+        if not overrides:
+            return set()
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        known = getattr(coordinator, "devices", None)
+        if not known:
+            return set()
+        return {device_id for device_id in overrides if device_id not in known}
+
     async def async_step_init(
         self,
         user_input: dict[str, Any] | None = None,
@@ -657,10 +682,26 @@ class GoveeOptionsFlow(OptionsFlow):
             # Validate the free-text LAN targets before saving so a bad subnet
             # is rejected in the form, not silently dropped at scan time (#57).
             try:
-                expand_lan_targets(user_input.get(CONF_LAN_TARGETS, ""))
+                raw_lan_targets = user_input.get(CONF_LAN_TARGETS, "")
+                expand_lan_targets(raw_lan_targets)
+                # device_id=ip[!] overrides get the same treatment (#164). The
+                # runtime parser skips a bad one silently so the rest still
+                # bind; here a typo must surface, or the user saves an option
+                # that quietly does nothing.
+                overrides = validate_lan_device_overrides(raw_lan_targets)
             except LanTargetError as err:
                 _LOGGER.debug("Invalid LAN targets entered: %s", err)
                 errors[CONF_LAN_TARGETS] = "invalid_lan_targets"
+            else:
+                # A device_id typo is the likeliest mistake and the only check
+                # the parser can't make for itself — it has no device list.
+                unknown = self._unknown_override_device_ids(overrides)
+                if unknown:
+                    _LOGGER.debug(
+                        "LAN override names unknown device_id(s): %s",
+                        ", ".join(sorted(unknown)),
+                    )
+                    errors[CONF_LAN_TARGETS] = "unknown_lan_device"
 
             if not errors:
                 # Save global options and proceed to device selection if needed.
@@ -851,6 +892,7 @@ class GoveeOptionsFlow(OptionsFlow):
                             SEGMENT_MODE_DISABLED,
                             SEGMENT_MODE_GROUPED,
                             SEGMENT_MODE_INDIVIDUAL,
+                            SEGMENT_MODE_BOTH,
                         ]
                     ),
                 }

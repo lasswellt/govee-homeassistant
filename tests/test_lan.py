@@ -462,6 +462,124 @@ def test_expand_lan_targets_rejects_garbage():
         lan.expand_lan_targets("not-an-ip")
 
 
+def test_expand_lan_targets_skips_device_overrides():
+    # A device_id=ip[!] override (#164) is not a scan target — expand_lan_targets
+    # must not try to parse it as an IP/subnet and must not raise on it.
+    raw = "10.20.0.5 11:66:C0:EB:32:C1:19:FC=192.168.3.210!"
+    assert lan.expand_lan_targets(raw) == ["10.20.0.5"]
+
+
+# --- parse_lan_device_overrides ---------------------------------------------
+
+
+@pytest.mark.parametrize("raw", ["", None, "   "])
+def test_parse_lan_device_overrides_empty(raw):
+    assert lan.parse_lan_device_overrides(raw) == {}
+
+
+def test_parse_lan_device_overrides_plain_ip():
+    # No trailing "!" -> normal read/write/health treatment, not write-only.
+    raw = "11:66:C0:EB:32:C1:19:FC=192.168.3.210"
+    assert lan.parse_lan_device_overrides(raw) == {
+        "11:66:C0:EB:32:C1:19:FC": ("192.168.3.210", False),
+    }
+
+
+def test_parse_lan_device_overrides_write_only_marker():
+    raw = "11:66:C0:EB:32:C1:19:FC=192.168.3.210!"
+    assert lan.parse_lan_device_overrides(raw) == {
+        "11:66:C0:EB:32:C1:19:FC": ("192.168.3.210", True),
+    }
+
+
+def test_parse_lan_device_overrides_multiple_and_mixed_with_plain_targets():
+    raw = "10.20.0.5, AA:BB=10.20.0.6!, CC:DD=10.20.0.7"
+    assert lan.parse_lan_device_overrides(raw) == {
+        "AA:BB": ("10.20.0.6", True),
+        "CC:DD": ("10.20.0.7", False),
+    }
+    # And the plain IP is still picked up by expand_lan_targets, unaffected.
+    assert lan.expand_lan_targets(raw) == ["10.20.0.5"]
+
+
+def test_parse_lan_device_overrides_later_duplicate_wins():
+    raw = "AA:BB=10.20.0.6 AA:BB=10.20.0.9!"
+    assert lan.parse_lan_device_overrides(raw) == {"AA:BB": ("10.20.0.9", True)}
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "=192.168.3.210",  # empty device_id
+        "AA:BB=",  # empty ip
+        "AA:BB=!",  # empty ip, just the marker
+        "AA:BB=not-an-ip",  # invalid ip
+        "AA:BB=not-an-ip!",  # invalid ip, write-only marker
+    ],
+)
+def test_parse_lan_device_overrides_skips_malformed_entries(raw):
+    # Malformed entries are skipped silently, never raised — a bad token must
+    # never abort the rest of parsing (matches expand_lan_targets' contract
+    # for its own errors, but overrides never raise at all).
+    assert lan.parse_lan_device_overrides(raw) == {}
+
+
+# --- validate_lan_device_overrides ------------------------------------------
+#
+# The strict counterpart used by the options form. Runtime parsing stays
+# lenient so one bad token can't stop the others binding; the form must not be,
+# or a typo saves cleanly and then silently does nothing (#164).
+
+
+@pytest.mark.parametrize("raw", ["", None, "   "])
+def test_validate_lan_device_overrides_empty(raw):
+    assert lan.validate_lan_device_overrides(raw) == {}
+
+
+def test_validate_lan_device_overrides_returns_parsed_entries():
+    raw = "10.20.0.5, AA:BB=10.20.0.6!, CC:DD=10.20.0.7"
+    assert lan.validate_lan_device_overrides(raw) == {
+        "AA:BB": ("10.20.0.6", True),
+        "CC:DD": ("10.20.0.7", False),
+    }
+
+
+def test_validate_lan_device_overrides_ignores_plain_targets():
+    # Plain IPs/subnets are expand_lan_targets' business, not an override.
+    assert lan.validate_lan_device_overrides("10.20.0.5 10.20.0.0/24") == {}
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "=192.168.3.210",  # empty device_id
+        "AA:BB=",  # empty ip
+        "AA:BB=!",  # empty ip, just the marker
+        "AA:BB=not-an-ip",  # invalid ip
+        "AA:BB=not-an-ip!",  # invalid ip, write-only marker
+        "AA:BB=192.168.1.999",  # out-of-range octet
+    ],
+)
+def test_validate_lan_device_overrides_raises_on_malformed(raw):
+    # The exact tokens parse_lan_device_overrides skips silently must raise
+    # here — this is the difference between the two functions.
+    with pytest.raises(lan.LanTargetError):
+        lan.validate_lan_device_overrides(raw)
+
+
+def test_validate_and_parse_disagree_only_on_malformed_input():
+    """The lenient/strict split is the point: same good input, same result."""
+    good = "AA:BB=10.20.0.6! CC:DD=10.20.0.7"
+    assert lan.validate_lan_device_overrides(good) == lan.parse_lan_device_overrides(
+        good
+    )
+
+    bad = "AA:BB=not-an-ip"
+    assert lan.parse_lan_device_overrides(bad) == {}
+    with pytest.raises(lan.LanTargetError):
+        lan.validate_lan_device_overrides(bad)
+
+
 # --- async_get_lan_interface_ips -------------------------------------------
 #
 # The single shared interface-IP enumeration hoisted out of diagnostics (#57) so

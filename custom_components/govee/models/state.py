@@ -253,6 +253,11 @@ class GoveeDeviceState:
     sensor_temperature: float | None = (
         None  # Raw from API (°C or °F; entity may normalize)
     )
+    # Second temperature probe on dual-probe SKUs (H5112, issue #150). Set
+    # only from the BFF ``tem2`` field — the Developer API exposes a single
+    # sensorTemperature and has no concept of a second probe. Independent of
+    # sensor_temperature: either probe can be unplugged while the other reads.
+    sensor_temperature_2: float | None = None
     sensor_humidity: float | None = None  # Relative humidity 0-100 %
     battery: int | None = None  # Battery level 0-100 % (BFF thermo-hygrometers)
 

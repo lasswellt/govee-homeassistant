@@ -10,7 +10,7 @@ import asyncio
 import dataclasses
 import logging
 import time
-from collections.abc import Awaitable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -18,11 +18,13 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
 from .api import (
+    Govee2FARequiredError,
     GoveeApiClient,
     GoveeApiError,
     GoveeAuthError,
@@ -31,7 +33,7 @@ from .api import (
     GoveeIotCredentials,
     GoveeRateLimitError,
 )
-from .api.auth import GoveeAuthClient
+from .api.auth import GoveeAuthClient, _derive_client_id
 from .api.ble_packet import DIY_STYLE_NAMES
 from .api.openapi_events import GoveeOpenApiEventClient
 from .ble_passthrough import BlePassthroughManager
@@ -56,6 +58,7 @@ from .api.lan import (
     async_get_lan_interface_ips,
     async_scan_lan_devices,
     expand_lan_targets,
+    parse_lan_device_overrides,
 )
 from .api.lan_client import (
     GoveeLanClient,
@@ -65,13 +68,20 @@ from .api.lan_client import (
 )
 from .api.lan_control import command_to_lan, lan_brightness_to_device
 from .const import (
+    CONF_API_TEMPERATURE_UNIT,
+    CONF_EMAIL,
     CONF_ENABLE_MQTT_CONTROL,
     CONF_LAN_TARGETS,
+    CONF_PASSWORD,
     CONF_WATER_DETECTOR_POLL_INTERVAL,
+    DEFAULT_API_TEMPERATURE_UNIT,
     DEFAULT_ENABLE_MQTT_CONTROL,
     DEFAULT_WATER_DETECTOR_POLL_INTERVAL,
     DEVICE_REDISCOVERY_INTERVAL,
     DOMAIN,
+    IOT_RELOGIN_MIN_INTERVAL,
+    KEY_IOT_CREDENTIALS,
+    KEY_IOT_LOGIN_FAILED,
     LAN_CORRELATION_TTL_SECONDS,
     LAN_READ_MISS_DEMOTE_THRESHOLD,
     LAN_RESCAN_INTERVAL,
@@ -81,6 +91,7 @@ from .const import (
     MAX_WATER_DETECTOR_POLL_INTERVAL,
     MIN_WATER_DETECTOR_POLL_INTERVAL,
     OPTIMISTIC_GRACE_CAP_SECONDS,
+    resolve_fahrenheit_conversion,
 )
 from .models import (
     GoveeDevice,
@@ -328,6 +339,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # sensor missed at startup (issue #132), so a slow tick doesn't queue a
         # reload every 5 minutes while the reload is pending.
         self._battery_reload_scheduled = False
+        # Same one-shot guard for a second temperature probe that starts
+        # reporting after startup — plugging one in must not need a manual
+        # restart to get its entity (#150).
+        self._probe2_reload_scheduled = False
         # Leak sensor subsystem
         self._leak_sensors: dict[str, GoveeLeakSensor] = {}
         self._leak_states: dict[str, GoveeLeakSensorState] = {}
@@ -362,8 +377,15 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # clear) — backs the sensor's changed_at attribute and restart
         # restore (#118).
         self._water_full_changed_at: dict[str, datetime] = {}
+        # Monotonic stamp of the last account re-login attempt, throttling
+        # recovery from an expired token (#132).
+        self._last_iot_relogin: float = -IOT_RELOGIN_MIN_INTERVAL
         self._leak_hubs: dict[str, dict[str, Any]] = {}
         self._sno_to_sensor_id: dict[tuple[str, int], str] = {}
+        # (hub_device_id, sno) -> thermo device_id. The hub's multiSync thermo
+        # frames name their sub-device by slot only, so this is what turns an
+        # ee34/0x08 frame into a reading on the right entity (#151).
+        self._sno_to_thermo_id: dict[tuple[str, int], str] = {}
         # Last time the account device list was re-checked for newly added
         # devices (#101). Seeded to "now" so the first re-check waits a full
         # interval rather than firing right after setup discovery.
@@ -397,6 +419,15 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         self._lan_client: GoveeLanClient | None = None
         # Correlated LAN devices keyed by coordinator device_id.
         self._lan_devices: dict[str, LanDeviceInfo] = {}
+        # device_ids bound via a manual write-only CONF_LAN_TARGETS override
+        # (issue #164) — firmware that accepts LAN writes but never answers a
+        # devStatus read, even from its own subnet (not a VLAN artifact — a
+        # scan reply not crossing VLANs is the separate, non-write-only case
+        # the bare device_id=ip form of the same override already covers).
+        # The read-health gate and write-confirm readback are skipped for
+        # these; the periodic LAN read poll excludes them too so they are
+        # never miss-demoted back out of _lan_devices.
+        self._lan_write_only: set[str] = set()
         # Scan records that matched no device_id (counted for diagnostics).
         self._lan_unmatched: list[Mapping[str, Any]] = []
         # Consecutive solicited-read misses per device, for demotion (LAN-011).
@@ -656,10 +687,15 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         semantic is last *change*, not last confirmation. First reading stamps
         too (device not yet in the map).
         """
-        if new_state.sensor_temperature is None and new_state.sensor_humidity is None:
+        if (
+            new_state.sensor_temperature is None
+            and new_state.sensor_temperature_2 is None
+            and new_state.sensor_humidity is None
+        ):
             return
         reading_changed = (
             new_state.sensor_temperature != existing_state.sensor_temperature
+            or new_state.sensor_temperature_2 != existing_state.sensor_temperature_2
             or new_state.sensor_humidity != existing_state.sensor_humidity
         )
         if reading_changed or device_id not in self._sensor_reading_changed_at:
@@ -907,6 +943,49 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # the socket opens stops the client before propagating (#57, blocking #5).
         await self._async_setup_lan()
 
+    def _resolve_lan_overrides(self) -> dict[str, LanDeviceInfo]:
+        """Manual ``device_id=ip[!]`` overrides from ``CONF_LAN_TARGETS`` (#164).
+
+        Bypasses scan/devStatus discovery for a device pinned this way,
+        binding it straight to the given IP. Also (re)populates
+        :attr:`_lan_write_only` from any ``!``-suffixed entries — called once
+        per setup/rescan cycle, so it is the single source of truth for which
+        devices are write-only at any given moment (a user can remove the
+        ``!`` and a later rescan un-marks the device).
+
+        An override naming a ``device_id`` this account doesn't have (typo,
+        removed device) is skipped with a debug log rather than raising —
+        the same "one bad entry never blocks the rest" contract as
+        ``expand_lan_targets``.
+        """
+        raw_targets = self._config_entry.options.get(CONF_LAN_TARGETS, "")
+        overrides = parse_lan_device_overrides(
+            raw_targets if isinstance(raw_targets, str) else ""
+        )
+        now = time.monotonic()
+        resolved: dict[str, LanDeviceInfo] = {}
+        self._lan_write_only = set()
+        for device_id, (ip, write_only) in overrides.items():
+            device = self._devices.get(device_id)
+            if device is None:
+                _LOGGER.debug(
+                    "Ignoring %s override for unknown device_id %r",
+                    CONF_LAN_TARGETS,
+                    device_id,
+                )
+                continue
+            resolved[device_id] = LanDeviceInfo(
+                device_id=device_id,
+                ip=ip,
+                mac=device_id,
+                sku=device.sku,
+                firmware="",
+                last_correlated_ts=now,
+            )
+            if write_only:
+                self._lan_write_only.add(device_id)
+        return resolved
+
     async def _async_setup_lan(self) -> None:
         """Set up the LAN (UDP) transport — the LAST step of coordinator setup.
 
@@ -985,10 +1064,17 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             matched, unmatched = correlate_scan(
                 scan, set(self._devices), time.monotonic()
             )
+            # Manual device_id=ip[!] overrides (#164) fill in devices scan
+            # correlation can never reach on a segmented network — its reply
+            # is multicast and can't cross the VLAN boundary back to us. A
+            # fresh scan match still wins over a possibly-stale manual entry.
+            for device_id, info in self._resolve_lan_overrides().items():
+                matched.setdefault(device_id, info)
             if not matched:
                 # Auto-enable gate not met: the scan answered but nothing
-                # correlated to a device_id. Don't hold sockets for nothing —
-                # stop the client and stay disabled.
+                # correlated to a device_id, and no override filled the gap.
+                # Don't hold sockets for nothing — stop the client and stay
+                # disabled.
                 _LOGGER.debug(
                     "Govee LAN: scan answered but no device correlated "
                     "(%d unmatched) — LAN disabled",
@@ -1202,7 +1288,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         ip_to_device = {
             info.ip: device_id
             for device_id, info in self._lan_devices.items()
-            if info.ip
+            # Write-only devices (#164) never answer a read — polling them
+            # would just accumulate misses and demote them straight back out
+            # of _lan_devices every LAN_READ_MISS_DEMOTE_THRESHOLD cycles.
+            if info.ip and device_id not in self._lan_write_only
         }
         if not ip_to_device:
             return
@@ -1273,6 +1362,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             return
 
         matched, unmatched = correlate_scan(scan, set(self._devices), now)
+        # Re-apply manual overrides each rescan too (#164) — a fresh scan
+        # match still wins for any device_id it actually found.
+        for device_id, info in self._resolve_lan_overrides().items():
+            matched.setdefault(device_id, info)
         self._merge_lan_correlation(matched, unmatched)
 
     def _merge_lan_correlation(
@@ -1610,6 +1703,139 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if changed_at is not None:
             self._water_full_changed_at.setdefault(device_id, changed_at)
 
+    async def _async_refresh_iot_credentials(self) -> bool:
+        """Log in again to replace an account token the BFF has stopped accepting.
+
+        The token obtained at setup is cached in ``entry.data`` and reused
+        indefinitely — nothing ever refreshed it, and the stored
+        ``refresh_token`` was never used at all. When it eventually expires,
+        every BFF call fails while MQTT keeps working (it authenticates with
+        long-lived certificates, not this token), so the integration looks
+        healthy while battery levels and gateway-bridged readings quietly stop
+        (issue #132).
+
+        Re-logging in with the stored credentials is the recovery. Throttled to
+        one attempt per ``IOT_RELOGIN_MIN_INTERVAL`` so a persistent failure
+        can't hammer Govee's login endpoint — repeated logins are also what
+        triggers their 2FA hardening, which would turn a recoverable problem
+        into one needing the user.
+
+        Returns:
+            True when new credentials were obtained and stored.
+        """
+        email = self._config_entry.data.get(CONF_EMAIL)
+        password = self._config_entry.data.get(CONF_PASSWORD)
+        if not email or not password:
+            # API-key-only setup: nothing to log in with, and no BFF data was
+            # ever expected. Nothing to recover.
+            return False
+
+        now = time.monotonic()
+        if (now - self._last_iot_relogin) < IOT_RELOGIN_MIN_INTERVAL:
+            _LOGGER.debug("Skipping IoT re-login: attempted too recently")
+            return False
+        self._last_iot_relogin = now
+
+        _LOGGER.info("Account token rejected by the BFF — logging in again (#132)")
+        try:
+            async with GoveeAuthClient(hass=self.hass) as auth_client:
+                credentials = await auth_client.login(
+                    email,
+                    password,
+                    client_id=_derive_client_id(email),
+                )
+        except Govee2FARequiredError:
+            # Can't be solved here — a verification code needs the user. Say so
+            # once, loudly, instead of failing every poll in silence.
+            _LOGGER.warning(
+                "Account token expired and re-login needs email verification. "
+                "Use Reconfigure to enter a new verification code; "
+                "battery levels and gateway-bridged sensor readings stay "
+                "unavailable until then."
+            )
+            self._async_create_iot_reauth_issue("mqtt_2fa_required")
+            return False
+        except GoveeAuthError as err:
+            _LOGGER.warning(
+                "Account token expired and re-login was rejected: %s. "
+                "Use Reconfigure to update the account credentials.",
+                err,
+            )
+            self._async_create_iot_reauth_issue("mqtt_token_expired")
+            return False
+        except Exception as err:
+            _LOGGER.warning("Account re-login failed: %s", err)
+            return False
+
+        self._iot_credentials = credentials
+        self._persist_refreshed_credentials(credentials)
+        ir.async_delete_issue(
+            self.hass, DOMAIN, f"mqtt_token_expired_{self._config_entry.entry_id}"
+        )
+        _LOGGER.info("Account token refreshed — BFF data should resume")
+        return True
+
+    def _persist_refreshed_credentials(self, credentials: GoveeIotCredentials) -> None:
+        """Store refreshed credentials in ``entry.data`` so a reload reuses them.
+
+        Mirrors ``_persist_iot_credentials`` in ``__init__.py``; kept here
+        rather than imported to avoid a circular import between the coordinator
+        and the integration entry point.
+        """
+        new_data = dict(self._config_entry.data)
+        new_data[KEY_IOT_CREDENTIALS] = dataclasses.asdict(credentials)
+        new_data.pop(KEY_IOT_LOGIN_FAILED, None)
+        self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
+
+    def _async_create_iot_reauth_issue(self, translation_key: str) -> None:
+        """Surface a repair when only the user can restore BFF access."""
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            f"{translation_key}_{self._config_entry.entry_id}",
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=translation_key,
+            translation_placeholders={"entry_title": self._config_entry.title},
+        )
+
+    async def _async_bff_call(
+        self,
+        operation: Callable[[GoveeAuthClient, str], Awaitable[Any]],
+        description: str,
+    ) -> Any:
+        """Run a BFF call, re-logging in once if the token has expired (#132).
+
+        ``operation`` receives an open client and the current token, so a
+        caller that also needs client-side extras (the diagnostics census, the
+        gateway routes) can collect them before the client closes.
+
+        A ``GoveeAuthError`` here means the token was rejected — either as an
+        HTTP 401 or as the in-body error envelope Govee returns with HTTP 200
+        (see ``_raise_for_bff_status``). Both are recoverable by logging in
+        again, so that is tried exactly once; anything the retry raises reaches
+        the caller's own error handling unchanged.
+        """
+        if not self._iot_credentials:
+            return None
+
+        try:
+            async with GoveeAuthClient(hass=self.hass) as auth_client:
+                return await operation(auth_client, self._iot_credentials.token)
+        except GoveeAuthError as err:
+            _LOGGER.debug("BFF %s rejected the token: %s", description, err)
+
+        credentials = (
+            self._iot_credentials
+            if await self._async_refresh_iot_credentials()
+            else None
+        )
+        if credentials is None:
+            return None
+
+        async with GoveeAuthClient(hass=self.hass) as auth_client:
+            return await operation(auth_client, credentials.token)
+
     async def _fetch_device_topics(self) -> None:
         """Fetch device-specific MQTT topics from undocumented Govee API.
 
@@ -1620,19 +1846,19 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if not self._iot_credentials:
             return
 
+        async def _op(auth_client: GoveeAuthClient, token: str) -> None:
+            self._device_topics = await auth_client.fetch_device_topics(token)
+            # Gateway-attached BLE devices only act on commands published to
+            # their gateway's topic, not their own (#135).
+            self._gateway_routes = auth_client.gateway_routes()
+            _LOGGER.info(
+                "Fetched MQTT topics for %d devices (%d via a gateway)",
+                len(self._device_topics),
+                len(self._gateway_routes),
+            )
+
         try:
-            async with GoveeAuthClient(hass=self.hass) as auth_client:
-                self._device_topics = await auth_client.fetch_device_topics(
-                    self._iot_credentials.token
-                )
-                # Gateway-attached BLE devices only act on commands published to
-                # their gateway's topic, not their own (#135).
-                self._gateway_routes = auth_client.gateway_routes()
-                _LOGGER.info(
-                    "Fetched MQTT topics for %d devices (%d via a gateway)",
-                    len(self._device_topics),
-                    len(self._gateway_routes),
-                )
+            await self._async_bff_call(_op, "device topics")
         except GoveeApiError as err:
             _LOGGER.warning("Failed to fetch device topics: %s", err)
             # Continue without device topics - ptReal commands won't work
@@ -1649,23 +1875,23 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if not self._iot_credentials:
             return
 
+        async def _op(auth_client: GoveeAuthClient, token: str) -> Any:
+            result = await auth_client.fetch_bff_leak_sensors(token)
+            # Capture the PII-free census + skeleton before the client
+            # closes (#87).
+            self._bff_device_census = auth_client.bff_device_census()
+            self._bff_response_skeleton = auth_client.bff_response_skeleton()
+            self._bff_device_values = auth_client.bff_device_values()
+            return result
+
         try:
-            # Create a short-lived auth client per call, consistent with
+            # A short-lived auth client per call, consistent with
             # _fetch_device_topics(). The hass= param shares HA's managed
             # aiohttp.ClientSession, so no new TCP connections are created.
-            async with GoveeAuthClient(hass=self.hass) as auth_client:
-                (
-                    sensor_data,
-                    hub_data,
-                    thermo_readings,
-                ) = await auth_client.fetch_bff_leak_sensors(
-                    self._iot_credentials.token
-                )
-                # Capture the PII-free census + skeleton before the client
-                # closes (#87).
-                self._bff_device_census = auth_client.bff_device_census()
-                self._bff_response_skeleton = auth_client.bff_response_skeleton()
-                self._bff_device_values = auth_client.bff_device_values()
+            fetched = await self._async_bff_call(_op, "leak-sensor list")
+            if fetched is None:
+                return
+            sensor_data, hub_data, thermo_readings = fetched
 
             self._leak_hubs = hub_data
             for sensor in sensor_data:
@@ -1878,6 +2104,21 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if isinstance(fah_open, bool):
             self._display_fahrenheit[device_id] = fah_open
 
+    def _note_thermo_slot(self, device_id: str, sensor: dict[str, Any]) -> None:
+        """Map a gateway slot to this thermometer so its frames can be routed.
+
+        The hub's multiSync thermo frames carry only the slot (``sno``), never
+        the sub-device id, so without this pairing a decoded reading has
+        nowhere to go (issue #151). Registered for every BFF-listed
+        thermometer, including ones still on the Developer poll — the frame
+        path is a reading source, not an ownership claim.
+        """
+        hub_device_id = sensor.get("hub_device_id") or ""
+        sno = sensor.get("sno")
+        if not hub_device_id or not isinstance(sno, int) or isinstance(sno, bool):
+            return
+        self._sno_to_thermo_id[(hub_device_id, sno)] = device_id
+
     async def _discover_bff_thermometers(self) -> None:
         """Discover thermo-hygrometers (H5301) via the BFF device list (issue #86).
 
@@ -1892,16 +2133,19 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if not self._iot_credentials:
             return
 
+        async def _op(auth_client: GoveeAuthClient, token: str) -> Any:
+            result = await auth_client.fetch_bff_thermo_hygrometers(token)
+            # Refresh the PII-free census so a diagnostics download shows the
+            # thermo-hygro SKU flags even when no leak sensors are present.
+            self._bff_device_census = auth_client.bff_device_census()
+            self._bff_response_skeleton = auth_client.bff_response_skeleton()
+            self._bff_device_values = auth_client.bff_device_values()
+            return result
+
         try:
-            async with GoveeAuthClient(hass=self.hass) as auth_client:
-                sensors = await auth_client.fetch_bff_thermo_hygrometers(
-                    self._iot_credentials.token
-                )
-                # Refresh the PII-free census so a diagnostics download shows the
-                # thermo-hygro SKU flags even when no leak sensors are present.
-                self._bff_device_census = auth_client.bff_device_census()
-                self._bff_response_skeleton = auth_client.bff_response_skeleton()
-                self._bff_device_values = auth_client.bff_device_values()
+            sensors = await self._async_bff_call(_op, "thermo-hygrometer list")
+            if sensors is None:
+                return
 
             for sensor in sensors:
                 device_id = sensor["device_id"]
@@ -1909,6 +2153,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                     continue
 
                 self._note_display_unit(device_id, sensor)
+                self._note_thermo_slot(device_id, sensor)
 
                 # A device already discovered via the Developer API (e.g. the
                 # H5179 WiFi thermometer, #141) whose live reading only comes
@@ -1926,6 +2171,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 if device_id in self._devices:
                     if (
                         sensor.get("temperature") is None
+                        and sensor.get("temperature_2") is None
                         and sensor.get("humidity") is None
                     ):
                         _LOGGER.debug(
@@ -1943,6 +2189,8 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                     state.online = sensor.get("online", state.online)
                     if sensor.get("temperature") is not None:
                         state.sensor_temperature = sensor.get("temperature")
+                    if sensor.get("temperature_2") is not None:
+                        state.sensor_temperature_2 = sensor.get("temperature_2")
                     if sensor.get("humidity") is not None:
                         state.sensor_humidity = sensor.get("humidity")
                     if sensor.get("battery") is not None:
@@ -1972,6 +2220,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 state = GoveeDeviceState.create_empty(device_id)
                 state.online = sensor.get("online", True)
                 state.sensor_temperature = sensor.get("temperature")
+                state.sensor_temperature_2 = sensor.get("temperature_2")
                 state.sensor_humidity = sensor.get("humidity")
                 state.battery = sensor.get("battery")
                 self._states[device_id] = state
@@ -2004,12 +2253,14 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             return
 
         try:
-            async with GoveeAuthClient(hass=self.hass) as auth_client:
-                sensors = await auth_client.fetch_bff_thermo_hygrometers(
-                    self._iot_credentials.token
-                )
+            sensors = await self._async_bff_call(
+                lambda client, token: client.fetch_bff_thermo_hygrometers(token),
+                "thermo-hygrometer refresh",
+            )
         except Exception as err:
             _LOGGER.debug("BFF thermo-hygrometer refresh failed: %s", err)
+            return
+        if sensors is None:
             return
 
         changed = False
@@ -2020,7 +2271,11 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             # A device parked on the Developer poll because the BFF had nothing
             # for it (#151) takes over here as soon as a reading appears.
             if device_id in self._bff_thermo_pending:
-                if sensor.get("temperature") is None and sensor.get("humidity") is None:
+                if (
+                    sensor.get("temperature") is None
+                    and sensor.get("temperature_2") is None
+                    and sensor.get("humidity") is None
+                ):
                     continue
                 _LOGGER.info(
                     "BFF now reports %s — taking over its readings from the "
@@ -2042,6 +2297,28 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 if sensor.get("temperature") is not None
                 else existing.sensor_temperature
             )
+            new_state.sensor_temperature_2 = (
+                sensor.get("temperature_2")
+                if sensor.get("temperature_2") is not None
+                else existing.sensor_temperature_2
+            )
+            # A probe plugged in after startup has no entity yet: the sensor
+            # platform only creates one when a reading is already present.
+            # Reload once so it appears, mirroring the late-battery path (#150).
+            if (
+                existing.sensor_temperature_2 is None
+                and new_state.sensor_temperature_2 is not None
+                and not self._probe2_reload_scheduled
+            ):
+                self._probe2_reload_scheduled = True
+                _LOGGER.info(
+                    "Second temperature probe now reporting for %s — reloading "
+                    "the integration to add its sensor (#150)",
+                    sensor.get("name", device_id),
+                )
+                self.hass.config_entries.async_schedule_reload(
+                    self._config_entry.entry_id
+                )
             new_state.sensor_humidity = (
                 sensor.get("humidity")
                 if sensor.get("humidity") is not None
@@ -2167,17 +2444,16 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         try:
             # Short-lived auth client, consistent with _fetch_device_topics()
             # and _discover_leak_sensors(). hass= reuses HA's aiohttp session.
-            async with GoveeAuthClient(hass=self.hass) as auth_client:
-                (
-                    sensor_data,
-                    _hub_data,
-                    thermo_readings,
-                ) = await auth_client.fetch_bff_leak_sensors(
-                    self._iot_credentials.token
-                )
+            fetched = await self._async_bff_call(
+                lambda client, token: client.fetch_bff_leak_sensors(token),
+                "leak-sensor poll",
+            )
         except Exception as err:
             _LOGGER.debug("BFF poll failed: %s", err)
             return
+        if fetched is None:
+            return
+        sensor_data, _hub_data, thermo_readings = fetched
 
         # Pick up leak sensors added to a hub after startup (issue #101). These
         # are BFF-only sub-devices, so they never appear in the Developer-API
@@ -2433,6 +2709,100 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         self._bff_poll_task = self.hass.async_create_task(self._poll_bff_leak_state())
 
     @callback
+    def _handle_thermo_frame(self, state_data: dict[str, Any]) -> None:
+        """Apply a decoded gateway thermometer frame (issue #151).
+
+        This is the live reading source for a gateway-bridged thermometer. It
+        matters most where nothing else works: when Govee leaves
+        ``deviceExt.lastDeviceData`` empty for the sub-device, the BFF path has
+        no value to serve and the Developer poll returns nothing either, so the
+        entity sits at ``unknown`` indefinitely. It also beats the BFF value on
+        freshness even when that path does work — the reporter measured the
+        H5044 pushing hourly at hh:56 with the cloud copy landing 5-7 minutes
+        later, and this frame IS that push.
+
+        The decode yields canonical °C, so the value is converted into whatever
+        unit the entity will read it back in rather than claiming ownership of
+        the device. That keeps this coexisting with the Developer poll — both
+        writers leave ``sensor_temperature`` in one consistent unit, and an
+        account whose poll works does not lose it if the gateway goes quiet.
+        """
+        hub_id = state_data["hub_device_id"]
+        sno = state_data["sensor_slot"]
+
+        device_id = self._sno_to_thermo_id.get((hub_id, sno))
+        if not device_id:
+            _LOGGER.debug(
+                "Thermo frame for unmapped sensor: hub=%s slot=%d temp=%.1f°C",
+                hub_id,
+                sno,
+                state_data["temperature_c"],
+            )
+            return
+
+        device = self._devices.get(device_id)
+        if device is None:
+            return
+
+        state = self._states.get(device_id) or GoveeDeviceState.create_empty(device_id)
+        previous_temperature = state.sensor_temperature
+
+        state.sensor_temperature = self._thermo_frame_temperature(
+            device_id, device.sku, state_data["temperature_c"]
+        )
+        if state_data.get("battery") is not None:
+            state.battery = state_data["battery"]
+        # The frame is proof of life from the sub-device itself. Govee's own
+        # ``online`` flag flaps false between the hourly uploads (#97), so a
+        # frame arriving is the better signal.
+        state.online = True
+        self._states[device_id] = state
+
+        # Last *change*, not last confirmation — same semantic as the poll
+        # path's _note_sensor_reading_change (#83). The first frame stamps too.
+        if (
+            previous_temperature != state.sensor_temperature
+            or device_id not in self._sensor_reading_changed_at
+        ):
+            self._sensor_reading_changed_at[device_id] = dt_util.utcnow()
+
+        self._ensure_transport_health(device_id)
+        self._record_transport_success(device_id, "mqtt")
+
+        _LOGGER.debug(
+            "Thermo frame applied to %s: %.1f°C (stored %.1f) battery=%s",
+            device.name,
+            state_data["temperature_c"],
+            state.sensor_temperature,
+            state.battery,
+        )
+        self.async_set_updated_data(self._states)
+
+    def _thermo_frame_temperature(
+        self, device_id: str, sku: str, celsius: float
+    ) -> float:
+        """Put a decoded °C reading into the unit the entity expects.
+
+        The temperature sensor converts °F→°C for SKUs in
+        FAHRENHEIT_REPORTING_SKUS — which includes the H5310 — unless the
+        device is BFF-owned, in which case it trusts the stored value as °C.
+        Writing raw °C into the first case would surface a pool at 24.9 °C as
+        -4 °C, so the value is pre-converted to match (the same round-tripping
+        the BFF read path does, #96/#83).
+        """
+        if self.is_bff_thermometer(device_id):
+            return celsius
+
+        api_unit = self._config_entry.options.get(
+            CONF_API_TEMPERATURE_UNIT,
+            DEFAULT_API_TEMPERATURE_UNIT,
+        )
+        unit_hint = self.account_temperature_unit(device_id)
+        if resolve_fahrenheit_conversion(sku, api_unit, unit_hint):
+            return celsius * (9.0 / 5.0) + 32.0
+        return celsius
+
+    @callback
     def _handle_button_press(self, state_data: dict[str, Any]) -> None:
         """Handle a button press event from MQTT multiSync message."""
         sensor_id = state_data["device_id"]
@@ -2461,6 +2831,11 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # Handle leak sensor events (from multiSync messages)
         if state_data.get("_leak_event"):
             self._handle_leak_event(state_data)
+            return
+
+        # Handle gateway-bridged thermometer frames (issue #151)
+        if state_data.get("_thermo_frame"):
+            self._handle_thermo_frame(state_data)
             return
 
         # Handle button press events
@@ -3087,9 +3462,15 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         #     read yet (TransportHealth defaults is_available=False, so the
         #     FIRST control after startup falls through HERE until the first LAN
         #     read marks it available) — must fall back to MQTT/REST.
-        health = self._transport.get(device_id, "lan")
-        if health is None or not health.is_available:
-            return False
+        #
+        #     Skipped for a write-only override (#164): that device has never
+        #     answered a read and never will, so this gate could never pass —
+        #     the user's explicit ``device_id=ip!`` override is what stands in
+        #     for read-proven health here.
+        if device_id not in self._lan_write_only:
+            health = self._transport.get(device_id, "lan")
+            if health is None or not health.is_available:
+                return False
 
         # [4.5] Write-suppression cooldown (issue #57): this device's recent LAN
         #     writes did not confirm, so skip the LAN write attempt AND its
@@ -3124,6 +3505,26 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         #     confirm read blocks for up to LAN_WRITE_CONFIRM_TIMEOUT.
         self._apply_optimistic_update(device_id, command)
         self.async_set_updated_data(self._states)
+
+        # [7.5] Write-only override (#164): this device has never answered a
+        #     read, so waiting on one here would just burn LAN_WRITE_CONFIRM_
+        #     TIMEOUT for a reply that will never come, and — worse — count as
+        #     a write-confirm miss every single time, eventually tripping
+        #     write suppression on a device that is, in fact, working exactly
+        #     as its firmware allows. Treat the successful send itself as the
+        #     confirmation: it is the only signal this firmware ever gives.
+        if device_id in self._lan_write_only:
+            self._record_transport_send(device_id, "lan")
+            self._record_transport_success(device_id, "lan")
+            self._record_local_command(
+                device_id,
+                device.sku,
+                "lan",
+                command,
+                delivered=True,
+                detail="write-only device (#164) — send is the only confirmation available",
+            )
+            return True
 
         # [8] Verify-by-read: a LAN write is unacked, so read the device back and
         #     require the reported value to match what we sent.

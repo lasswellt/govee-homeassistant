@@ -262,3 +262,123 @@ class TestPerDeviceReceiveTimestamp:
         assert client.last_message_ts_for(other) is not None
         # Second message advanced the hub scalar past the first device's stamp.
         assert client.last_message_ts_for(other) >= client.last_message_ts_for(self.DEV)
+
+
+class TestThermoFrameDecode:
+    """0xEE 0x34 / byte3=0x08 thermometer frames (issues #151, #157).
+
+    A gateway-bridged H5310 reports through the same 0xEE 0x34 header its
+    stablemate leak sensors use. Byte 3 is the only discriminator: 0x02 for a
+    leak sub-device, 0x08 for a thermometer.
+
+    The temperature encoding is ``T[°C] = (byte13 + 112) / 10``, established
+    in #151 against 30 on-the-hour frames paired with the cloud reading each
+    produced. All frames below are verbatim from that capture, with the label
+    the reporter's own cloud history recorded for them.
+    """
+
+    # (hex, labelled °C) — the first, warmest, coldest and last of the capture.
+    LABELLED = [
+        ("ee34000800642915c26a7eca3c89baccff80002a", 24.9),
+        ("ee34000800642915bc6a7f56dcb7baccff800017", 29.5),
+        ("ee34000800642915bc6a7fff9b8abaccff8000c4", 25.0),
+        ("ee34000800642915bf6a80620caabaccff800012", 28.1),
+    ]
+
+    # H5310 via H5044 from a DIFFERENT account (#157) — one labelled reading
+    # of 88.34 °F at the end of that window, where byte 13 read 201.
+    H5310_OTHER_ACCOUNT = "ee34000800642514a86a7ab5bec982ccff200060"
+
+    def _decode_one(self, packet: bytes) -> dict:
+        """Run one packet through the handler; return the emitted event_data."""
+        cb = MagicMock()
+        client = _make_client()
+        client._on_state_update = cb
+        client._handle_multisync(HUB_ID, _multisync([packet]))
+        assert cb.call_count == 1
+        return cb.call_args[0][1]
+
+    def test_labelled_frames_decode_within_a_tenth(self):
+        """Every labelled frame reproduces its cloud reading within 0.1 K."""
+        for hex_frame, label in self.LABELLED:
+            event = self._decode_one(bytes.fromhex(hex_frame))
+            assert event["_thermo_frame"] is True
+            assert abs(event["temperature_c"] - label) <= 0.1, hex_frame
+
+    def test_second_account_frame_matches_its_own_label(self):
+        """The #157 capture's 88.34 °F reading = 31.3 °C, from byte 13 = 201.
+
+        Cross-account confirmation: a formula fitted only to #151's data
+        reproduces the one labelled point an unrelated reporter captured.
+        """
+        raw = bytes.fromhex(self.H5310_OTHER_ACCOUNT)
+        assert raw[13] == 201
+        event = self._decode_one(raw)
+        fahrenheit = event["temperature_c"] * (9.0 / 5.0) + 32.0
+        assert abs(fahrenheit - 88.34) <= 0.1
+
+    def test_epoch_timestamp_decoded(self):
+        """Bytes 9-12 are a big-endian Unix timestamp (2026-08-14 07:56Z)."""
+        event = self._decode_one(bytes.fromhex(self.LABELLED[0][0]))
+        assert event["frame_ts"] == 0x6A7ECA3C
+        assert 1786000000 < event["frame_ts"] < 1790000000
+
+    def test_battery_and_slot_decoded(self):
+        event = self._decode_one(bytes.fromhex(self.LABELLED[0][0]))
+        assert event["battery"] == 100
+        assert event["sensor_slot"] == 0
+
+    def test_leak_frame_is_not_diverted(self):
+        """Regression: a real leak frame keeps reaching the leak decoder.
+
+        Leak and thermo frames share the 0xEE 0x34 header, so a discriminator
+        that reads too broadly would silence leak detection — the one failure
+        this decode must never cause.
+        """
+        event = self._decode_one(
+            bytes.fromhex("ee34000200641e14ad6a1f4a58000103018000ff")
+        )
+        assert event["_leak_event"] is True
+        assert event.get("_thermo_frame") is None
+        assert event["is_wet"] is True
+
+    def test_thermo_frame_emits_no_leak_event(self):
+        """A thermo frame must not also report its slot dry.
+
+        Byte 5 is battery in both frame types, so before the discriminator an
+        H5310 report decoded as a leak-clear for whatever leak sensor shared
+        its slot on the hub.
+        """
+        event = self._decode_one(bytes.fromhex(self.LABELLED[0][0]))
+        assert event.get("_leak_event") is None
+        assert "is_wet" not in event
+
+    def test_sentinel_temperature_byte_is_dropped(self):
+        """0x00 / 0xFF at byte 13 are no-data markers, not 11.2/36.7 °C."""
+        cb = MagicMock()
+        client = _make_client()
+        client._on_state_update = cb
+        for sentinel in ("00", "ff"):
+            frame = bytes.fromhex(
+                "ee34000800642915c26a7eca3c" + sentinel + "baccff80002a"
+            )
+            client._handle_multisync(HUB_ID, _multisync([frame]))
+        assert cb.call_count == 0
+
+    def test_short_thermo_frame_ignored(self):
+        """A truncated frame has no byte 13 to read."""
+        cb = MagicMock()
+        client = _make_client()
+        client._on_state_update = cb
+        client._handle_multisync(
+            HUB_ID, _multisync([bytes.fromhex("ee34000800642915")])
+        )
+        assert cb.call_count == 0
+
+    def test_thermo_frames_still_recorded_for_diagnostics(self):
+        """Diverting the frame must not drop it from the ring buffer."""
+        client = _make_client()
+        client._handle_multisync(
+            HUB_ID, _multisync([bytes.fromhex(self.LABELLED[0][0])])
+        )
+        assert [rec["header"] for rec in client.recent_multisync] == ["ee34"]

@@ -29,6 +29,12 @@ CONF_WATER_DETECTOR_POLL_INTERVAL: Final = "water_detector_poll_interval"
 # Free-text list (comma / newline / space separated) of device IPs, broadcast
 # addresses, and CIDR subnets (≤ /24, unicast-swept since inter-VLAN firewalls
 # usually drop directed broadcast). Empty = local multicast scan only.
+#
+# Also accepts ``device_id=ip`` (skip discovery, bind that device straight to
+# an IP) and ``device_id=ip!`` (same, plus mark it write-only: skip the
+# read-health gate and write-confirm readback for firmware that accepts LAN
+# writes but never answers a scan or devStatus read — issue #164). See
+# ``api.lan.parse_lan_device_overrides``.
 CONF_LAN_TARGETS: Final = "lan_targets"
 
 # Some Govee thermometer/hygrometer SKUs report temperatures in Fahrenheit via
@@ -83,6 +89,29 @@ FAHRENHEIT_REPORTING_SKUS: Final = frozenset(
         "H5220",
     }
 )
+
+
+# SKU-specific segment count overrides.
+# Some Govee devices report a higher segment count via the API than
+# the physical sections on the device. This dict pins the real count
+# per SKU. Add a new entry when the API is observed to misreport.
+#
+# This is also the escape hatch for the size.max clamp in
+# GoveeDevice.segment_count. That clamp reads fields[].size.max as a ceiling on
+# the segment count, but the field is documented as the max array *length*
+# accepted in one command. On every capture we hold the two agree
+# (size.max == elementRange.max + 1), so the clamp only ever fires on the
+# inconsistency that signals the bug. If a device ever reports a genuine
+# per-command batch limit below its real segment count, the clamp would drop
+# working entities — pin the true count here to override it.
+SKU_SEGMENT_OVERRIDES: Final = {
+    "H7075": 3,  # API reports 15 (elementRange.max=14), device has 3 physical sections
+    # H7076 Outdoor Up/Down Wall Light: API reports 15 and size.max is 15 too,
+    # so the clamp can't catch it. Indices 0-3 are the only ones that move the
+    # light (0=top, 1=bottom, 2=part of the left side, 3=everything else);
+    # 4-14 are accepted with HTTP 200 "success" and do nothing (issue #160).
+    "H7076": 4,
+}
 
 
 def resolve_fahrenheit_conversion(
@@ -198,12 +227,24 @@ GOVEE_BLE_MANUFACTURER_IDS: Final = (0x8803,)  # 34819
 SEGMENT_MODE_DISABLED: Final = "disabled"
 SEGMENT_MODE_GROUPED: Final = "grouped"
 SEGMENT_MODE_INDIVIDUAL: Final = "individual"
+# Both the 12 individual segment entities AND one grouped entity that
+# controls all of them together — the individual entities stay the source of
+# truth per-segment; the grouped entity is a convenience "all segments" light
+# on top, not a replacement for either the individual entities or a native HA
+# Light Group helper (which needs no integration support at all).
+SEGMENT_MODE_BOTH: Final = "both"
 
 # Config entry schema version. Bumped to 2 in sprint-4 when IoT credentials
 # moved from hass.data[DOMAIN] to entry.data (see async_migrate_entry).
 CONFIG_VERSION: Final = 2
 
 # Keys for storing cached data in hass.data[DOMAIN]
+# Minimum gap between account re-login attempts after the BFF rejects the
+# stored token (issue #132). Repeated logins are what trips Govee's own 2FA
+# hardening, so a persistently failing account must back off rather than retry
+# on every 5-minute poll.
+IOT_RELOGIN_MIN_INTERVAL: Final = 900  # 15 minutes
+
 KEY_IOT_CREDENTIALS: Final = "iot_credentials"
 KEY_IOT_LOGIN_FAILED: Final = "iot_login_failed"
 

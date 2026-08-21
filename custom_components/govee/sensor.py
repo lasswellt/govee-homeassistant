@@ -85,6 +85,13 @@ async def async_setup_entry(
         entities.append(GoveeLastCommandSentSensor(coordinator, device))
         if device.supports_temperature_sensor:
             entities.append(GoveeTemperatureSensor(coordinator, device))
+        # Second probe on dual-probe SKUs (#150). Gated on a reading actually
+        # being present rather than on the SKU: the same model ships with one
+        # or two probes connected, and a device with nothing on probe 2 must
+        # not gain an entity that can only ever read unknown.
+        probe_state = coordinator.get_state(device.device_id)
+        if probe_state is not None and probe_state.sensor_temperature_2 is not None:
+            entities.append(GoveeSecondProbeTemperatureSensor(coordinator, device))
         if device.supports_humidity_sensor:
             entities.append(GoveeHumiditySensor(coordinator, device))
         # Air-quality index (H5106 monitor, H7124/H7126 purifiers) — read-only
@@ -320,12 +327,19 @@ class GoveeTemperatureSensor(_BffThermometerAvailabilityMixin, SensorEntity):
         self._attr_unique_id = f"{device.device_id}_temperature"
 
     @property
-    def native_value(self) -> float | None:
+    def _raw_reading(self) -> float | None:
+        """The stored reading this entity converts. Overridden per probe."""
         state = self.device_state
-        if not state or state.sensor_temperature is None:
+        return state.sensor_temperature if state else None
+
+    @property
+    def native_value(self) -> float | None:
+        raw = self._raw_reading
+        if raw is None:
             return None
 
-        value = float(state.sensor_temperature)
+        state = self.device_state
+        value = float(raw)
 
         # BFF-sourced readings (lastDeviceData) are already canonical °C from
         # _bff_reading's centi-scaling, so the SKU-based °F conversion below —
@@ -363,6 +377,41 @@ class GoveeTemperatureSensor(_BffThermometerAvailabilityMixin, SensorEntity):
             return (value - 32.0) * (5.0 / 9.0)
 
         return value
+
+
+class GoveeSecondProbeTemperatureSensor(GoveeTemperatureSensor):
+    """The second temperature probe on a dual-probe SKU (H5112, issue #150).
+
+    These fridge/freezer thermometers carry two independent probes and report
+    them separately — ``tem`` and ``tem2`` in the BFF payload, with a matching
+    second set of ``probeName2`` / ``temMin2`` / ``temMax2`` settings. The
+    Developer API exposes a single ``sensorTemperature`` and has no concept of
+    the second one, so this reading exists only on the BFF path.
+
+    The probes are genuinely independent: reporter diagnostics on #150 showed
+    two of three units with probe 1 unplugged (reporting the ``-1`` sentinel)
+    while probe 2 read normally, which is why those devices surfaced no
+    temperature at all. Created only when a probe-2 reading is actually
+    present, so single-probe devices don't gain a permanently-unknown entity.
+
+    Everything else — the °F/°C normalization, availability, device class —
+    is inherited; only which stored field is read differs.
+    """
+
+    _attr_translation_key = "sensor_temperature_2"
+
+    def __init__(
+        self,
+        coordinator: GoveeCoordinator,
+        device: GoveeDevice,
+    ) -> None:
+        super().__init__(coordinator, device)
+        self._attr_unique_id = f"{device.device_id}_temperature_2"
+
+    @property
+    def _raw_reading(self) -> float | None:
+        state = self.device_state
+        return state.sensor_temperature_2 if state else None
 
 
 class GoveeAirQualitySensor(GoveeEntity, SensorEntity):
