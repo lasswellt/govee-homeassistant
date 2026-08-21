@@ -161,6 +161,13 @@ class GoveeGroupedSegmentEntity(GoveeEntity, LightEntity, RestoreEntity):
             )
 
         self._is_on = False
+
+        # Record black even when the write was skipped above — see the same
+        # block in segment.py for why (issue #131).
+        for segment_index in self._segment_indices:
+            self.coordinator.record_segment_color(
+                self._device_id, segment_index, (0, 0, 0)
+            )
         self.async_write_ha_state()
 
     async def async_added_to_hass(self) -> None:
@@ -176,3 +183,9 @@ class GoveeGroupedSegmentEntity(GoveeEntity, LightEntity, RestoreEntity):
 
             if last_state.attributes.get("rgb_color"):
                 self._rgb_color = tuple(last_state.attributes["rgb_color"])
+
+        # Seed the coordinator's segment tracking from the restored state — see
+        # the same block in segment.py for why (issue #131).
+        rgb = self._rgb_color if self._is_on else (0, 0, 0)
+        for segment_index in self._segment_indices:
+            self.coordinator.record_segment_color(self._device_id, segment_index, rgb)

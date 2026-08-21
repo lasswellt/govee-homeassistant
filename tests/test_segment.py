@@ -142,6 +142,35 @@ class TestSegmentTurnOffLogic:
         entity.coordinator.async_control_device.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_turn_off_records_black_even_when_command_skipped(self):
+        """A skipped write still means the segment is off.
+
+        The skip only means something else is already taking the device dark.
+        Leaving the previous colour in the coordinator's tracking would make a
+        later whole-device write replay it and relight a ring the user had
+        switched off (issue #131) — which is exactly what happened in practice
+        after an area turn_off.
+        """
+        entity = _make_segment_entity(power_state=True, power_off_pending=True)
+
+        await entity.async_turn_off()
+
+        entity.coordinator.async_control_device.assert_not_called()
+        entity.coordinator.record_segment_color.assert_called_once_with(
+            "AA:BB:CC:DD:EE:FF:00:11", 3, (0, 0, 0)
+        )
+
+    @pytest.mark.asyncio
+    async def test_turn_off_records_black_when_command_sent(self):
+        entity = _make_segment_entity(power_state=True, power_off_pending=False)
+
+        await entity.async_turn_off()
+
+        entity.coordinator.record_segment_color.assert_called_once_with(
+            "AA:BB:CC:DD:EE:FF:00:11", 3, (0, 0, 0)
+        )
+
+    @pytest.mark.asyncio
     async def test_turn_off_yields_before_flag_check(self):
         """asyncio.sleep(0) is called before checking the power-off flag."""
         entity = _make_segment_entity(power_state=True, power_off_pending=False)

@@ -188,6 +188,20 @@ LAN_STALE_SECONDS: Final = 90
 # LAN_RESCAN_INTERVAL so a correlation stays valid across a full rescan cycle.
 LAN_CORRELATION_TTL_SECONDS: Final = 600
 
+# SKUs whose two light zones (a central downlight panel and an RGBIC ring)
+# cannot be separated by the obvious capabilities: ``mainLightToggle`` /
+# ``backgroundLightToggle`` are inert on this hardware, and ``powerSwitch`` is
+# whole-fixture — it kills the ring too, and leaves the firmware in a state
+# where any later light command silently wakes the main panel back up. For
+# these SKUs the integration adds a dedicated main-panel light entity that
+# switches the panel via the whole-device colour channel instead. See
+# ``GoveeMainLightEntity`` in ``light.py`` for the mechanism (issue #131).
+#
+# Deliberately narrow: only the H1270 has been verified against real hardware,
+# though H1250/H60A6 (the other SKUs reported with inert light toggles) are
+# plausibly the same fixture design.
+MAIN_LIGHT_TOGGLE_SKUS: Final = frozenset({"H1270"})
+
 # BLE constants
 # Govee AWS/BLE advert manufacturer ID. Verified against
 # Bluetooth-Devices/govee-ble (used by H5127 and related). Additional IDs
@@ -222,6 +236,10 @@ SUFFIX_NIGHT_LIGHT: Final = "_night_light"
 SUFFIX_LIGHT_ZONE: Final = "_light_zone_"
 SUFFIX_SOCKET: Final = "_socket_"
 SUFFIX_MAIN_LIGHT: Final = "_main_light"
+# Distinct from SUFFIX_MAIN_LIGHT (the switch backed by the cloud
+# ``mainLightToggle`` capability) — this is the dedicated main-panel light
+# entity added for MAIN_LIGHT_TOGGLE_SKUS (issue #131).
+SUFFIX_MAIN_LIGHT_TOGGLE: Final = "_main_light_toggle"
 SUFFIX_BACKGROUND_LIGHT: Final = "_background_light"
 SUFFIX_NEBULA_LIGHT: Final = "_nebula_light"
 SUFFIX_SIDE_LIGHT: Final = "_side_light"
