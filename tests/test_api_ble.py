@@ -31,6 +31,24 @@ from custom_components.govee.api.ble import (
     _build_rgb_segmented_frame,
     _build_rgb_single_frame,
 )
+from custom_components.govee.api.ble_crypto import GoveeBLESession
+
+
+@pytest.fixture(autouse=True)
+def _plaintext_device():
+    """Treat the mocked device as speaking the plaintext protocol.
+
+    ``_ensure_connected`` probes every connection for the encrypted protocol,
+    which reads a GATT characteristic. The clients here are MagicMocks, so
+    that read would be awaited on a non-awaitable. The encrypted path has its
+    own tests in ``test_ble_crypto.py`` and ``TestEncryptedTransport`` below.
+    """
+    with patch(
+        "custom_components.govee.api.ble.async_supports_encryption",
+        AsyncMock(return_value=False),
+    ):
+        yield
+
 
 # ==============================================================================
 # Module constants
@@ -52,9 +70,17 @@ class TestConstants:
         """All three known Govee BLE advertising name prefixes are listed."""
         assert BLE_DISCOVERY_NAMES == ("Govee_", "ihoment_", "GBK_")
 
-    def test_segmented_models_matches_beshelmek(self):
-        """Segmented model whitelist matches Beshelmek light.py:35 exactly."""
-        assert SEGMENTED_MODELS == frozenset({"H6053", "H6072", "H6102", "H6199"})
+    def test_segmented_models_covers_beshelmek(self):
+        """Segmented whitelist keeps every SKU from Beshelmek light.py:35."""
+        assert SEGMENTED_MODELS >= frozenset({"H6053", "H6072", "H6102", "H6199"})
+
+    def test_segmented_models_includes_h1270(self):
+        """H1270 ignores the single-zone frame and needs mode 0x15.
+
+        Not in the Beshelmek list — added from field testing, where the colour
+        read-back stayed black until the segmented encoding was used.
+        """
+        assert "H1270" in SEGMENTED_MODELS
 
     def test_command_byte_values(self):
         """Command bytes match the reference protocol."""
@@ -703,3 +729,150 @@ class TestStop:
 
         await device.stop()  # must not raise
         assert device._client is None
+
+
+# ==============================================================================
+# Encrypted transport wiring
+# ==============================================================================
+
+
+class TestEncryptedTransport:
+    """Frames must be encrypted when a session was negotiated, and only then."""
+
+    @staticmethod
+    def _connected_device() -> tuple[GoveeBLEDevice, MagicMock]:
+        device = GoveeBLEDevice(_make_ble_device())
+        client = MagicMock()
+        client.is_connected = True
+        client.write_gatt_char = AsyncMock()
+        device._client = client
+        return device, client
+
+    @staticmethod
+    def _session() -> GoveeBLESession:
+        return GoveeBLESession(
+            device_key=bytes(16), tx_iv_key=bytes(8), rx_iv_key=bytes(8)
+        )
+
+    @pytest.mark.asyncio
+    async def test_write_sends_plaintext_without_session(self):
+        """Devices on the plaintext protocol must be unaffected."""
+        device, client = self._connected_device()
+
+        await device.turn_on()
+
+        assert client.write_gatt_char.call_args[0][1] == _build_power_frame(True)
+
+    @pytest.mark.asyncio
+    async def test_write_encrypts_the_same_command_frame(self):
+        """The wrapped frame must decrypt back to the identical command."""
+        device, client = self._connected_device()
+        device._session = self._session()
+
+        await device.turn_on()
+
+        sent = client.write_gatt_char.call_args[0][1]
+        assert sent != _build_power_frame(True)
+        # The peer decrypts our transmissions with our tx key as its rx key.
+        peer = GoveeBLESession(
+            device_key=bytes(16), tx_iv_key=bytes(8), rx_iv_key=bytes(8)
+        )
+        assert peer.unwrap(sent) == _build_power_frame(True)
+
+    @pytest.mark.asyncio
+    async def test_disconnect_clears_session(self):
+        """A stale session would reuse nonces the device has already seen."""
+        device, _client = self._connected_device()
+        device._session = self._session()
+
+        device._on_disconnected(MagicMock())
+
+        assert device._session is None
+
+
+class TestNegotiationFailureNeverDowngrades:
+    """A failed negotiation must not leave a usable plaintext connection.
+
+    Writes use ``response=False``, so plaintext frames sent to an encrypted
+    device raise nothing. The caller would then record a transport success and
+    skip the LAN/MQTT/REST fallback, leaving the device untouched while HA
+    shows the command as applied.
+    """
+
+    @staticmethod
+    def _patches(establish_side_effect=None, supports=True):
+        client = MagicMock()
+        client.is_connected = True
+        client.write_gatt_char = AsyncMock()
+        client.disconnect = AsyncMock()
+        return client, patch(
+            "custom_components.govee.api.ble.establish_connection",
+            AsyncMock(return_value=client),
+        ), patch(
+            "custom_components.govee.api.ble.close_stale_connections_by_address",
+            AsyncMock(),
+        ), patch(
+            "custom_components.govee.api.ble.async_supports_encryption",
+            AsyncMock(return_value=supports),
+        ), patch(
+            "custom_components.govee.api.ble.async_establish_session",
+            AsyncMock(side_effect=establish_side_effect),
+        )
+
+    @pytest.mark.asyncio
+    async def test_handshake_failure_drops_the_connection_and_raises(self):
+        device = GoveeBLEDevice(_make_ble_device())
+        client, p1, p2, p3, p4 = self._patches(TimeoutError("no reply"))
+
+        with p1, p2, p3, p4, pytest.raises(TimeoutError):
+            await device._ensure_connected()
+
+        # Nothing cached, so the next command renegotiates instead of
+        # silently writing plaintext down a half-negotiated link.
+        assert device._client is None
+        assert device._session is None
+        client.disconnect.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_probe_failure_drops_the_connection_and_raises(self):
+        device = GoveeBLEDevice(_make_ble_device())
+        client = MagicMock()
+        client.is_connected = True
+        client.disconnect = AsyncMock()
+
+        with patch(
+            "custom_components.govee.api.ble.establish_connection",
+            AsyncMock(return_value=client),
+        ), patch(
+            "custom_components.govee.api.ble.close_stale_connections_by_address",
+            AsyncMock(),
+        ), patch(
+            "custom_components.govee.api.ble.async_supports_encryption",
+            AsyncMock(side_effect=TimeoutError("proxy busy")),
+        ), pytest.raises(TimeoutError):
+            await device._ensure_connected()
+
+        assert device._client is None
+        client.disconnect.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_a_command_after_a_failed_handshake_renegotiates(self):
+        """The failure must not be sticky for the life of the link."""
+        device = GoveeBLEDevice(_make_ble_device())
+        session = GoveeBLESession(
+            device_key=bytes(16), tx_iv_key=bytes(8), rx_iv_key=bytes(8)
+        )
+        client, p1, p2, p3, _ = self._patches()
+        establish = AsyncMock(side_effect=[TimeoutError("no reply"), session])
+
+        with p1, p2, p3, patch(
+            "custom_components.govee.api.ble.async_establish_session", establish
+        ):
+            with pytest.raises(TimeoutError):
+                await device.turn_on()
+            await device.turn_on()  # must try again, and succeed
+
+        assert establish.await_count == 2
+        assert device._session is session
+        sent = client.write_gatt_char.call_args[0][1]
+        assert sent != _build_power_frame(True)  # it went out encrypted
