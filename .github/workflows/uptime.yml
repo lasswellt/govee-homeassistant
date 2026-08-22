@@ -1,7 +1,7 @@
 name: Govee API Uptime
 
 # Pings the Govee hosts this integration uses and publishes a status badge +
-# uptime-bars graph to the orphan `badges` branch (keeps master history clean).
+# uptime-bars graph to the orphan `badges` branch (keeps main history clean).
 
 on:
   schedule:

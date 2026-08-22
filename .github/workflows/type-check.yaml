@@ -2,9 +2,9 @@ name: Type Checking
 
 on:
   push:
-    branches: [master, develop]
+    branches: [main]
   pull_request:
-    branches: [master]
+    branches: [main]
 
 jobs:
   mypy:
