@@ -336,7 +336,7 @@ Some conventions worth knowing before you open a PR:
 - **Capability-based, not SKU-based.** Entities come from the capabilities Govee reports. Add a SKU allowlist entry only when the API genuinely can't express the difference — and put the evidence in a comment, the way `FAHRENHEIT_REPORTING_SKUS` and `SKU_SEGMENT_OVERRIDES` do.
 - **Explain the *why* in comments.** Most of this codebase works around undocumented Govee behaviour. A comment saying what the code does is redundant; one saying which capture or issue proved it is not.
 - **Tests carry the evidence.** Where a fix comes from a real capture, the test uses the real bytes. `tests/test_mqtt_multisync.py` and `tests/test_dual_probe.py` are the pattern.
-- Fork PRs don't currently trigger the test workflows, so please run `pytest` and `flake8` locally and say so in the PR.
+- **CI runs on pull requests, including from forks.** A first-time contributor's first run needs a one-click approval from a maintainer; after that they run automatically. `test (3.12)`, `test (3.13)`, `mypy`, `HACS Action` and `Home Assistant Validation` must pass before a PR can merge — running `pytest` and `flake8` locally first still saves a round trip. Note `mypy` only runs on 3.12: it fails on 3.13 against Home Assistant core's PEP 696 type-parameter defaults, so a local 3.13 run will not catch type errors.
 
 ---
 
