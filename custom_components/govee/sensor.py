@@ -389,7 +389,7 @@ class GoveeTemperatureSensor(_BffThermometerAvailabilityMixin, SensorEntity):
         # Heaters carry their unit in the temperature_setting STRUCT; for
         # everything else the account's own fahOpen preference is the next best
         # ground truth, because the Developer API mirrors it (issue #157).
-        unit_hint = getattr(state, "heater_temperature_unit", None)
+        unit_hint = getattr(state, "device_temperature_unit", None)
         if unit_hint is None:
             unit_hint = self.coordinator.account_temperature_unit(self._device_id)
 

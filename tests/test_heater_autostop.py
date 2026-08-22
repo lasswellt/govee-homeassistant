@@ -210,7 +210,7 @@ class TestFahrenheitHeaterStructParsing:
         )
         # 41°F == 5°C — heater_temperature is canonical Celsius.
         assert state.heater_temperature == 5
-        assert state.heater_temperature_unit == "Fahrenheit"
+        assert state.device_temperature_unit == "Fahrenheit"
 
     def test_celsius_struct_stays_unconverted(self):
         state = GoveeDeviceState.create_empty("dev1")
@@ -232,7 +232,7 @@ class TestFahrenheitHeaterStructParsing:
             }
         )
         assert state.heater_temperature == 22
-        assert state.heater_temperature_unit == "Celsius"
+        assert state.device_temperature_unit == "Celsius"
 
     def test_unit_absent_defaults_to_no_conversion(self):
         state = GoveeDeviceState.create_empty("dev1")
@@ -248,4 +248,4 @@ class TestFahrenheitHeaterStructParsing:
             }
         )
         assert state.heater_temperature == 18
-        assert state.heater_temperature_unit is None
+        assert state.device_temperature_unit is None

@@ -219,7 +219,10 @@ class GoveeDeviceState:
     # carries no unit metadata. Capturing the STRUCT's unit lets the
     # temperature sensor entity normalize without a SKU allowlist entry
     # (issue #129).
-    heater_temperature_unit: str | None = None
+    # Unit the device declares in its temperature_setting STRUCT ("Celsius" /
+    # "Fahrenheit"). Not heater-specific despite the capability's origins —
+    # kettles declare it too, under a different instance name (issue #171).
+    device_temperature_unit: str | None = None
 
     # Purifier state
     purifier_mode: int | None = (
@@ -445,14 +448,24 @@ class GoveeDeviceState:
                         self.presence = num_ev == 1
 
             elif cap_type == "devices.capabilities.temperature_setting":
+                # Any temperature_setting STRUCT may declare the unit the
+                # device is working in, whatever the instance is called.
+                # Heaters use ``targetTemperature``; the H7170 kettle uses
+                # ``sliderTemperature`` and carries the same
+                # ``{"unit": ..., "targetTemperature": ...}`` shape. Reading
+                # the hint only from the heater instance left the kettle
+                # falling through to the SKU allowlist, which converted an
+                # already-Fahrenheit sensorTemperature a second time — 77 °F
+                # surfaced as 170.6 °F (issue #171).
+                unit = value.get("unit") if isinstance(value, dict) else None
+                if isinstance(unit, str) and unit:
+                    self.device_temperature_unit = unit
+
                 # Heaters report target temperature + autoStop in a STRUCT.
                 # Capturing autoStop here lets temperature-change commands
                 # preserve the user's choice instead of resetting it to 0
                 # (issue #29).
                 if instance == "targetTemperature" and isinstance(value, dict):
-                    unit = value.get("unit")
-                    if isinstance(unit, str) and unit:
-                        self.heater_temperature_unit = unit
                     # The capability definition names the field ``temperature``
                     # (and commands are sent that way), but the polled STATE
                     # carries it as ``targetTemperature`` on devices like the
