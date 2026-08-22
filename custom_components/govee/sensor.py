@@ -665,26 +665,32 @@ class GoveeConnectionModeSensor(GoveeEntity, SensorEntity):
         super().__init__(coordinator, device)
         self._attr_unique_id = f"{device.device_id}_connection_mode"
 
-    @property
-    def native_value(self) -> str:
-        """Return the highest-priority transport currently delivering state.
+    def _active_transport(self) -> TransportKind | None:
+        """The highest-priority transport currently delivering state, if any.
 
         ``is_available`` alone is insufficient — MQTT marks itself available
-        on broker connect even for devices that never push state. We require
-        a ``last_success_ts`` stamp so the surfaced transport has actually
-        delivered state for this device.
+        on broker connect even for devices that never push state. A
+        ``last_success_ts`` stamp is required so the surfaced transport has
+        actually delivered state for this device.
+
+        Returns the ``TransportKind`` rather than a plain string so callers
+        that need to look the transport back up keep the narrow type.
         """
         if self._device.is_group:
-            return (
-                "cloud_api"
-                if _is_delivering(self.coordinator.get_transport_health(self._device_id, "cloud_api"))
-                else "unavailable"
+            health = self.coordinator.get_transport_health(
+                self._device_id, "cloud_api"
             )
+            return "cloud_api" if _is_delivering(health) else None
 
         for kind in _PRIORITY_ORDER:
             if _is_delivering(self.coordinator.get_transport_health(self._device_id, kind)):
                 return kind
-        return "unavailable"
+        return None
+
+    @property
+    def native_value(self) -> str:
+        """Return the current connection mode, or ``unavailable``."""
+        return self._active_transport() or "unavailable"
 
     @property
     def icon(self) -> str:
@@ -711,8 +717,8 @@ class GoveeConnectionModeSensor(GoveeEntity, SensorEntity):
         """
         attrs: dict[str, str] = {}
 
-        mode = self.native_value
-        if mode != "unavailable":
+        mode = self._active_transport()
+        if mode is not None:
             health = self.coordinator.get_transport_health(self._device_id, mode)
             if health is not None and health.last_success_ts is not None:
                 attrs["last_delivered_at"] = health.last_success_ts.isoformat()
