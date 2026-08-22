@@ -251,6 +251,11 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         )
 
         self._config_entry = config_entry
+        # The options this instance was built with. The entry's update listener
+        # compares against this to tell an options change from a data-only
+        # write, such as storing a refreshed account token (#132) — reloading
+        # for one of those would drop every entity for a background refresh.
+        self.options_snapshot: dict[str, Any] = dict(config_entry.options)
         self._api_client = api_client
         self._iot_credentials = iot_credentials
         self._enable_groups = enable_groups

@@ -331,10 +331,76 @@ flake8 .
 black .
 ```
 
+Some conventions worth knowing before you open a PR:
+
+- **Capability-based, not SKU-based.** Entities come from the capabilities Govee reports. Add a SKU allowlist entry only when the API genuinely can't express the difference — and put the evidence in a comment, the way `FAHRENHEIT_REPORTING_SKUS` and `SKU_SEGMENT_OVERRIDES` do.
+- **Explain the *why* in comments.** Most of this codebase works around undocumented Govee behaviour. A comment saying what the code does is redundant; one saying which capture or issue proved it is not.
+- **Tests carry the evidence.** Where a fix comes from a real capture, the test uses the real bytes. `tests/test_mqtt_multisync.py` and `tests/test_dual_probe.py` are the pattern.
+- Fork PRs don't currently trigger the test workflows, so please run `pytest` and `flake8` locally and say so in the PR.
+
+---
+
+## Credits
+
+### Origin
+
+This integration began as **[LaggAt/hacs-govee](https://github.com/LaggAt/hacs-govee)** by **[@LaggAt](https://github.com/LaggAt)** (Florian Lagg), first published in August 2020. That work is the foundation everything here is built on — the original API client, the config flow, and the HACS packaging — and it remains the copyright holder in [LICENSE](LICENSE.txt). The current codebase has been substantially rewritten (Govee API v2, MQTT push, LAN control, the non-light platforms), but it exists because that came first. The two dozen people who contributed to `hacs-govee` between 2020 and 2022 are credited in that repository's own history rather than here, since their pull requests live there — the work is still in this lineage.
+
+### Contributors
+
+People who have landed code here, alphabetically:
+
+[@anant-j](https://github.com/anant-j) ·
+[@andreuSignes](https://github.com/andreuSignes) ·
+[@brian6932](https://github.com/brian6932) ·
+[@chrisns](https://github.com/chrisns) ·
+[@Danimal4326](https://github.com/Danimal4326) ·
+[@DUC750](https://github.com/DUC750) ·
+[@maxi07](https://github.com/maxi07) ·
+[@momousta](https://github.com/momousta) ·
+[@phylix](https://github.com/phylix) ·
+[@thephw](https://github.com/thephw) ·
+[@TomK](https://github.com/TomK) ·
+[@tonyrsutton](https://github.com/tonyrsutton) ·
+[@yyolk](https://github.com/yyolk)
+
+### Investigation and hardware testing
+
+Govee's cloud API is undocumented in the places that matter most, and several fixes here exist only because someone with the hardware did the work to prove what was actually happening. This is not a thank-you list — each of these produced a specific result:
+
+- **[@Araknus13](https://github.com/Araknus13)** — decoded the gateway thermometer frame format by pairing 30 on-the-hour captures against their own logged history, establishing `T[°C] = (byte13 + 112) / 10` to within 0.1 K and identifying bytes 9–12 as a big-endian timestamp. Two earlier candidate formulas were both wrong; their data is what separated them. ([#151](https://github.com/lasswellt/govee-homeassistant/issues/151))
+- **[@chrisns](https://github.com/chrisns)** — separated two LAN failures that looked identical, with an A/B test across subnets proving the same command works from the device's own VLAN and is silently ignored from another. That distinction is the whole design of the `device_id=ip[!]` override. ([#164](https://github.com/lasswellt/govee-homeassistant/issues/164), [#131](https://github.com/lasswellt/govee-homeassistant/issues/131))
+- **[@Danimal4326](https://github.com/Danimal4326)** — traced silent leak-detection failures to Govee writing alert strings with non-breaking spaces, which the matcher stripped only as ASCII. Found it down to the byte. ([#145](https://github.com/lasswellt/govee-homeassistant/issues/145))
+- **[@andreuSignes](https://github.com/andreuSignes)** — identified the `elementRange` / `size.max` split behind phantom RGBIC segment entities, and verified the fix end-to-end on four live H7075 units. ([#161](https://github.com/lasswellt/govee-homeassistant/pull/161))
+- **[@thephw](https://github.com/thephw)** — captured and decoded the gateway BLE relay path for the H5901 water timer, including establishing that the account certificate is policy-denied from the gateway command topic. ([#135](https://github.com/lasswellt/govee-homeassistant/issues/135))
+- **[@Eschwinm](https://github.com/Eschwinm)** — tested all 15 advertised H7076 segments individually to establish which four indices actually move the light. ([#160](https://github.com/lasswellt/govee-homeassistant/issues/160))
+- **[@ThomasADavis](https://github.com/ThomasADavis)** — reproduced a reported brightness fault in the Govee app itself, which is what identified it as firmware rather than an integration bug. ([#159](https://github.com/lasswellt/govee-homeassistant/issues/159))
+- **[@matteotomasoni](https://github.com/matteotomasoni)**, **[@thrstnbecker](https://github.com/thrstnbecker)**, **[@mikejhendricks](https://github.com/mikejhendricks)**, **[@ftremblay91](https://github.com/ftremblay91)**, **[@CrazyLukas98](https://github.com/CrazyLukas98)**, **[@PaulTubeTV](https://github.com/PaulTubeTV)**, **[@kayandwill0306-cyber](https://github.com/kayandwill0306-cyber)** — diagnostics downloads and patient re-testing across multiple releases. Several root causes in this integration were found in their attachments, not in the code.
+
+If you filed an issue with a diagnostics download attached, you probably made something here work. That is genuinely the most useful thing a user can do.
+
+### Protocol research
+
+Govee publishes no specification for the account API, the AWS IoT topics, the BLE packet formats or the LAN protocol. Everything the integration does on those paths was reverse-engineered, much of it first by other projects. Where this codebase relies on their findings, the source is cited in the comment next to the code:
+
+- **[homebridge-govee](https://github.com/homebridge-plugins/homebridge-govee)** — account login flow, AWS IoT credential exchange, and the leak-sensor warning-message path
+- **[wez/govee2mqtt](https://github.com/wez/govee2mqtt)** — device-settings schemas, LAN protocol details, and independent confirmation of several API quirks
+- **[Beshelmek/govee_ble_lights](https://github.com/Beshelmek/govee_ble_lights)** — BLE command frame formats used for the passthrough (`ptReal`) path
+- **[disforw/goveelife](https://github.com/disforw/goveelife)** — real-device capability fixtures used to cross-validate the parser
+- **[constructorfleet/homebridge-ultimate-govee](https://github.com/constructorfleet/homebridge-ultimate-govee)** — mmWave presence-report decoding
+- **[Bluetooth-Devices/govee-ble](https://github.com/Bluetooth-Devices/govee-ble)** — BLE advertisement formats
+- **[Galorhallen/govee-local-api](https://github.com/Galorhallen/govee-local-api)** — LAN UDP discovery and control, also used by Home Assistant's built-in `govee_light_local`
+- **[TheOneOgre/govee-cloud](https://github.com/TheOneOgre/govee-cloud)** — client-id derivation and account-API behaviour
+- **[egold555](https://github.com/egold555/Govee-Reverse-Engineering)** and **[BeauJBurroughs](https://github.com/BeauJBurroughs/Govee-H6127-Reverse-Engineering)** — early BLE protocol reverse-engineering that most later work builds on
+
+Detailed findings, byte maps and API shapes are documented in [`docs/govee-protocol-reference.md`](docs/govee-protocol-reference.md).
+
 ---
 
 ## Disclaimer & license
 
 This is an unofficial integration and is not affiliated with or endorsed by Govee. "Govee" is a trademark of its respective owner. Use at your own risk.
 
-Licensed under the terms in [LICENSE](LICENSE.txt).
+The undocumented account API, MQTT and LAN paths are reverse-engineered and can stop working whenever Govee changes them. The documented Developer API path is the stable one; everything built on top of it is best-effort by nature.
+
+Licensed under the terms in [LICENSE](LICENSE.txt) — originally © 2021 Florian Lagg (@LaggAt), and maintained since under the same terms.
