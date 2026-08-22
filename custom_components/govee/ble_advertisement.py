@@ -60,6 +60,18 @@ def sku_from_ble_name(name: str | None) -> str | None:
     return None
 
 
+def ble_address_from_device_id(device_id: str) -> str | None:
+    """Derive the BLE MAC from a cloud device ID.
+
+    Cloud IDs carry the BLE MAC with two extra leading octets, e.g.
+    ``11:66:C0:EB:32:C1:19:FC`` for MAC ``C0:EB:32:C1:19:FC``.
+    """
+    parts = device_id.split(":")
+    if len(parts) < 6:
+        return None
+    return ":".join(parts[-6:]).upper()
+
+
 class BleAdvertisementHandler:
     """Subscribe to and correlate Govee BLE advertisements.
 
@@ -116,6 +128,47 @@ class BleAdvertisementHandler:
             GOVEE_BLE_MANUFACTURER_IDS,
         )
         return unsubs
+
+    @callback
+    def enroll_from_cache(self) -> None:
+        """Enrol eligible devices from Home Assistant's advertisement cache.
+
+        The advertisement callbacks only deliver while a connectable scanner
+        is running. Bluetooth proxies are themselves integrations, and they
+        usually register their scanners after this one has set up, so at setup
+        time the scanner count is zero and every advertisement is refused. The
+        device then stays cloud-only until somebody reloads the entry by hand.
+
+        Reading the cache on each refresh closes that gap without depending on
+        a fresh advertisement arriving at the right moment.
+        """
+        if not HAS_BLUETOOTH:
+            return
+
+        coord = self._coord
+        for device_id, device in list(coord._devices.items()):
+            if device_id in coord._ble_devices or device.is_group:
+                continue
+            if device.sku not in BLE_COMMAND_SUPPORTED_MODELS:
+                continue
+            address = ble_address_from_device_id(device_id)
+            if address is None:
+                continue
+            try:
+                info = bt_component.async_last_service_info(
+                    coord.hass, address, connectable=True
+                )
+            except Exception as err:  # noqa: BLE001 — runs inside the poll
+                # Never let a Bluetooth hiccup fail the whole state refresh.
+                _LOGGER.debug("BLE cache lookup failed for %s: %s", address, err)
+                continue
+            if info is not None:
+                _LOGGER.debug(
+                    "Enrolling %s (%s) from the BLE advertisement cache",
+                    device_id,
+                    address,
+                )
+                self.handle_advertisement(info)
 
     @callback
     def handle_advertisement(self, service_info: Any) -> None:

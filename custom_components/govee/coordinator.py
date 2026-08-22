@@ -2919,6 +2919,11 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if not self._devices:
             return self._states
 
+        # Bluetooth proxies register their scanners after this integration
+        # sets up, so the advertisement callbacks are refused at setup time and
+        # BLE-capable devices would stay cloud-only until a manual reload.
+        self._ble_handler.enroll_from_cache()
+
         # Create tasks for parallel fetching
         tasks = [
             self._fetch_device_state(device_id, device)
