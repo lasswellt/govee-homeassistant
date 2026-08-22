@@ -145,8 +145,10 @@ class TestMainLightTurnOff:
 
         await entity.async_turn_off()
 
+        # wrote_black lets the coordinator skip the replay when the ring is
+        # already all black — safe only because this write was itself black.
         entity.coordinator.async_reassert_segments.assert_awaited_once_with(
-            "AA:BB:CC:DD:EE:FF:00:11"
+            "AA:BB:CC:DD:EE:FF:00:11", wrote_black=True
         )
 
     @pytest.mark.asyncio
@@ -289,13 +291,14 @@ class TestSegmentReassert:
     ring wiped. The segment entities now seed it as they restore.
     """
 
-    def _coordinator(self):
+    def _coordinator(self, rate_limit_remaining: int = 100):
         from custom_components.govee.coordinator import GoveeCoordinator
 
         coord = GoveeCoordinator.__new__(GoveeCoordinator)
         coord._segment_colors = {}
         coord._pending_power_off = set()
         coord.async_control_device = AsyncMock(return_value=True)
+        coord._api_client = MagicMock(rate_limit_remaining=rate_limit_remaining)
         return coord
 
     def test_record_seeds_tracking(self):
@@ -354,3 +357,81 @@ class TestSegmentReassert:
         await coord.async_reassert_segments("dev")
 
         coord.async_control_device.assert_not_awaited()
+
+
+class TestReassertGuards:
+    """The re-assert spends REST quota, so it must not fire needlessly.
+
+    Segment commands ride neither the BLE nor the LAN dispatcher, so every
+    call here goes to REST against a 100/min, 10,000/day budget.
+    """
+
+    def _coordinator(self, rate_limit_remaining: int = 100):
+        from custom_components.govee.coordinator import GoveeCoordinator
+
+        coord = GoveeCoordinator.__new__(GoveeCoordinator)
+        coord._segment_colors = {}
+        coord._pending_power_off = set()
+        coord.async_control_device = AsyncMock(return_value=True)
+        coord._api_client = MagicMock(rate_limit_remaining=rate_limit_remaining)
+        return coord
+
+    @pytest.mark.asyncio
+    async def test_black_write_onto_black_ring_is_skipped(self):
+        """The panel going dark leaves an already-dark ring dark anyway."""
+        coord = self._coordinator()
+        for i in range(12):
+            coord.record_segment_color("dev", i, (0, 0, 0))
+
+        await coord.async_reassert_segments("dev", wrote_black=True)
+
+        coord.async_control_device.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_black_write_onto_a_lit_ring_still_replays(self):
+        """A lit ring must survive the panel being switched off — that is #131."""
+        coord = self._coordinator()
+        for i in range(12):
+            coord.record_segment_color("dev", i, (255, 0, 0))
+
+        await coord.async_reassert_segments("dev", wrote_black=True)
+
+        coord.async_control_device.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_colour_write_onto_black_ring_still_replays(self):
+        """The unsafe skip: colour alone must never suppress the replay.
+
+        A whole-device colour write leaves the ring showing the panel's
+        colour, so a ring that should be dark has to be re-blacked. Skipping
+        on "all tracked colours are black" without checking what was written
+        would light the ring every time the panel came on.
+        """
+        coord = self._coordinator()
+        for i in range(12):
+            coord.record_segment_color("dev", i, (0, 0, 0))
+
+        await coord.async_reassert_segments("dev")  # wrote_black defaults False
+
+        coord.async_control_device.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_skipped_when_the_api_budget_is_nearly_spent(self):
+        """Better a stale ring than an exhausted quota for the whole account."""
+        coord = self._coordinator(rate_limit_remaining=21)
+        for i in range(12):
+            coord.record_segment_color("dev", i, (i * 20, 0, 0))  # 12 distinct
+
+        await coord.async_reassert_segments("dev")
+
+        coord.async_control_device.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_runs_when_the_budget_is_comfortable(self):
+        coord = self._coordinator(rate_limit_remaining=100)
+        for i in range(12):
+            coord.record_segment_color("dev", i, (i * 20, 0, 0))
+
+        await coord.async_reassert_segments("dev")
+
+        assert coord.async_control_device.await_count == 12

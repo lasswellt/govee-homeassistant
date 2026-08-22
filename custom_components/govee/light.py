@@ -553,7 +553,14 @@ class GoveeMainLightEntity(GoveeLightEntity):
         re-assert landing *after* that power-off would wake the panel straight
         back up — turning the room off would leave the light on.
         """
-        # Yield so a concurrent PowerCommand can set the pending flag first.
+        # Best-effort ordering, not a guarantee. The yield gives a concurrent
+        # PowerCommand a chance to set the pending flag first, and
+        # _pending_power_off.add() does run before the first await in
+        # async_control_device — but HA promises nothing about which entity's
+        # coroutine is scheduled first on an area-targeted turn_off. If this
+        # one wins the race, the guard below sees no pending power-off and the
+        # panel can come back on. This narrows an existing race; it does not
+        # close it.
         await asyncio.sleep(0)
 
         state = self.device_state
@@ -581,8 +588,11 @@ class GoveeMainLightEntity(GoveeLightEntity):
             return
 
         # Black wipes the ring too, so put it back — this is what leaves the
-        # ring lit while the panel stays dark.
-        await self.coordinator.async_reassert_segments(self._device_id)
+        # ring lit while the panel stays dark. The write was black, so an
+        # all-black ring needs no replay: it is already dark either way.
+        await self.coordinator.async_reassert_segments(
+            self._device_id, wrote_black=True
+        )
         self.async_write_ha_state()
 
     @property

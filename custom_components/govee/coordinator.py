@@ -12,7 +12,7 @@ import logging
 import time
 from collections.abc import Awaitable, Mapping
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Final
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
@@ -133,6 +133,12 @@ from .repairs import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# API calls held back from the segment re-assert so a many-coloured ring on a
+# frequently toggled panel cannot exhaust the account's budget. Govee allows
+# 100/min; leaving a fifth of that free keeps ordinary control working even
+# when the ring is expensive to restore.
+_REASSERT_RATE_LIMIT_RESERVE: Final = 20
 
 # State fetch timeout per device
 STATE_FETCH_TIMEOUT = 30
@@ -840,7 +846,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         """
         self._segment_colors.setdefault(device_id, {})[segment_index] = rgb
 
-    async def async_reassert_segments(self, device_id: str) -> None:
+    async def async_reassert_segments(
+        self, device_id: str, *, wrote_black: bool = False
+    ) -> None:
         """Re-send the segments' last known colours after a whole-device write.
 
         On the two-zone Ceiling Light Pro fixtures (MAIN_LIGHT_TOGGLE_SKUS) the
@@ -862,6 +870,24 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         segment entities deliberately suppress (issue #16) and, on fixtures
         where any light command wakes the main panel, would undo the power-off
         entirely. Guarded here so every caller gets it, not just the one.
+
+        Segment commands ride neither the BLE nor the LAN dispatcher — both
+        only carry power, brightness and colour — so every call here goes to
+        REST and spends the API budget. Two guards keep that in proportion.
+
+        ``wrote_black`` says the whole-device write that triggered this was
+        itself black, which is the main-panel-off path. Only then can an
+        all-black ring be left alone: the write drives the whole fixture, so a
+        dark ring ends up dark either way. It is NOT safe to skip on colour
+        alone — after a write that turns the panel on, the ring is showing the
+        panel's colour, and skipping would leave it lit (issue #131).
+
+        The second guard is the API budget. A many-coloured ring costs one call
+        per distinct colour on every main-panel toggle, so an automation
+        toggling the panel against a varied ring can walk into the daily cap
+        and take the whole integration down with it. Below the reserve the ring
+        is left stale until the next segment write, which is the better
+        failure: a stale ring is a nuisance, a spent quota is an outage.
         """
         if self.is_power_off_pending(device_id):
             return
@@ -870,9 +896,24 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if not tracked:
             return
 
+        if wrote_black and all(rgb == (0, 0, 0) for rgb in tracked.values()):
+            return
+
         by_color: dict[tuple[int, int, int], list[int]] = {}
         for index, rgb in tracked.items():
             by_color.setdefault(rgb, []).append(index)
+
+        if self.api_rate_limit_remaining - len(by_color) < _REASSERT_RATE_LIMIT_RESERVE:
+            _LOGGER.warning(
+                "Skipping segment re-assert for %s: %d API calls remaining, "
+                "%d needed for %d distinct segment colours. The ring may show "
+                "the main panel's colour until the next segment command",
+                device_id,
+                self.api_rate_limit_remaining,
+                len(by_color),
+                len(by_color),
+            )
+            return
 
         for rgb, indices in by_color.items():
             r, g, b = rgb
