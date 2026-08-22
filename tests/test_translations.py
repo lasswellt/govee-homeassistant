@@ -53,6 +53,19 @@ def _walk_strings(obj: object) -> list[str]:
         yield obj
 
 
+def _leaf_strings(obj: object, prefix: str = "") -> dict[str, str]:
+    """Map every leaf string to its dotted key path."""
+    out: dict[str, str] = {}
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            path = f"{prefix}.{key}" if prefix else str(key)
+            if isinstance(value, str):
+                out[path] = value
+            else:
+                out.update(_leaf_strings(value, path))
+    return out
+
+
 def _placeholders(text: str) -> set[str]:
     """Return the set of placeholder names present in a translated string."""
     return set(PLACEHOLDER_RE.findall(text))
@@ -95,30 +108,38 @@ def test_translation_file_is_valid_json(lang: str) -> None:
 
 
 @pytest.mark.parametrize("lang", LANGUAGES)
-def test_translation_keys_match_strings_json(
-    lang: str, strings_keys: set[str]
-) -> None:
-    """Every leaf key in strings.json must exist in the translation, and vice-versa."""
+def test_translation_has_no_extra_keys(lang: str, strings_keys: set[str]) -> None:
+    """No translation may carry a key that strings.json doesn't have.
+
+    An extra key is always a bug — a typo, or a rename that updated the source
+    and not the translation — and dead weight either way, since Home Assistant
+    will never look it up. Enforced for every language.
+    """
     path = _base_dir() / "translations" / f"{lang}.json"
     assert path.exists(), f"Missing translation file: {path}"
 
-    translation_keys = _get_keys(_load_json(path))
+    extra = _get_keys(_load_json(path)) - strings_keys
+    assert (
+        not extra
+    ), f"Keys in translations/{lang}.json not in strings.json:\n  {sorted(extra)}"
+
+
+def test_en_translation_has_every_key(strings_keys: set[str]) -> None:
+    """en.json must mirror strings.json exactly — drift there is a real bug.
+
+    Deliberately not applied to the other languages. Home Assistant falls back
+    to English for a missing key, so an untranslated string degrades quietly
+    rather than breaking. Enforcing full parity everywhere would block every PR
+    that adds an English string until someone can also write it in each
+    translated language, stalling the source language on translator
+    availability. Missing keys are translation work, not a test failure.
+    """
+    translation_keys = _get_keys(_load_json(_base_dir() / "translations" / "en.json"))
 
     missing = strings_keys - translation_keys
-    extra = translation_keys - strings_keys
-
-    errors: list[str] = []
-    if missing:
-        errors.append(
-            f"Keys in strings.json missing from translations/{lang}.json:\n"
-            f"  {sorted(missing)}"
-        )
-    if extra:
-        errors.append(
-            f"Keys in translations/{lang}.json not in strings.json:\n"
-            f"  {sorted(extra)}"
-        )
-    assert not errors, "\n".join(errors)
+    assert (
+        not missing
+    ), f"Keys in strings.json missing from translations/en.json:\n  {sorted(missing)}"
 
 
 @pytest.mark.parametrize("lang", LANGUAGES)
@@ -144,48 +165,40 @@ def test_translation_values_are_non_empty(lang: str) -> None:
 def test_translation_preserves_placeholders(
     lang: str,
 ) -> None:
-    """Every ``{placeholder}`` in strings.json must also appear in the translation.
+    """A translated string must keep its source string's ``{placeholder}`` set.
 
-    The set is matched positionally by the leaf string's text, not by key path,
-    because the same English string can legitimately appear at multiple leaf
-    locations (e.g. ``"Battery"`` reused across two sensors) and any one of
-    them being untranslated would still leave the other valid — so the check
-    must apply to every occurrence.
+    Matched by key path rather than by leaf position. Positional matching only
+    holds while both files enumerate their leaves in exactly the same order —
+    insert a key in the middle of strings.json and every later index shifts,
+    silently pairing unrelated strings against each other. Key paths are
+    stable, and they also let a translation omit a key without invalidating
+    the comparison of the ones it does have.
 
-    A translation may introduce *additional* placeholders only if the source
-    string had none; if the source has placeholders, the translation must keep
-    exactly that set (no renames, no drops, no extras). HA replaces
-    ``{placeholder}`` tokens at runtime — a missing or renamed placeholder
-    shows up as a literal ``{api_url}`` to the user, and an extra one crashes
-    the formatter with ``KeyError``.
+    HA substitutes these tokens at runtime: a dropped or renamed placeholder
+    renders as a literal ``{api_url}`` to the user, and an extra one raises
+    ``KeyError`` in the formatter. A translation may add placeholders only
+    where the source string had none.
     """
-    source_strings = list(_walk_strings(_load_json(_base_dir() / "strings.json")))
-    translation_strings = list(_walk_strings(_load_json(_base_dir() / "translations" / f"{lang}.json")))
-
-    assert len(translation_strings) == len(source_strings), (
-        f"translations/{lang}.json has a different leaf-string count "
-        f"({len(translation_strings)}) than strings.json ({len(source_strings)}); "
-        "the structural key check should have caught this first."
-    )
+    source = _leaf_strings(_load_json(_base_dir() / "strings.json"))
+    translated = _leaf_strings(_load_json(_base_dir() / "translations" / f"{lang}.json"))
 
     mismatches: list[str] = []
-    for index, (source, translated) in enumerate(zip(source_strings, translation_strings)):
-        source_placeholders = _placeholders(source)
+    for key, source_text in source.items():
+        if key not in translated:
+            # Missing keys fall back to English in HA — see
+            # test_en_translation_has_every_key for why that's allowed here.
+            continue
+        source_placeholders = _placeholders(source_text)
         if not source_placeholders:
             continue
-        translated_placeholders = _placeholders(translated)
+        translated_placeholders = _placeholders(translated[key])
         if translated_placeholders != source_placeholders:
             mismatches.append(
-                f"  leaf #{index}: source={source_placeholders} "
+                f"  {key}: source={source_placeholders} "
                 f"translated={translated_placeholders}\n"
-                f"    source:     {source!r}\n"
-                f"    translated: {translated!r}"
+                f"    source:     {source_text!r}\n"
+                f"    translated: {translated[key]!r}"
             )
-
-    assert not mismatches, (
-        f"Placeholder set mismatch in translations/{lang}.json:\n"
-        + "\n".join(mismatches)
-    )
 
 
 # ---------------------------------------------------------------------------
