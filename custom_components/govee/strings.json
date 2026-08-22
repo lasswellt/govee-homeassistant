@@ -129,6 +129,9 @@
       },
       "govee_grouped_segment": {
         "name": "{device_name} Segments"
+      },
+      "govee_main_light_panel": {
+        "name": "Main light"
       }
     },
     "number": {

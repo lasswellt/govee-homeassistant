@@ -165,6 +165,15 @@ class GoveeSegmentEntity(GoveeEntity, LightEntity, RestoreEntity):
             )
 
         self._is_on = False
+
+        # Record black even when the write was skipped above. The segment is
+        # off either way — the skip only means something else is already
+        # taking the device dark — and leaving the previous colour in the
+        # coordinator's tracking would make a later whole-device write replay
+        # it, relighting a ring the user had switched off (issue #131).
+        self.coordinator.record_segment_color(
+            self._device_id, self._segment_index, (0, 0, 0)
+        )
         self.async_write_ha_state()
 
     async def async_added_to_hass(self) -> None:
@@ -187,6 +196,18 @@ class GoveeSegmentEntity(GoveeEntity, LightEntity, RestoreEntity):
             if last_state.attributes.get("rgb_color"):
                 self._rgb_color = tuple(last_state.attributes["rgb_color"])
 
+        # Seed the coordinator's segment tracking from the restored state. On
+        # fixtures where a whole-device write clobbers the segment overlay, the
+        # coordinator replays these colours afterwards; that tracking is
+        # in-memory, so without this the first such write after a restart would
+        # have nothing to replay and would leave the ring wiped (issue #131).
+        # An off segment is black, matching what async_turn_off actually sends.
+        self.coordinator.record_segment_color(
+            self._device_id,
+            self._segment_index,
+            self._rgb_color if self._is_on else (0, 0, 0),
+        )
+
         self.async_on_remove(
             async_dispatcher_connect(
                 self.hass,
@@ -202,7 +223,14 @@ class GoveeSegmentEntity(GoveeEntity, LightEntity, RestoreEntity):
         brightness: int,
         rgb_color: tuple[int, int, int],
     ) -> None:
-        """Mirror a write made through the grouped "all segments" entity."""
+        """Mirror a write made through the grouped "all segments" entity.
+
+        The coordinator's own segment tracking (#131) is fed by the command
+        path rather than from here — the grouped entity dispatches a real
+        SegmentColorCommand, so async_control_device records those colours
+        whichever entity issued them. This handler only keeps the individual
+        entity's optimistic view in step with the group's.
+        """
         self._is_on = is_on
         self._brightness = brightness
         self._rgb_color = rgb_color

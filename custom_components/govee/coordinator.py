@@ -12,7 +12,7 @@ import logging
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Final
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
@@ -140,6 +140,12 @@ from .repairs import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# API calls held back from the segment re-assert so a many-coloured ring on a
+# frequently toggled panel cannot exhaust the account's budget. Govee allows
+# 100/min; leaving a fifth of that free keeps ordinary control working even
+# when the ring is expensive to restore.
+_REASSERT_RATE_LIMIT_RESERVE: Final = 20
 
 # State fetch timeout per device
 STATE_FETCH_TIMEOUT = 30
@@ -325,6 +331,15 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # Track in-flight power-off commands so segment entities can
         # avoid racing with a concurrent device power-off (issue #16).
         self._pending_power_off: set[str] = set()
+
+        # Last colour written to each device's segments, per segment index
+        # ({device_id: {segment_index: (r, g, b)}}). On the two-zone Ceiling
+        # Light Pro fixtures the whole-device colour/CCT/brightness channel
+        # drives the ENTIRE fixture, clobbering the segment overlay the ring
+        # actually uses, so a write to that channel has to re-assert the
+        # segments afterwards to leave the ring where the user put it
+        # (issue #131). See ``async_reassert_segments``.
+        self._segment_colors: dict[str, dict[int, tuple[int, int, int]]] = {}
 
         # Track rate limit state to avoid spamming repair issues
         self._rate_limited: bool = False
@@ -841,6 +856,98 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         return any(
             normalize_device_id(sensor_id) == target for sensor_id in self._leak_sensors
         )
+
+    def record_segment_color(
+        self, device_id: str, segment_index: int, rgb: tuple[int, int, int]
+    ) -> None:
+        """Note a segment's colour so a later whole-device write can restore it.
+
+        Called both when a segment command is dispatched and by the segment
+        entities as they restore on startup. That second path matters: this
+        tracking is in-memory, so without it the first main-panel write after a
+        restart would have nothing to replay and would silently leave the ring
+        wiped (issue #131).
+        """
+        self._segment_colors.setdefault(device_id, {})[segment_index] = rgb
+
+    async def async_reassert_segments(
+        self, device_id: str, *, wrote_black: bool = False
+    ) -> None:
+        """Re-send the segments' last known colours after a whole-device write.
+
+        On the two-zone Ceiling Light Pro fixtures (MAIN_LIGHT_TOGGLE_SKUS) the
+        whole-device colour/CCT/brightness channel drives the ENTIRE fixture —
+        main panel AND ring — so it wipes the ``segmentedColorRgb`` overlay the
+        ring actually uses. Confirmed on an H1270: setting a colour temperature
+        while the ring was red turned the ring warm-white too. Replaying the
+        tracked segment colours immediately afterwards restores the ring
+        without disturbing the main panel, which is what makes the two zones
+        independently controllable in practice rather than only in principle
+        (issue #131).
+
+        Segments are grouped by colour so a uniform ring costs a single call
+        rather than one per segment. No-op when nothing has been tracked yet —
+        notably right after a restart, since this is in-memory state.
+
+        Also a no-op while a power-off is in flight. Replaying segment colours
+        after a ``powerSwitch`` off would re-issue exactly the writes the
+        segment entities deliberately suppress (issue #16) and, on fixtures
+        where any light command wakes the main panel, would undo the power-off
+        entirely. Guarded here so every caller gets it, not just the one.
+
+        Segment commands ride neither the BLE nor the LAN dispatcher — both
+        only carry power, brightness and colour — so every call here goes to
+        REST and spends the API budget. Two guards keep that in proportion.
+
+        ``wrote_black`` says the whole-device write that triggered this was
+        itself black, which is the main-panel-off path. Only then can an
+        all-black ring be left alone: the write drives the whole fixture, so a
+        dark ring ends up dark either way. It is NOT safe to skip on colour
+        alone — after a write that turns the panel on, the ring is showing the
+        panel's colour, and skipping would leave it lit (issue #131).
+
+        The second guard is the API budget. A many-coloured ring costs one call
+        per distinct colour on every main-panel toggle, so an automation
+        toggling the panel against a varied ring can walk into the daily cap
+        and take the whole integration down with it. Below the reserve the ring
+        is left stale until the next segment write, which is the better
+        failure: a stale ring is a nuisance, a spent quota is an outage.
+        """
+        if self.is_power_off_pending(device_id):
+            return
+
+        tracked = self._segment_colors.get(device_id)
+        if not tracked:
+            return
+
+        if wrote_black and all(rgb == (0, 0, 0) for rgb in tracked.values()):
+            return
+
+        by_color: dict[tuple[int, int, int], list[int]] = {}
+        for index, rgb in tracked.items():
+            by_color.setdefault(rgb, []).append(index)
+
+        if self.api_rate_limit_remaining - len(by_color) < _REASSERT_RATE_LIMIT_RESERVE:
+            _LOGGER.warning(
+                "Skipping segment re-assert for %s: %d API calls remaining, "
+                "%d needed for %d distinct segment colours. The ring may show "
+                "the main panel's colour until the next segment command",
+                device_id,
+                self.api_rate_limit_remaining,
+                len(by_color),
+                len(by_color),
+            )
+            return
+
+        for rgb, indices in by_color.items():
+            r, g, b = rgb
+            await self.async_control_device(
+                device_id,
+                SegmentColorCommand(
+                    segment_indices=tuple(sorted(indices)),
+                    color=RGBColor(r=r, g=g, b=b),
+                ),
+            )
 
     def is_power_off_pending(self, device_id: str) -> bool:
         """Return True if a power-off command is in flight for this device.
@@ -3242,6 +3349,15 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         is_power_off = isinstance(command, PowerCommand) and not command.power_on
         if is_power_off:
             self._pending_power_off.add(device_id)
+
+        # Remember what the segments were last set to, before the first await,
+        # so a later whole-device write can faithfully restore them. Recorded
+        # here rather than in the REST branch so it captures the command
+        # whichever transport tier ends up carrying it.
+        if isinstance(command, SegmentColorCommand):
+            rgb = command.color.as_tuple
+            for index in command.segment_indices:
+                self.record_segment_color(device_id, index, rgb)
 
         try:
             # BLE-first dispatch: if a BLE transport is available for this

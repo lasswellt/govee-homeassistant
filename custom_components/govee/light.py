@@ -9,6 +9,7 @@ Provides light entities with support for:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -27,15 +28,17 @@ from homeassistant.components.light import (  # type: ignore[attr-defined]
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.restore_state import RestoredExtraData, RestoreEntity
 
 from .const import (
     CONF_ENABLE_SCENES,
     DEFAULT_ENABLE_SCENES,
     DEFAULT_SEGMENT_MODE,
+    MAIN_LIGHT_TOGGLE_SKUS,
     SEGMENT_MODE_BOTH,
     SEGMENT_MODE_GROUPED,
     SEGMENT_MODE_INDIVIDUAL,
+    SUFFIX_MAIN_LIGHT_TOGGLE,
 )
 from .coordinator import GoveeCoordinator
 from .entity import GoveeEntity
@@ -59,6 +62,11 @@ PARALLEL_UPDATES = 0
 
 # Home Assistant brightness range
 HA_BRIGHTNESS_MAX = 255
+
+# Colour temperature the main-panel entity falls back to when switched on with
+# nothing to go on — no service-call attributes and no restored previous value.
+# Mid-range neutral white rather than either extreme.
+MAIN_LIGHT_ON_KELVIN = 4000
 
 
 async def async_setup_entry(
@@ -84,6 +92,14 @@ async def async_setup_entry(
         # appear as a light bulb (issue #54).
         if device.is_light_device and device.supports_power:
             entities.append(GoveeLightEntity(coordinator, device, enable_scenes))
+            if device.sku.upper() in MAIN_LIGHT_TOGGLE_SKUS:
+                # The entity above stays as the whole-fixture control —
+                # powerSwitch is all-or-nothing and kills the ring too. This
+                # second entity drives JUST the main downlight panel,
+                # switching it off by writing black to the whole-device colour
+                # channel rather than powerSwitch, so the ring can stay lit.
+                # See GoveeMainLightEntity in this file (issue #131).
+                entities.append(GoveeMainLightEntity(coordinator, device))
 
         # Appliances whose only light is the nightlight (e.g. H5089 outlet
         # extender, H7124 purifier) get a dedicated nightlight light entity —
@@ -414,6 +430,202 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
             scenes = await self.coordinator.async_get_scenes(self._device_id)
             if scenes:
                 self._build_effect_mapping(scenes)
+
+
+class GoveeMainLightEntity(GoveeLightEntity):
+    """The main downlight panel of a two-zone Ceiling Light Pro (issue #131).
+
+    These fixtures have a central downlight panel plus an RGBIC ring, and the
+    obvious capabilities can't separate them: ``mainLightToggle`` is inert, and
+    ``powerSwitch`` is whole-fixture — it kills the ring too, and leaves the
+    firmware in a state where any later light command silently wakes the panel
+    back up (the "segments turn the main light on" coupling).
+
+    The two zones actually sit on different channels:
+
+    * **Ring** — ``segmentedColorRgb``, an overlay that wins for its segments.
+    * **Main panel** — the whole-device colour/CCT/brightness channel, which
+      drives the ENTIRE fixture and so wipes that overlay.
+
+    So this entity switches the panel via the colour channel: black darkens it
+    while leaving ``powerSwitch`` on, and the ring can then be lit from its own
+    channel with the panel staying genuinely dark. Since every main-channel
+    write clobbers the ring, each one re-asserts the ring afterwards.
+
+    Everything else — brightness scaling, colour properties, colour-mode
+    selection — is inherited unchanged from ``GoveeLightEntity``. Only on/off
+    differs, so only on/off is overridden. Scenes are disabled because they are
+    a whole-fixture concept and belong to the master entity.
+    """
+
+    # Distinct from the switch platform's ``govee_main_light`` key, which
+    # belongs to the (inert on these SKUs) mainLightToggle capability.
+    _attr_translation_key = "govee_main_light_panel"
+
+    def __init__(self, coordinator: GoveeCoordinator, device: GoveeDevice) -> None:
+        """Initialize the main-panel entity."""
+        super().__init__(coordinator, device, enable_scenes=False)
+        self._attr_unique_id = f"{device.device_id}{SUFFIX_MAIN_LIGHT_TOGGLE}"
+        self._attr_name = "Main light"
+
+        # What to return to on turn_on. Only ever holds a non-black colour.
+        self._last_on_kelvin: int | None = None
+        self._last_on_rgb: tuple[int, int, int] | None = None
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return True when the panel is lit.
+
+        Colour temperature is checked before colour because the two channels
+        are mutually exclusive on this firmware: writing a colour clears
+        ``colorTemperatureK``, while writing a colour temperature leaves the
+        stale RGB behind. Confirmed on an H1270 — a panel lit at 2700K reported
+        that colour temperature, and it became ``None`` the instant black was
+        written. Without this ordering a CCT-lit panel whose last colour was
+        black would wrongly read as off.
+        """
+        state = self.device_state
+        if state is None:
+            return None
+        if not state.power_state:
+            return False
+        if state.color_temp_kelvin:
+            return True
+        # Black on the colour channel is how this entity switches the panel off.
+        return state.color is None or state.color.as_tuple != (0, 0, 0)
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Light the panel, then restore the ring the write just clobbered.
+
+        Whichever path is taken must end on a non-black colour, or the panel
+        would stay dark while the entity claimed to be on.
+        """
+        if ATTR_BRIGHTNESS in kwargs:
+            device_brightness = self._ha_to_device_brightness(kwargs[ATTR_BRIGHTNESS])
+            if not await self.coordinator.async_control_device(
+                self._device_id, BrightnessCommand(brightness=device_brightness)
+            ):
+                _LOGGER.warning("Brightness command failed for %s", self._device_id)
+
+        if ATTR_RGB_COLOR in kwargs:
+            r, g, b = kwargs[ATTR_RGB_COLOR]
+            if (r, g, b) == (0, 0, 0):
+                # Asking for black is asking for off.
+                await self.async_turn_off()
+                return
+            if await self.coordinator.async_control_device(
+                self._device_id, ColorCommand(color=RGBColor(r=r, g=g, b=b))
+            ):
+                self._last_on_rgb = (r, g, b)
+                self._last_on_kelvin = None
+        elif ATTR_COLOR_TEMP_KELVIN in kwargs:
+            kelvin = kwargs[ATTR_COLOR_TEMP_KELVIN]
+            if await self.coordinator.async_control_device(
+                self._device_id, ColorTempCommand(kelvin=kelvin)
+            ):
+                self._last_on_kelvin = kelvin
+                self._last_on_rgb = None
+        elif not self.is_on:
+            # Coming back from black with nothing specified — restore whatever
+            # it was last lit with, falling back to neutral white.
+            if self._last_on_rgb is not None:
+                r, g, b = self._last_on_rgb
+                await self.coordinator.async_control_device(
+                    self._device_id, ColorCommand(color=RGBColor(r=r, g=g, b=b))
+                )
+            else:
+                await self.coordinator.async_control_device(
+                    self._device_id,
+                    ColorTempCommand(kelvin=self._last_on_kelvin or MAIN_LIGHT_ON_KELVIN),
+                )
+
+        await self.coordinator.async_reassert_segments(self._device_id)
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Darken the panel via the colour channel, never ``powerSwitch``.
+
+        Skips the write entirely if the fixture is already off or a power-off
+        is in flight, mirroring the segment entities' guard (issue #16). This
+        matters more here than it does for a segment: an area-targeted
+        turn_off fans out to the master entity (which sends powerSwitch off)
+        and to this one at the same time, and a colour write plus the ring
+        re-assert landing *after* that power-off would wake the panel straight
+        back up — turning the room off would leave the light on.
+        """
+        # Best-effort ordering, not a guarantee. The yield gives a concurrent
+        # PowerCommand a chance to set the pending flag first, and
+        # _pending_power_off.add() does run before the first await in
+        # async_control_device — but HA promises nothing about which entity's
+        # coroutine is scheduled first on an area-targeted turn_off. If this
+        # one wins the race, the guard below sees no pending power-off and the
+        # panel can come back on. This narrows an existing race; it does not
+        # close it.
+        await asyncio.sleep(0)
+
+        state = self.device_state
+        device_already_off = state is not None and not state.power_state
+        if device_already_off or self.coordinator.is_power_off_pending(self._device_id):
+            _LOGGER.debug(
+                "Skipping main light turn_off for %s (already off or power-off pending)",
+                self._device_id,
+            )
+            self.async_write_ha_state()
+            return
+
+        if state is not None:
+            if state.color_temp_kelvin:
+                self._last_on_kelvin = state.color_temp_kelvin
+                self._last_on_rgb = None
+            elif state.color is not None and state.color.as_tuple != (0, 0, 0):
+                self._last_on_rgb = state.color.as_tuple
+                self._last_on_kelvin = None
+
+        if not await self.coordinator.async_control_device(
+            self._device_id, ColorCommand(color=RGBColor(r=0, g=0, b=0))
+        ):
+            _LOGGER.warning("Main light off failed for %s", self._device_id)
+            return
+
+        # Black wipes the ring too, so put it back — this is what leaves the
+        # ring lit while the panel stays dark. The write was black, so an
+        # all-black ring needs no replay: it is already dark either way.
+        await self.coordinator.async_reassert_segments(
+            self._device_id, wrote_black=True
+        )
+        self.async_write_ha_state()
+
+    @property
+    def extra_restore_state_data(self) -> RestoredExtraData:
+        """Persist the colour to return to, independently of the state attrs.
+
+        This cannot ride on the restored state attributes: Home Assistant
+        strips ``color_temp_kelvin``/``rgb_color`` from a light whose state is
+        ``off``, which is precisely when this value is needed. Storing it as
+        extra data is the only way it survives a restart while the panel is
+        off — otherwise every restart-then-turn-on would fall back to
+        ``MAIN_LIGHT_ON_KELVIN`` and quietly lose the user's colour.
+        """
+        return RestoredExtraData(
+            {
+                "last_on_kelvin": self._last_on_kelvin,
+                "last_on_rgb": list(self._last_on_rgb) if self._last_on_rgb else None,
+            }
+        )
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the colour to return to when switched back on."""
+        await super().async_added_to_hass()
+        last_extra = await self.async_get_last_extra_data()
+        if not last_extra:
+            return
+        stored = last_extra.as_dict()
+        kelvin = stored.get("last_on_kelvin")
+        rgb = stored.get("last_on_rgb")
+        if kelvin:
+            self._last_on_kelvin = int(kelvin)
+        elif rgb and tuple(rgb) != (0, 0, 0):
+            self._last_on_rgb = (int(rgb[0]), int(rgb[1]), int(rgb[2]))
 
 
 class GoveeNightLightEntity(GoveeEntity, LightEntity):

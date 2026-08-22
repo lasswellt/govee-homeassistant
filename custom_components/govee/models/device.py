@@ -12,7 +12,7 @@ from typing import Any
 
 from homeassistant.helpers.device_registry import DeviceInfo
 
-from ..const import SKU_SEGMENT_OVERRIDES
+from ..const import MAIN_LIGHT_TOGGLE_SKUS, SKU_SEGMENT_OVERRIDES
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -442,13 +442,31 @@ class GoveeDevice:
         lowercase-prefix pattern deliberately excludes ``nightlightToggle``
         (lowercase l — a mode, not a light part) and the numeric
         ``light{N}Toggle`` zones, which have their own property. Returns
-        instance names in capability order.
+        instance names in capability order, minus both named toggles on
+        ``MAIN_LIGHT_TOGGLE_SKUS``: on those fixtures ``mainLightToggle`` and
+        ``backgroundLightToggle`` are both inert — they report success and do
+        nothing — and each is replaced by something that works. The main panel
+        gets a dedicated light entity, and the "background light" is the RGBIC
+        ring, already controlled by the segment entities (issue #131).
+
+        Dropping them removes two switch entities that existing installs on
+        those SKUs already have. That is deliberate — they never did anything —
+        but it is a breaking change for anyone who wired an automation to one:
+        the automation stops firing rather than erroring, and the registry rows
+        linger as orphans until deleted by hand. Release notes for the version
+        that first ships a new SKU here must say so.
         """
         pattern = re.compile(r"[a-z]+LightToggle")
+        dead_on_this_sku = (
+            {INSTANCE_MAIN_LIGHT_TOGGLE, INSTANCE_BACKGROUND_LIGHT_TOGGLE}
+            if self.sku.upper() in MAIN_LIGHT_TOGGLE_SKUS
+            else frozenset()
+        )
         return [
             cap.instance
             for cap in self.capabilities
             if cap.type == CAPABILITY_TOGGLE and pattern.fullmatch(cap.instance)
+            if cap.instance not in dead_on_this_sku
         ]
 
     @property
