@@ -1,0 +1,397 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Clau de l'API de Govee",
+        "description": "Introdueix la teva clau d'API de desenvolupador de Govee des de {api_url}\n\nAquesta NO és la contrasenya del teu compte de Govee: és una clau de desenvolupador independent.",
+        "data": {
+          "api_key": "Clau de l'API"
+        },
+        "data_description": {
+          "api_key": "La clau d'API del teu compte de desenvolupador de Govee (una cadena llarga de lletres i números)"
+        }
+      },
+      "account": {
+        "title": "Compte de Govee (opcional)",
+        "description": "Per rebre actualitzacions en temps real, introdueix a continuació les credencials de l'aplicació mòbil de Govee.\n\n**Important:** utilitza el correu electrònic i la contrasenya de l'aplicació mòbil de Govee. La contrasenya de l'aplicació pot ser diferent de la del lloc web de Govee.\n\nPer ometre aquest pas, deixa els dos camps buits i envia.",
+        "data": {
+          "email": "Correu de l'aplicació de Govee",
+          "password": "Contrasenya de l'aplicació de Govee"
+        },
+        "data_description": {
+          "email": "L'adreça de correu amb què inicies sessió a l'aplicació mòbil de Govee",
+          "password": "La contrasenya amb què inicies sessió a l'aplicació mòbil de Govee (no la del lloc web)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Tornar a autenticar Govee",
+        "description": "La teva clau d'API no és vàlida. Introdueix-ne una de nova.",
+        "data": {
+          "api_key": "Clau de l'API"
+        }
+      },
+      "verification_code": {
+        "title": "Codi de verificació de Govee",
+        "description": "S'ha enviat un codi de verificació a **{email}**. Introdueix-lo a continuació. El codi caduca al cap d'uns 15 minuts.",
+        "data": {
+          "verification_code": "Codi de verificació"
+        },
+        "data_description": {
+          "verification_code": "Busca al teu correu un codi enviat per Govee"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigurar Govee",
+        "description": "Actualitza les teves credencials. Correu actual: {current_email}",
+        "data": {
+          "api_key": "Clau de l'API",
+          "email": "Correu de l'aplicació de Govee (opcional)",
+          "password": "Contrasenya de l'aplicació de Govee (opcional)"
+        },
+        "data_description": {
+          "api_key": "La teva clau d'API de desenvolupador de Govee, des de developer.govee.com",
+          "email": "Correu de l'aplicació mòbil de Govee (deixa'l buit per desactivar MQTT)",
+          "password": "Contrasenya de l'aplicació mòbil de Govee (deixa-la buida per conservar l'actual)"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Clau d'API no vàlida. Assegura't que utilitzes la clau de desenvolupador de developer.govee.com, no la contrasenya del teu compte.",
+      "invalid_account": "Credencials de l'aplicació de Govee no vàlides. Assegura't que utilitzes la contrasenya de l'aplicació mòbil de Govee (no la del lloc web).",
+      "invalid_api_key_format": "La clau d'API no sembla vàlida. Ha de ser una cadena llarga (36+ caràcters) de developer.govee.com.",
+      "invalid_email_format": "Introdueix una adreça de correu electrònic vàlida.",
+      "password_without_email": "Introdueix tant el correu com la contrasenya, o deixa'ls buits per ometre.",
+      "email_without_password": "Introdueix tant el correu com la contrasenya, o deixa'ls buits per ometre.",
+      "cannot_connect": "No s'ha pogut connectar amb l'API de Govee. Comprova la teva connexió a internet.",
+      "invalid_verification_code": "Codi de verificació no vàlid o caducat. Revisa el teu correu electrònic i torna-ho a provar.",
+      "login_rejected": "Govee ha rebutjat la sol·licitud d'inici de sessió. Pot ser degut a un problema temporal del servidor; torna-ho a provar més tard.",
+      "unknown": "S'ha produït un error inesperat"
+    },
+    "abort": {
+      "reauth_successful": "La reautenticació ha estat correcta",
+      "reconfigure_successful": "La reconfiguració ha estat correcta"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opcions de Govee",
+        "description": "Si tens dispositius RGBIC, els ajustos de segments per dispositiu apareixeran en enviar.",
+        "data": {
+          "poll_interval": "Interval de sondeig (segons)",
+          "water_detector_poll_interval": "Interval de sondeig del sensor de fuites (segons)",
+          "api_temperature_unit": "Unitat de temperatura de l'API de Govee (termòmetres)",
+          "enable_groups": "Activa dispositius en grup",
+          "enable_scenes": "Activa el selector d'escenes",
+          "enable_diy_scenes": "Activa el selector d'escenes DIY",
+          "expose_transport_entities": "Exposa sensors de connectivitat de transport per dispositiu",
+          "enable_mqtt_control": "Envia l'encesa, la brillantor i el color per MQTT (més ràpid, experimental)",
+          "lan_targets": "Adreces IP o subxarxes LAN dels dispositius (avançat)"
+        },
+        "data_description": {
+          "api_temperature_unit": "«Auto» (predeterminat) converteix automàticament els termòmetres coneguts que notifiquen en graus Fahrenheit (p. ex. H5179, H5109, H5111, H5075, H5100). Tria Fahrenheit si un altre termòmetre marca aproximadament 1,8× més del que toca (p. ex. 74 en lloc de 23), o Celsius per forçar la no conversió. L'API de Govee omet les metadades d'unitat, de manera que el valor no sempre es pot autodetectar.",
+          "water_detector_poll_interval": "Cada quan es consulten els detectors d'aigua o fuites autònoms de Govee (p. ex. H5054) per comprovar si hi ha una fuita. Aquests sensors, que només utilitzen RF, no tenen canal d'enviament, de manera que una fuita pot trigar fins a aquest interval a aparèixer. Un valor més baix reacciona més ràpid, però fa més crides a l'API del compte; apuja'l si tens molts detectors. Rang: 60–3600 segons, valor predeterminat: 120. Requereix inici de sessió amb correu i contrasenya; s'ignora si no tens detectors d'aquest tipus.",
+          "enable_groups": "Mostra els grups de dispositius que has creat a l'aplicació de Govee com a entitats de llum úniques. Una ordre a un grup s'envia una sola vegada i el núvol de Govee la sincronitza amb tots els membres, de manera que es sincronitza millor que agrupar les llums amb helpers de Home Assistant. L'estat és aproximat (els grups no es poden sondejar) i les llums en grup només admeten encesa, brillantor i color.",
+          "enable_mqtt_control": "Envia les ordres d'encesa, brillantor i color pel canal MQTT de Govee en lloc de l'API REST al núvol, cosa que redueix la latència i evita els límits de freqüència de REST. Requereix inici de sessió amb correu i contrasenya (credencials MQTT). Si MQTT no està disponible, torna automàticament a REST. Experimental: utilitza un canal no documentat; desactiva'l si les ordres es comporten de manera inesperada.",
+          "lan_targets": "Només cal quan els dispositius Govee compatibles amb LAN estan en una subxarxa o VLAN diferent de la de Home Assistant, de manera que l'escaneig de descoberta local no hi arriba. Introdueix una llista separada per comes amb adreces IP de dispositius (10.20.0.51), adreces de difusió (10.20.0.255) o subxarxes en CIDR (10.20.0.0/24, /24 o més específic). Les subxarxes s'escanegen dispositiu per dispositiu, ja que la majoria dels encaminadors descarten els broadcasts entre VLAN. Deixa-ho en blanc si tots els dispositius comparteixen la xarxa de Home Assistant. Avançat: si un dispositiu segueix sense trobar-se perquè la seva resposta d'escaneig no pot creuar la VLAN, fixa'l amb device_id=ip (AA:BB:CC:DD:EE:FF:00:11=10.20.0.51) per ometre el descobriment per a aquest dispositiu. Afegeix un ! al final (=10.20.0.51!) només per a firmware que accepta ordres LAN però mai respon a una lectura d'estat — això desactiva totes les comprovacions d'estat LAN del dispositiu, de manera que una IP incorrecta semblarà que funciona mentre el dispositiu mai respon."
+        }
+      },
+      "select_segment_devices": {
+        "title": "Selecciona els dispositius amb segments",
+        "description": "Tria per a quins dispositius RGBIC vols configurar els modes de segment.",
+        "data": {
+          "devices": "Dispositius a configurar"
+        }
+      },
+      "configure_device_mode": {
+        "title": "Mode de segment: {device_name}",
+        "description": "Tria com es creen els segments de **{device_name}** (`{device_id}`): **desactivat** no crea entitats de segment, **agrupat** crea una sola entitat per a tots els segments, **individual** crea una entitat separada per a cada segment.",
+        "data": {
+          "segment_mode": "Mode de segment"
+        }
+      }
+    },
+    "error": {
+      "invalid_lan_targets": "Una de les adreces LAN no és una IP, una adreça de difusió, una subxarxa (/24 o més específica) ni una substitució device_id=ip vàlides. Exemple: 10.20.0.51, 10.20.0.255, 10.20.0.0/24, AA:BB:CC:DD:EE:FF:00:11=10.20.0.51",
+      "unknown_lan_device": "Una substitució device_id=ip indica un dispositiu que no pertany a aquest compte de Govee. Copia l'ID del dispositiu exactament com apareix al diagnòstic del dispositiu (per exemple, AA:BB:CC:DD:EE:FF:00:11)."
+    }
+  },
+  "entity": {
+    "light": {
+      "govee_light": {
+        "name": "{device_name}"
+      },
+      "govee_nightlight": {
+        "name": "Llum nocturna"
+      },
+      "govee_segment": {
+        "name": "Segment {segment_index} de {device_name}"
+      },
+      "govee_grouped_segment": {
+        "name": "Segments de {device_name}"
+      }
+    },
+    "number": {
+      "govee_music_sensitivity": {
+        "name": "Sensibilitat del mode música"
+      }
+    },
+    "select": {
+      "govee_scene_select": {
+        "name": "Escena"
+      },
+      "govee_snapshot_select": {
+        "name": "Instantània"
+      },
+      "govee_diy_scene_select": {
+        "name": "Escena DIY"
+      },
+      "govee_diy_style_select": {
+        "name": "Estil DIY"
+      },
+      "govee_hdmi_source_select": {
+        "name": "Font HDMI"
+      },
+      "govee_music_mode_select": {
+        "name": "Mode música"
+      },
+      "govee_preset_scene_select": {
+        "name": "Escena"
+      },
+      "govee_nightlight_scene_select": {
+        "name": "Escena de llum nocturna"
+      }
+    },
+    "switch": {
+      "govee_plug": {
+        "name": "{device_name}"
+      },
+      "govee_night_light": {
+        "name": "Llum nocturna"
+      },
+      "govee_music_mode": {
+        "name": "Mode música"
+      },
+      "govee_dreamview": {
+        "name": "DreamView"
+      },
+      "govee_heater_auto_stop": {
+        "name": "Aturada automàtica"
+      },
+      "govee_appliance_power": {
+        "name": "{device_name}"
+      },
+      "govee_light_zone": {
+        "name": "Zona de llum {zone}"
+      },
+      "govee_socket": {
+        "name": "Endoll {socket}"
+      },
+      "govee_main_light": {
+        "name": "Llum principal"
+      },
+      "govee_background_light": {
+        "name": "Llum de fons"
+      },
+      "govee_nebula_light": {
+        "name": "Llum nebulosa"
+      },
+      "govee_side_light": {
+        "name": "Llum lateral"
+      },
+      "govee_bottom_light": {
+        "name": "Llum inferior"
+      }
+    },
+    "sensor": {
+      "rate_limit_remaining": {
+        "name": "Límit de l'API restant"
+      },
+      "mqtt_status": {
+        "name": "Estat de MQTT"
+      },
+      "mqtt_last_received": {
+        "name": "Últim missatge MQTT"
+      },
+      "sensor_temperature": {
+        "name": "Temperatura"
+      },
+      "sensor_humidity": {
+        "name": "Humitat"
+      },
+      "sensor_air_quality": {
+        "name": "Qualitat de l'aire"
+      },
+      "sensor_co2": {
+        "name": "CO2"
+      },
+      "sensor_filter_life": {
+        "name": "Vida del filtre"
+      },
+      "sensor_battery": {
+        "name": "Bateria"
+      },
+      "sensor_reading_changed": {
+        "name": "Últim canvi"
+      },
+      "all_data_last_updated": {
+        "name": "Última actualització rebuda"
+      },
+      "last_command_sent": {
+        "name": "Última ordre enviada"
+      },
+      "leak_battery": {
+        "name": "Bateria"
+      },
+      "leak_last_wet": {
+        "name": "Última fuita detectada"
+      },
+      "leak_alert_status": {
+        "name": "Estat de l'alerta"
+      },
+      "ieee_address": {
+        "name": "Adreça IEEE"
+      },
+      "sensor_temperature_2": {
+        "name": "Temperatura de la sonda 2"
+      }
+    },
+    "binary_sensor": {
+      "device_connectivity": {
+        "name": "Connectivitat"
+      },
+      "cloud_api_connectivity": {
+        "name": "API al núvol"
+      },
+      "mqtt_connectivity": {
+        "name": "MQTT"
+      },
+      "ble_connectivity": {
+        "name": "Bluetooth"
+      },
+      "lan_connectivity": {
+        "name": "LAN"
+      },
+      "govee_water_full": {
+        "name": "Dipòsit d'aigua ple"
+      },
+      "govee_water_leak": {
+        "name": "Fuita d'aigua"
+      },
+      "govee_occupancy": {
+        "name": "Ocupació"
+      },
+      "leak_online": {
+        "name": "LoRa"
+      },
+      "leak_hub_online": {
+        "name": "Internet"
+      }
+    },
+    "fan": {
+      "govee_fan": {
+        "name": "{device_name}",
+        "state_attributes": {
+          "preset_mode": {
+            "state": {
+              "normal": "Normal",
+              "nature": "Natural",
+              "sleep": "Repòs",
+              "auto": "Automàtic",
+              "custom": "Personalitzat",
+              "turbo": "Turbo"
+            }
+          }
+        }
+      }
+    },
+    "humidifier": {
+      "govee_humidifier": {
+        "name": "{device_name}",
+        "state_attributes": {
+          "mode": {
+            "state": {
+              "low": "Baix",
+              "medium": "Mitjà",
+              "high": "Alt",
+              "auto": "Automàtic",
+              "dryer": "Assecatge"
+            }
+          }
+        }
+      }
+    },
+    "button": {
+      "refresh_scenes": {
+        "name": "Actualitza les escenes"
+      },
+      "clear_water_full": {
+        "name": "Esborra l'alerta d'aigua"
+      }
+    },
+    "event": {
+      "leak_button": {
+        "name": "Botó",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "press": "Polsada"
+            }
+          }
+        }
+      }
+    }
+  },
+  "services": {
+    "refresh_scenes": {
+      "name": "Actualitza les escenes",
+      "description": "Actualitza les escenes disponibles des de l'API de Govee",
+      "fields": {
+        "device_id": {
+          "name": "ID del dispositiu",
+          "description": "Dispositiu concret a actualitzar (opcional)"
+        }
+      }
+    },
+    "set_segment_color": {
+      "name": "Defineix el color del segment",
+      "description": "Defineix el color de segments específics en dispositius RGBIC",
+      "fields": {
+        "device_id": {
+          "name": "ID del dispositiu",
+          "description": "ID del dispositiu de la llum RGBIC"
+        },
+        "segments": {
+          "name": "Segments",
+          "description": "Llista d'índexs de segment (començant per 0)"
+        },
+        "rgb_color": {
+          "name": "Color RGB",
+          "description": "Color com a valors [R, G, B]"
+        }
+      }
+    }
+  },
+  "issues": {
+    "auth_failed": {
+      "title": "Ha fallat l'autenticació amb Govee",
+      "description": "La clau d'API de {entry_title} ja no és vàlida. La integració no podrà comunicar-se amb Govee fins que tornis a autenticar-te."
+    },
+    "rate_limited": {
+      "title": "API de Govee limitada per freqüència",
+      "description": "L'API de Govee ha limitat la freqüència de sol·licituds per a {entry_title}. El funcionament normal es reprendrà aproximadament a {reset_time}. Considera augmentar l'interval de sondeig a les opcions de la integració per reduir les crides a l'API."
+    },
+    "mqtt_disconnected": {
+      "title": "MQTT de Govee desconnectat",
+      "description": "Les actualitzacions en temps real de {entry_title} no estan disponibles. Motiu: {reason}. La integració continuarà funcionant mitjançant sondeig. Si el problema persisteix, revisa les credencials del teu compte de Govee."
+    },
+    "mqtt_2fa_required": {
+      "title": "El compte de Govee requereix verificació",
+      "description": "El teu compte de Govee ara requereix verificació per correu electrònic (2FA) per activar les actualitzacions MQTT en temps real de {entry_title}. Vés a la pàgina de la integració i selecciona **Reconfigurar** per tornar a introduir les teves credencials amb un codi de verificació.\n\nLa integració continuarà funcionant mitjançant sondeig fins que es resolgui."
+    },
+    "mqtt_token_expired": {
+      "title": "La sessió del compte de Govee ha caducat",
+      "description": "La sessió desada del compte de Govee per a {entry_title} ha caducat, i l'intent de tornar a iniciar la sessió s'ha rebutjat, normalment perquè la contrasenya del compte ha canviat.\n\nMentre estigui caducada, els nivells de bateria i les lectures dels sensors que arriben a Govee a través d'una passarel·la (per exemple, un H5310 o un H5112 darrere d'un H5044) deixen d'actualitzar-se. Els llums i tot allò que fa servir la clau d'API no es veuen afectats.\n\nVés a la pàgina de la integració i selecciona **Reconfigurar** per introduir la contrasenya actual del compte."
+    }
+  }
+}

@@ -161,3 +161,4 @@ profile-README.md
 .claude/
 sprints/
 sprint-registry.json
+.DS_Store
