@@ -406,6 +406,11 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # frames name their sub-device by slot only, so this is what turns an
         # ee34/0x08 frame into a reading on the right entity (#151).
         self._sno_to_thermo_id: dict[tuple[str, int], str] = {}
+        # device_id -> epoch seconds the last applied frame was produced, from
+        # the frame's own bytes 9-12. Compared against the BFF reading's
+        # lastTime so the 5-minute account poll can't overwrite a fresher
+        # frame with the cloud's older copy of it (#151).
+        self._thermo_frame_ts: dict[str, int] = {}
         # Last time the account device list was re-checked for newly added
         # devices (#101). Seeded to "now" so the first re-check waits a full
         # interval rather than firing right after setup discovery.
@@ -2216,6 +2221,22 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if isinstance(fah_open, bool):
             self._display_fahrenheit[device_id] = fah_open
 
+    def _bff_reading_is_stale(self, device_id: str, sensor: dict[str, Any]) -> bool:
+        """Whether a BFF reading is older than the frame already applied (#151).
+
+        Returns False whenever the question can't be answered — no frame seen
+        for this device, or no ``lastTime`` in the payload — so the only
+        behaviour that changes is the one case we can prove is stale.
+        """
+        frame_ts = self._thermo_frame_ts.get(device_id)
+        if frame_ts is None:
+            return False
+        last_time = sensor.get("last_time")
+        if not isinstance(last_time, int) or last_time <= 0:
+            return False
+        # lastTime is epoch milliseconds; the frame stamp is epoch seconds.
+        return (last_time // 1000) <= frame_ts
+
     def _note_thermo_slot(self, device_id: str, sensor: dict[str, Any]) -> None:
         """Map a gateway slot to this thermometer so its frames can be routed.
 
@@ -2402,6 +2423,38 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 continue
             new_state = GoveeDeviceState.create_empty(device_id)
             new_state.online = sensor.get("online", True)
+
+            # The gateway's own MQTT frame reaches us before the cloud's copy
+            # of the same reading does — measured at ~8 minutes on an H5310
+            # via H5044. Inside that window this poll still returns the
+            # PREVIOUS hour's value, so applying it overwrote a fresh frame
+            # with a stale reading for ~5 minutes of every hour: an hourly
+            # sawtooth that reads as a sensor fault, and a burst of state
+            # writes for a value that had not actually changed (#151).
+            #
+            # Both sides timestamp their reading device-side — the frame in
+            # its bytes 9-12, the BFF as lastTime — so they are directly
+            # comparable. A reading no newer than the last frame we applied is
+            # the cloud catching up, not new information. Devices without a
+            # frame (no gateway, or none seen yet) are unaffected, as are
+            # accounts whose BFF omits lastTime.
+            if self._bff_reading_is_stale(device_id, sensor):
+                _LOGGER.debug(
+                    "Ignoring BFF reading for %s: not newer than the frame "
+                    "already applied (#151)",
+                    sensor.get("name", device_id),
+                )
+                new_state.sensor_temperature = existing.sensor_temperature
+                new_state.sensor_temperature_2 = existing.sensor_temperature_2
+                new_state.sensor_humidity = existing.sensor_humidity
+                new_state.battery = (
+                    sensor.get("battery")
+                    if sensor.get("battery") is not None
+                    else existing.battery
+                )
+                self._states[device_id] = new_state
+                continue
+
             # Preserve last good reading when the BFF omits it this cycle —
             # battery WiFi sensors upload infrequently.
             new_state.sensor_temperature = (
@@ -2877,6 +2930,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             or device_id not in self._sensor_reading_changed_at
         ):
             self._sensor_reading_changed_at[device_id] = dt_util.utcnow()
+
+        frame_ts = state_data.get("frame_ts")
+        if isinstance(frame_ts, int):
+            self._thermo_frame_ts[device_id] = frame_ts
 
         self._ensure_transport_health(device_id)
         self._record_transport_success(device_id, "mqtt")

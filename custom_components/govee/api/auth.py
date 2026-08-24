@@ -819,7 +819,8 @@ class GoveeAuthClient:
             List of dicts, each with keys: device_id, name, sku, sw_version,
             hw_version, battery, online, temperature (°C or None),
             temperature_2 (°C or None — dual-probe SKUs, #150), humidity
-            (%RH or None), hub_device_id, hub_sku, sno.
+            (%RH or None), last_time (epoch ms the device produced the
+            reading, or None), hub_device_id, hub_sku, sno.
         """
         if self._session is None:
             self._session = aiohttp.ClientSession()
@@ -940,6 +941,11 @@ class GoveeAuthClient:
                             "temperature": _bff_reading(ld, _BFF_TEMP_KEYS),
                             "temperature_2": _bff_reading(ld, _BFF_TEMP2_KEYS),
                             "humidity": _bff_reading(ld, _BFF_HUMIDITY_KEYS),
+                            # When the device itself produced this reading
+                            # (epoch ms). Lets a caller tell a stale cloud copy
+                            # from a fresh one — the gateway's own MQTT frame
+                            # can arrive ~8 minutes ahead of it (issue #151).
+                            "last_time": _safe_int(ld.get("lastTime")),
                             "hub_device_id": gateway_info.get("device", ""),
                             "hub_sku": gateway_info.get("sku", ""),
                             # Slot on the gateway. Routes the hub's multiSync

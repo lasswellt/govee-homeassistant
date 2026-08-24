@@ -897,6 +897,7 @@ class TestBffThermoHandover:
         coordinator._states = dict(states or {})
         coordinator._bff_thermometer_ids = set()
         coordinator._bff_thermo_pending = set()
+        coordinator._thermo_frame_ts = {}
         coordinator._display_fahrenheit = {}
         coordinator._bff_thermo_hubs = {}
         coordinator._sensor_reading_changed_at = {}
@@ -1110,6 +1111,7 @@ class TestGatewayThermoFrameRouting:
         }
         coordinator._states = {}
         coordinator._sno_to_thermo_id = {}
+        coordinator._thermo_frame_ts = {}
         coordinator._sensor_reading_changed_at = {}
         coordinator._display_fahrenheit = {}
         coordinator._bff_thermometer_ids = set()
