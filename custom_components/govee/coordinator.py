@@ -3382,6 +3382,28 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             self._record_transport_failure(device_id, "cloud_api", str(err))
             return err
 
+    async def async_send_fan_oscillation(
+        self, device_id: str, enabled: bool
+    ) -> bool:
+        """Send a Tower-Fan oscillation on/off frame over MQTT.
+
+        Reverse-engineered path for the H7105/H7107 family, whose oscillation
+        the dev-API oscillationToggle cannot control (no-op). Returns False if
+        the device is unknown or MQTT has no client, so the caller can fall
+        back to the REST OscillationCommand.
+        """
+        device = self._devices.get(device_id)
+        if not device:
+            return False
+        tail = (
+            self._mqtt_client.fan_swing_tail(device_id)
+            if self._mqtt_client
+            else None
+        )
+        return await self._ble_manager.async_send_fan_oscillation(
+            device_id, device.sku, enabled, tail
+        )
+
     async def async_control_device(
         self,
         device_id: str,

@@ -212,6 +212,14 @@ class GoveeAwsIotClient:
         # undecoded hub packets (e.g. the H5059's 0xEE 0x35 wet alarm in #87)
         # without asking end users to enable verbose logging.
         self._recent_multisync: deque[dict[str, Any]] = deque(maxlen=64)
+        # Latest Tower-Fan swing-range tail bytes per device_id, harvested from
+        # inbound aa1d status frames. Used to rebuild the oscillation-ON packet
+        # so the fan resumes its own physically-configured sweep arc.
+        self._fan_swing_tail: dict[str, list[int]] = {}
+
+    def fan_swing_tail(self, device_id: str) -> list[int] | None:
+        """Return the last-seen Tower-Fan swing-range tail (4 bytes) or None."""
+        return self._fan_swing_tail.get(device_id)
 
     @property
     def last_messages(self) -> dict[str, dict[str, Any]]:
@@ -515,6 +523,21 @@ class GoveeAwsIotClient:
             # events (multiSync) count as activity, not just state updates.
             self._last_message_ts = datetime.now(timezone.utc)
             self._last_message_per_device[device_id] = self._last_message_ts
+
+            # Harvest Tower-Fan swing-range tail bytes from any inbound
+            # BLE-format frame (aa 1d ..) carried in op.command[]. This runs
+            # before the multiSync/state branches so it captures the tail
+            # regardless of how the fan frames its report. Bytes 3-6 are the
+            # swing range (homebridge fan-H7107.js), replayed on oscillation ON.
+            op = data.get("op")
+            if isinstance(op, dict):
+                for _b64frame in op.get("command", []) or []:
+                    try:
+                        _fb = base64.b64decode(_b64frame)
+                    except (binascii.Error, ValueError):
+                        continue
+                    if len(_fb) >= 7 and _fb[0] == 0xAA and _fb[1] == 0x1D:
+                        self._fan_swing_tail[device_id] = list(_fb[3:7])
 
             # Handle multiSync messages (leak sensor events)
             cmd = data.get("cmd")

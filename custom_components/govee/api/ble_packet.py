@@ -158,6 +158,40 @@ def build_diy_scene_packet(scene_id: int) -> bytes:
     return build_packet(data)
 
 
+# Tower Fan oscillation (H7105/H7107 "Tower Fan 2" family). Reverse-engineered
+# from homebridge-govee lib/device/fan-H7107.js (2026-08, hardware-confirmed).
+# The dev-API oscillationToggle is a no-op for this family; only these raw
+# ptReal/multiSync frames move the sweep motor. The ON frame carries 4
+# "swing-range" bytes copied from the fan's own inbound aa1d status frame so the
+# physically-configured arc is preserved; OFF is a bare zero-padded frame.
+FAN_OSC_PTREAL_PREFIX = 0x33
+FAN_OSC_MULTISYNC_PREFIX = 0x3A
+FAN_OSC_COMMAND = 0x1D
+
+
+def build_fan_oscillation_packet(
+    enabled: bool,
+    swing_tail: list[int] | None = None,
+    *,
+    prefix: int = FAN_OSC_PTREAL_PREFIX,
+) -> bytes:
+    """Build a Tower-Fan oscillation on/off packet.
+
+    Args:
+        enabled: True = oscillate (sweep), False = hold still.
+        swing_tail: 4 swing-range bytes copied from the fan's aa1d report,
+                    used only for the ON frame; None sends a bare ON.
+        prefix: 0x33 for the ptReal frame, 0x3A for the multiSync twin.
+
+    Returns:
+        20-byte packet (19 data bytes + XOR checksum).
+    """
+    data = [prefix, FAN_OSC_COMMAND, 0x01 if enabled else 0x00]
+    if enabled and swing_tail:
+        data.extend(int(b) & 0xFF for b in swing_tail[:4])
+    return build_packet(data)
+
+
 def encode_packet_base64(packet: bytes) -> str:
     """Base64 encode a packet for ptReal command.
 

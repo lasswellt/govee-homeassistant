@@ -2159,7 +2159,35 @@ Key observations:
 Key observations:
 - 12 speed levels (vs 8 on H7101) — fan speed count varies by model
 - Different work mode numbering than H7101 (Auto=2 vs Auto=3)
-- `oscillationToggle` for fan oscillation control
+- `oscillationToggle` is **advertised but a no-op** on the Tower Fan 2 family
+  (H7105/H7106/H7107/H7108): the Platform API returns HTTP 200 and the sweep
+  motor does not react (govee2mqtt #438/#709, disforw/goveelife #70). The
+  state readback works; only the write is dead.
+
+**Oscillation over AWS IoT (ptReal) — the channel that works.** Reverse-engineered
+in homebridge-govee `lib/device/fan-H7107.js` (v11.33.0, hardware-confirmed on
+H7107; identical fix for H7105 in v11.34.0) and verified on an H7107 by this
+integration (2026-08-26: OFF stops the sweep in <1 s, ON resumes it; the fan
+ACKs each frame with `state.result: 1` on its `GA/…` reporting topic).
+
+| Frame | Bytes (0-2) | Base64 (20-byte packet) | Notes |
+|-------|-------------|--------------------------|-------|
+| ptReal OFF | `33 1d 00` + zero pad + XOR | `Mx0AAAAAAAAAAAAAAAAAAAAAAC4=` | byte-exact to homebridge |
+| ptReal ON | `33 1d 01 [t0 t1 t2 t3]` + pad + XOR | — | tail = 4 swing-range bytes, optional |
+| multiSync twin | `3a 1d <on>` (same body, 0x3a prefix) | — | sent alongside each ptReal frame |
+
+- Publish the ptReal frame with the standard `{"msg": {"cmd": "ptReal", "data": {"command": [b64]}}}`
+  envelope on the device topic; the twin goes out as `cmd: "multiSync"` with the same
+  `command: [b64]` list.
+- The 4 tail bytes are the fan's configured sweep arc, echoed from its own inbound
+  `aa 1d` BLE-format status frame (bytes 3-6). A bare ON (`33 1d 01`, no tail) also
+  resumes the sweep on the H7107; the tail is replayed when seen so the fan keeps its
+  physically-configured arc.
+- There is **no angle/range SET command** — oscillation is a boolean; the rest position
+  after OFF is wherever the sweep stopped.
+- In this integration: `fan.py` routes `async_oscillate` for `MQTT_OSCILLATION_SKUS`
+  through `BlePassthroughManager.async_send_fan_oscillation` when the AWS IoT session
+  is up, falling back to the REST `OscillationCommand` otherwise.
 
 #### H1310 — Ceiling Fan + Light (`devices.types.light`)
 

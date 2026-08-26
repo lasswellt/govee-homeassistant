@@ -77,6 +77,15 @@ PRESET_MODE_ALIASES = {
     "turbo": "turbo",
 }
 
+# Tower Fan 2 family: oscillation obeys ONLY the AWS-IoT MQTT ptReal/multiSync
+# frames — the Platform-API oscillationToggle returns 200 and does nothing
+# (govee2mqtt #438/#709, disforw/goveelife #70). Gated to the SKUs with a
+# hardware-confirmed frame (H7107: this integration + homebridge-govee
+# v11.33.0; H7105: homebridge-govee v11.34.0). H7106/H7108 are the same family
+# and likely candidates, but are left on the REST path until someone confirms.
+# Every other fan SKU keeps the existing REST OscillationCommand.
+MQTT_OSCILLATION_SKUS = {"H7105", "H7107"}
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -608,8 +617,32 @@ class GoveeFanEntity(GoveeEntity, FanEntity):
         self._last_mode_values[work_mode] = mode_value
 
     async def async_oscillate(self, oscillating: bool) -> None:
-        """Oscillate the fan."""
+        """Oscillate the fan.
+
+        Tower Fan 2 family: route through the MQTT ptReal/multiSync frame path
+        (the only channel that moves the sweep motor), falling back to the REST
+        OscillationCommand if MQTT is down or the send fails — so behaviour is
+        never worse than before this path existed.
+        """
         _LOGGER.debug("Setting oscillation: %s", oscillating)
+
+        if (
+            self._device.sku in MQTT_OSCILLATION_SKUS
+            and self.coordinator.mqtt_connected
+        ):
+            try:
+                if await self.coordinator.async_send_fan_oscillation(
+                    self._device_id, oscillating
+                ):
+                    state = self.device_state
+                    if state is not None:
+                        state.apply_optimistic_oscillation(oscillating)
+                        self.async_write_ha_state()
+                    return
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.warning(
+                    "MQTT oscillation send failed (%s); falling back to REST", err
+                )
 
         await self.coordinator.async_control_device(
             self._device_id,
