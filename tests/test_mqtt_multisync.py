@@ -271,7 +271,8 @@ class TestThermoFrameDecode:
     stablemate leak sensors use. Byte 3 is the only discriminator: 0x02 for a
     leak sub-device, 0x08 for a thermometer.
 
-    The temperature encoding is ``T[°C] = (byte13 + 112) / 10``, established
+    The temperature encoding is
+    ``T[°C] = (byte13 + 256 * (byte14 & 1) + 112) / 10``, established
     in #151 against 30 on-the-hour frames paired with the cloud reading each
     produced. All frames below are verbatim from that capture, with the label
     the reporter's own cloud history recorded for them.
@@ -288,6 +289,14 @@ class TestThermoFrameDecode:
     # H5310 via H5044 from a DIFFERENT account (#157) — one labelled reading
     # of 88.34 °F at the end of that window, where byte 13 read 201.
     H5310_OTHER_ACCOUNT = "ee34000800642514a86a7ab5bec982ccff200060"
+
+    # Same H5310 immediately around the 36.7/36.8 °C rollover. Byte 13 wraps
+    # FF -> 00 and the low bit of byte 14 carries into 82 -> 83.
+    ROLLOVER = [
+        ("ee34000800642915b86a9374dfff82ccff20000e", 36.7),
+        ("ee34000800642915b76a9374070083ccff200027", 36.8),
+        ("ee34000800642915bb6a9340271683ccff200029", 39.0),
+    ]
 
     def _decode_one(self, packet: bytes) -> dict:
         """Run one packet through the handler; return the emitted event_data."""
@@ -323,6 +332,12 @@ class TestThermoFrameDecode:
         assert event["frame_ts"] == 0x6A7ECA3C
         assert 1786000000 < event["frame_ts"] < 1790000000
 
+    def test_temperature_carry_bit_across_rollover(self):
+        """Byte 14 bit 0 extends the temperature to nine bits."""
+        for hex_frame, label in self.ROLLOVER:
+            event = self._decode_one(bytes.fromhex(hex_frame))
+            assert abs(event["temperature_c"] - label) <= 0.1, hex_frame
+
     def test_battery_and_slot_decoded(self):
         event = self._decode_one(bytes.fromhex(self.LABELLED[0][0]))
         assert event["battery"] == 100
@@ -352,18 +367,6 @@ class TestThermoFrameDecode:
         event = self._decode_one(bytes.fromhex(self.LABELLED[0][0]))
         assert event.get("_leak_event") is None
         assert "is_wet" not in event
-
-    def test_sentinel_temperature_byte_is_dropped(self):
-        """0x00 / 0xFF at byte 13 are no-data markers, not 11.2/36.7 °C."""
-        cb = MagicMock()
-        client = _make_client()
-        client._on_state_update = cb
-        for sentinel in ("00", "ff"):
-            frame = bytes.fromhex(
-                "ee34000800642915c26a7eca3c" + sentinel + "baccff80002a"
-            )
-            client._handle_multisync(HUB_ID, _multisync([frame]))
-        assert cb.call_count == 0
 
     def test_short_thermo_frame_ignored(self):
         """A truncated frame has no byte 13 to read."""
