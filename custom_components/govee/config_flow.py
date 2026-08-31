@@ -302,6 +302,7 @@ class GoveeConfigFlow(ConfigFlow, domain=DOMAIN):
                     # Pre-cache the IoT credentials so the reload
                     # doesn't try to login again (which would hit 2FA)
                     self._cache_iot_credentials(reconfigure_entry.entry_id)
+                    self._sync_cached_creds(new_data, reconfigure_entry)
                     return self.async_update_reload_and_abort(
                         reconfigure_entry,
                         data_updates=new_data,
@@ -333,6 +334,31 @@ class GoveeConfigFlow(ConfigFlow, domain=DOMAIN):
                 "email": self._email or "",
             },
         )
+
+    @staticmethod
+    def _sync_cached_creds(new_data: dict[str, Any], entry: ConfigEntry) -> None:
+        """Carry freshly cached credential keys into a ``data_updates`` payload.
+
+        ``_clear_mqtt_cache`` and ``_cache_iot_credentials`` write straight to
+        ``entry.data``, but the payload passed to
+        ``async_update_reload_and_abort`` is snapshotted from ``entry.data``
+        *before* those calls run — and ``data_updates`` overrides existing
+        keys. Without re-syncing, the stale token in that snapshot is written
+        back over the fresh one the flow just obtained: the user sees
+        "Reconfiguration successful" and keeps the expired credentials.
+
+        That is worse than it sounds, because reconfiguring is the obvious
+        user-side recovery from an expired token — so the recovery silently
+        did nothing (issues #178, #179).
+
+        Both completion paths call this, so a future edit to one can't
+        reintroduce the bug in the other.
+        """
+        for key in (KEY_IOT_CREDENTIALS, KEY_IOT_LOGIN_FAILED):
+            if key in entry.data:
+                new_data[key] = entry.data[key]
+            else:
+                new_data.pop(key, None)
 
     def _cache_iot_credentials(self, entry_id: str) -> None:
         """Pre-cache IoT credentials in entry.data so reload can skip login.
@@ -599,6 +625,7 @@ class GoveeConfigFlow(ConfigFlow, domain=DOMAIN):
                         self._clear_mqtt_cache(reconfigure_entry.entry_id)
                         # Pre-cache IoT credentials so reload doesn't re-login
                         self._cache_iot_credentials(reconfigure_entry.entry_id)
+                        self._sync_cached_creds(new_data, reconfigure_entry)
 
                         return self.async_update_reload_and_abort(
                             reconfigure_entry,

@@ -766,6 +766,16 @@ class GoveeAuthClient:
                         f"Failed to get device list: {message}", code=response.status
                     )
 
+                # Same in-body error envelope the BFF paths guard against
+                # (#132): this endpoint also answers an expired token with
+                # HTTP 200 and no device list, which used to read as "this
+                # account has no devices" and silently cache {} topics. Every
+                # ptReal / multiSync publish then fails while MQTT stays
+                # connected on its certificates and api_key control keeps
+                # working, so nothing surfaces — and the re-login recovery
+                # never fires, because nothing raised (#178).
+                _raise_for_bff_status(data, "device topics (legacy list)")
+
                 # Extract topics from the legacy list (structure:
                 # devices[].deviceExt.deviceSettings.topic), then merge in topics
                 # from the BFF device list, which additionally carries them for
