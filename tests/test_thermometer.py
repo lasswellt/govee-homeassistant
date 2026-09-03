@@ -329,6 +329,22 @@ class TestTemperatureSensorFahrenheitConversion:
         # An account whose Govee app is set to °C can opt out via the option.
         assert self._make_sensor_stub(-14.3, "celsius", sku="H5111") == -14.3
 
+    def test_h5053_wifi_thermometer_auto_converts_fahrenheit(self):
+        # Issue #173: six H5053s read ~162°F for a real ~72°F — the Developer
+        # API returned 72.2 (already °F) and HA converted it again. Auto mode
+        # stores the raw 72.2°F as ~22.3°C so HA renders 72.2°F.
+        result = self._make_sensor_stub(72.2, "auto", sku="H5053")
+        assert abs(result - 22.333333) < 1e-4
+
+    def test_h5053_celsius_override_passthrough(self):
+        # An account whose Govee app is set to °C can opt out via the option.
+        assert self._make_sensor_stub(22.3, "celsius", sku="H5053") == 22.3
+
+    def test_h5053_account_celsius_hint_beats_allowlist(self):
+        # Should the fahOpen harvest ever cover the H5053, a recorded °C
+        # preference must win over the static allowlist (same rule as H5310).
+        assert self._make_sensor_stub(22.3, "auto", sku="H5053", account_unit="celsius") == 22.3
+
     def test_h5310_pool_thermometer_auto_converts_fahrenheit(self):
         # Issue #157: an 88°F pool surfaced as ~191°F because the Developer API
         # had already returned °F. With no fahOpen flag to go on, the SKU
