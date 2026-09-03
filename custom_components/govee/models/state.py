@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
+from collections.abc import Iterable
 from typing import Any, Protocol
 
 # Candidate keys a thermometer/hygrometer reading may hide behind. The Govee
@@ -278,6 +279,18 @@ class GoveeDeviceState:
     # stay absent and the entity uses optimistic state instead (issue #114).
     toggles: dict[str, bool] = field(default_factory=dict)
 
+    # Integrated ceiling fan on H1310/H1370-style combos (issue #181). The
+    # Developer API returns "" for fanToggle / fanSpeedMode /
+    # reverseAirflowToggle / fanOscillateToggle on every poll, so these are
+    # only ever set from the fan's own AWS IoT status frames
+    # (:meth:`update_ceiling_fan_from_frames`) or from an optimistic write.
+    # None until either lands; the fan entity falls back to its restored
+    # state until then.
+    ceiling_fan_on: bool | None = None
+    ceiling_fan_speed: int | None = None
+    ceiling_fan_reverse: bool | None = None
+    ceiling_fan_swing: bool | None = None
+
     # Last activated scene (for restoring after music mode off)
     last_scene_id: str | None = None
     last_scene_name: str | None = None
@@ -495,13 +508,22 @@ class GoveeDeviceState:
                         except (TypeError, ValueError):
                             pass
 
-    def update_from_mqtt(self, data: dict[str, Any]) -> None:
+    def update_from_mqtt(self, data: dict[str, Any], *, ceiling_fan: bool = False) -> None:
         """Update state from MQTT push message.
 
         MQTT format differs from REST API - uses onOff/brightness/color keys.
 
         Args:
             data: State dict from MQTT message.
+            ceiling_fan: The device is a ceiling-fan-with-light combo
+                (H1310/H1370). On those the device-wide ``onOff`` is the
+                whole unit having power — a fan reporting ``onOff: 1`` has
+                been captured with both lights AND the fan off in the same
+                status (homebridge-govee #1352) — so it must not speak for
+                the light. The lights' state comes from the ``aa 42`` /
+                ``aa 36`` frames via :meth:`update_ceiling_fan_from_frames`
+                instead (issue #181: switching the fan on lit the light
+                entity until the next poll).
         """
         self.source = "mqtt"
 
@@ -511,7 +533,7 @@ class GoveeDeviceState:
         # availability immediately without waiting for the cloud to catch up.
         self.online = True
 
-        if "onOff" in data:
+        if "onOff" in data and not ceiling_fan:
             self.power_state = bool(data["onOff"])
 
         if "brightness" in data:
@@ -562,6 +584,71 @@ class GoveeDeviceState:
         # A confirmed push ends the optimistic grace window — from this point
         # on API polls are authoritative again for power/brightness.
         self.clear_optimistic_window()
+
+    def update_ceiling_fan_from_frames(self, frames: Iterable[bytes]) -> bool:
+        """Apply the status frames a ceiling-fan combo carries in its AWS push.
+
+        The H1310/R1310/H1370 report the integrated fan and the two lights as
+        BLE-format frames in the push's ``op.command`` list, never in the
+        flat ``state`` keys and never in the Developer API poll. Layouts,
+        from labelled captures on real units (homebridge-govee
+        ``fan-ceiling.js``, issues #1352/#1358):
+
+        - ``aa 31 <running> <speed> <direction> .. .. <swing>`` — byte 2 is
+          ``01`` while the fan turns, byte 3 the speed step, byte 4 ``01``
+          when airflow is reversed (``reverseAirflowToggle`` on), byte 7
+          ``01`` while oscillating (H1370 only; the H1310 cannot).
+        - ``aa 42 <mask>`` — bit 0x40 main light, 0x20 background light,
+          0x80 set whenever either is lit.
+        - ``aa 36 <main> <background>`` — one byte per light, same fact.
+
+        The lights' frames also decide the light entity's ``power_state``
+        (either light lit), since the device-wide ``onOff`` does not.
+
+        Args:
+            frames: Decoded (not base64) frames from ``op.command``.
+
+        Returns:
+            True if at least one frame was recognised.
+        """
+        recognised = False
+        for raw in frames:
+            if len(raw) < 3 or raw[0] != 0xAA:
+                continue
+            opcode = raw[1]
+            if opcode == 0x31 and len(raw) >= 5:
+                self.ceiling_fan_on = raw[2] == 0x01
+                if raw[3] > 0:
+                    self.ceiling_fan_speed = raw[3]
+                self.ceiling_fan_reverse = raw[4] == 0x01
+                if len(raw) >= 8:
+                    self.ceiling_fan_swing = raw[7] == 0x01
+                recognised = True
+            elif opcode == 0x42:
+                mask = raw[2]
+                self._apply_ceiling_fan_lights(
+                    main=bool(mask & 0x40),
+                    background=bool(mask & 0x20),
+                    any_lit=bool(mask & 0x80) or bool(mask & 0x60),
+                )
+                recognised = True
+            elif opcode == 0x36 and len(raw) >= 4:
+                main = raw[2] == 0x01
+                background = raw[3] == 0x01
+                self._apply_ceiling_fan_lights(
+                    main=main, background=background, any_lit=main or background
+                )
+                recognised = True
+        return recognised
+
+    def _apply_ceiling_fan_lights(self, *, main: bool, background: bool, any_lit: bool) -> None:
+        """Store the two named-light toggles and derive the light's power from them."""
+        # Same instance names the Developer API uses for the toggles
+        # (models.device INSTANCE_MAIN_LIGHT_TOGGLE / _BACKGROUND_LIGHT_TOGGLE);
+        # the named-light switches read these when present.
+        self.toggles["mainLightToggle"] = main
+        self.toggles["backgroundLightToggle"] = background
+        self.power_state = any_lit
 
     def update_from_lan(
         self, data: LanDevStatusLike, *, skip_power_brightness: bool = False

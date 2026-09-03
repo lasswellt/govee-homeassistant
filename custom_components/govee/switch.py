@@ -490,7 +490,18 @@ class GoveeNamedLightSwitchEntity(GoveeEntity, SwitchEntity, RestoreEntity):
 
     @property
     def is_on(self) -> bool:
-        """Return True if the light zone is on (optimistic)."""
+        """Return True if the light zone is on.
+
+        Prefers the shared state when the device has reported the toggle —
+        ceiling-fan combos push their lights as ``aa 42`` / ``aa 36`` frames
+        over AWS IoT (issue #181) — and falls back to the restored optimistic
+        value otherwise.
+        """
+        state = self.device_state
+        if state is not None:
+            live = state.toggles.get(self._toggle_instance)
+            if live is not None:
+                return live
         return self._is_on
 
     async def async_turn_on(self, **kwargs: Any) -> None:

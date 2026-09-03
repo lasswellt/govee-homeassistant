@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from homeassistant.util.percentage import ordered_list_item_to_percentage
+
 from dataclasses import replace
 import logging
 from unittest.mock import AsyncMock, MagicMock
@@ -603,10 +605,18 @@ class TestGoveeCeilingFanEntity:
         return _h1310_device()
 
     @pytest.fixture
-    def mock_coordinator(self, device):
+    def device_state(self, device):
+        from custom_components.govee.models import GoveeDeviceState
+
+        state = GoveeDeviceState.create_empty(device.device_id)
+        state.online = True
+        return state
+
+    @pytest.fixture
+    def mock_coordinator(self, device, device_state):
         coordinator = MagicMock()
         coordinator.devices = {device.device_id: device}
-        coordinator.get_state = MagicMock(return_value=MagicMock(online=True))
+        coordinator.get_state = MagicMock(return_value=device_state)
         coordinator.async_control_device = AsyncMock(return_value=True)
         return coordinator
 
@@ -714,6 +724,44 @@ class TestGoveeCeilingFanEntity:
         assert cmd.toggle_instance == INSTANCE_REVERSE_AIRFLOW
         assert cmd.enabled is True
         assert fan_entity.current_direction == DIRECTION_REVERSE
+        # The motor starts on a direction change even from off (#181).
+        assert fan_entity.is_on is True
+
+    def test_pushed_state_beats_restored_state(self, fan_entity, device_state):
+        """Once the fan has reported an ``aa 31`` frame, the entity shows it (#181)."""
+        from homeassistant.components.fan import DIRECTION_REVERSE
+
+        # Restored/optimistic values say off, forward.
+        assert fan_entity.is_on is False
+        assert fan_entity.percentage == 0
+
+        device_state.update_ceiling_fan_from_frames(
+            [bytes([0xAA, 0x31, 0x01, 0x03, 0x01]) + bytes(15)]
+        )
+
+        assert fan_entity.is_on is True
+        assert fan_entity.percentage == 50  # speed 3 of 6
+        assert fan_entity.current_direction == DIRECTION_REVERSE
+
+    def test_pushed_stop_wins_over_optimistic_on(self, fan_entity, device_state):
+        """A stop reported by the fan (remote / app) is not masked by the last HA command."""
+        fan_entity._is_on = True
+        fan_entity._speed_value = 6
+
+        device_state.update_ceiling_fan_from_frames(
+            [bytes([0xAA, 0x31, 0x00, 0x06, 0x00]) + bytes(15)]
+        )
+
+        assert fan_entity.is_on is False
+        assert fan_entity.percentage == 0
+
+    def test_unknown_pushed_speed_falls_back_to_last_command(self, fan_entity, device_state):
+        """A speed byte outside fanSpeedMode's options is not shown as a percentage."""
+        fan_entity._speed_value = 2
+        device_state.ceiling_fan_on = True
+        device_state.ceiling_fan_speed = 99
+
+        assert fan_entity.percentage == ordered_list_item_to_percentage([1, 2, 3, 4, 5, 6], 2)
 
 
 class TestGoveeCeilingFanOscillation:
@@ -724,10 +772,18 @@ class TestGoveeCeilingFanOscillation:
         return _h1370_device()
 
     @pytest.fixture
-    def mock_coordinator(self, device):
+    def device_state(self, device):
+        from custom_components.govee.models import GoveeDeviceState
+
+        state = GoveeDeviceState.create_empty(device.device_id)
+        state.online = True
+        return state
+
+    @pytest.fixture
+    def mock_coordinator(self, device, device_state):
         coordinator = MagicMock()
         coordinator.devices = {device.device_id: device}
-        coordinator.get_state = MagicMock(return_value=MagicMock(online=True))
+        coordinator.get_state = MagicMock(return_value=device_state)
         coordinator.async_control_device = AsyncMock(return_value=True)
         return coordinator
 

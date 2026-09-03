@@ -2231,6 +2231,34 @@ Combo ceiling-fan-with-light. Reports as `devices.types.light` (because of the i
 - `reverseAirflowToggle` → fan direction (forward / reverse).
 - Govee's cloud poll does not report fan state → use optimistic state restored across restarts.
 
+**Fan and light state over AWS IoT (issue #181).** The Developer API returns `""` for
+`fanToggle`, `fanSpeedMode`, `reverseAirflowToggle`, `mainLightToggle` and
+`backgroundLightToggle` on every poll, and the push's device-wide `onOff` is the *unit*
+having power, not the light — `onOff: 1` has been captured alongside both lights and the
+fan off in one status (homebridge-govee #1352). The real state rides as BLE-format frames
+in the push's `op.command` list (base64), decoded from labelled captures on real
+H1310/R1310/H1370 units (homebridge-govee `lib/device/fan-ceiling.js`, #1352/#1358):
+
+| Frame | Layout | Meaning |
+|-------|--------|---------|
+| `aa 31 <run> <speed> <dir> .. .. <swing>` | byte 2 `01` = turning, byte 3 = speed step (1–6 on the H1310), byte 4 `01` = reverse airflow, byte 7 `01` = oscillating (H1370 only) | fan state |
+| `aa 42 <mask>` | bit `0x40` main light, `0x20` background light, `0x80` either lit | lights |
+| `aa 36 <main> <background>` | one byte per light | lights (same fact, second form) |
+
+In this integration the MQTT client attaches the decoded frames to the state it hands the
+coordinator as `_op_frames` (hex; visible in the diagnostics `last_mqtt_message`), and for
+devices with `supports_ceiling_fan` the coordinator ignores the top-level `onOff`, decodes
+these frames into `ceiling_fan_on / _speed / _reverse / _swing` and the two light toggles,
+and derives the light entity's power from the light frames. The fan entity and the named
+light switches prefer that pushed state and fall back to their restored optimistic state
+until the fan has reported. The values are carried across Developer polls because the poll
+would otherwise reset them to nothing.
+
+Related write-side observations from the same captures: `powerSwitch` is the whole unit;
+`33 31 <run> <speed>` is the ptReal form of the fan command; the `reverseAirflowToggle`
+capability is the only way to *send* a direction. Changing direction while the fan is off
+starts the motor (reported on an H1310 in #181), so the integration marks the fan running.
+
 #### H5089 — Smart Outlet Extender w/ Nightlight (`devices.types.socket`)
 
 A socket that also exposes an RGB nightlight. Important for device-type detection: a `devices.types.socket` can legitimately carry a color light, so plug-exclusion logic must keep the light entity when the socket has a color capability (regression in issue #59, fixed PR #89). From `govee-...Smart Outlet Extender....json`.

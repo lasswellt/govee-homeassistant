@@ -155,6 +155,28 @@ def _decode_thermo_frame(raw: bytes) -> dict[str, Any] | None:
     }
 
 
+def _decode_op_frames(op: Any) -> list[bytes]:
+    """Base64-decode the BLE-format frames in a message's ``op.command`` list.
+
+    Tolerates a missing/odd ``op`` block, non-string entries and bad base64:
+    a malformed entry must never cost the message its ``state``.
+    """
+    if not isinstance(op, dict):
+        return []
+    commands = op.get("command")
+    if not isinstance(commands, list):
+        return []
+    frames: list[bytes] = []
+    for entry in commands:
+        if not isinstance(entry, str):
+            continue
+        try:
+            frames.append(base64.b64decode(entry))
+        except (binascii.Error, ValueError):
+            continue
+    return frames
+
+
 class GoveeAwsIotClient:
     """AWS IoT MQTT client for real-time Govee device state updates.
 
@@ -521,30 +543,28 @@ class GoveeAwsIotClient:
             self._last_message_ts = datetime.now(timezone.utc)
             self._last_message_per_device[device_id] = self._last_message_ts
 
-            # Harvest Tower-Fan swing-range tail bytes from any inbound
-            # BLE-format frame (aa 1d ..) carried in op.command[]. This runs
-            # before the multiSync/state branches so it captures the tail
-            # regardless of how the fan frames its report. Bytes 3-6 are the
-            # swing range (homebridge fan-H7107.js), replayed on oscillation ON.
-            # Only the fan's own on/off reports (aa 1d 00 / aa 1d 01) carry
-            # the arc — homebridge caches nothing else — so an unknown aa 1d
-            # sub-report can't be replayed as a bogus range.
-            op = data.get("op")
-            if isinstance(op, dict):
-                for _b64frame in op.get("command", []) or []:
-                    if not isinstance(_b64frame, str):
-                        continue
-                    try:
-                        _fb = base64.b64decode(_b64frame)
-                    except (binascii.Error, ValueError):
-                        continue
-                    if (
-                        len(_fb) >= 7
-                        and _fb[0] == 0xAA
-                        and _fb[1] == 0x1D
-                        and _fb[2] in (0x00, 0x01)
-                    ):
-                        self._fan_swing_tail[device_id] = list(_fb[3:7])
+            # BLE-format status frames riding in op.command[] (base64),
+            # decoded once here. The Tower-Fan tail harvest below reads them,
+            # they are attached to the state dict as hex so the coordinator
+            # can decode SKU-specific reports (ceiling-fan combos, #181), and
+            # the diagnostics download shows them verbatim. This runs before
+            # the multiSync/state branches so it sees every envelope.
+            frames = _decode_op_frames(data.get("op"))
+
+            # Harvest Tower-Fan swing-range tail bytes from an inbound aa 1d
+            # frame. Bytes 3-6 are the swing range (homebridge fan-H7107.js),
+            # replayed on oscillation ON. Only the fan's own on/off reports
+            # (aa 1d 00 / aa 1d 01) carry the arc — homebridge caches nothing
+            # else — so an unknown aa 1d sub-report can't be replayed as a
+            # bogus range.
+            for _fb in frames:
+                if (
+                    len(_fb) >= 7
+                    and _fb[0] == 0xAA
+                    and _fb[1] == 0x1D
+                    and _fb[2] in (0x00, 0x01)
+                ):
+                    self._fan_swing_tail[device_id] = list(_fb[3:7])
 
             # Handle multiSync messages (leak sensor events)
             cmd = data.get("cmd")
@@ -566,6 +586,9 @@ class GoveeAwsIotClient:
                 state.get("onOff"),
                 state.get("brightness"),
             )
+
+            if frames and isinstance(state, dict):
+                state["_op_frames"] = [frame.hex() for frame in frames]
 
             self._last_messages[device_id] = state
 
