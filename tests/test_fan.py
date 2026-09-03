@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import logging
 from unittest.mock import AsyncMock, MagicMock
 
@@ -292,6 +293,96 @@ class TestGoveeFanEntityControls:
         call_args = mock_coordinator.async_control_device.call_args
         assert isinstance(call_args[0][1], OscillationCommand)
         assert call_args[0][1].oscillating is False
+
+    # ------------------------------------------------------------------
+    # Tower Fan 2 family (H7105/H7107): oscillation over MQTT ptReal
+    # ------------------------------------------------------------------
+
+    @pytest.fixture
+    def tower_fan_entity(self, mock_coordinator, mock_fan_device):
+        """Create an H7107 entity whose oscillation routes over MQTT."""
+        device = replace(mock_fan_device, sku="H7107")
+        mock_coordinator.devices = {device.device_id: device}
+        mock_coordinator.mqtt_connected = True
+        mock_coordinator.async_send_fan_oscillation = AsyncMock(return_value=True)
+        entity = GoveeFanEntity(mock_coordinator, device)
+        entity.async_write_ha_state = MagicMock()
+        return entity
+
+    @pytest.mark.asyncio
+    async def test_tower_fan_oscillate_uses_mqtt(
+        self, tower_fan_entity, mock_coordinator, mock_fan_device_state
+    ):
+        """H7107 sends the MQTT frame, skips REST, and updates optimistically."""
+        await tower_fan_entity.async_oscillate(False)
+
+        mock_coordinator.async_send_fan_oscillation.assert_awaited_once_with(
+            tower_fan_entity._device_id, False
+        )
+        mock_coordinator.async_control_device.assert_not_called()
+        assert mock_fan_device_state.oscillating is False
+        tower_fan_entity.async_write_ha_state.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_tower_fan_oscillate_falls_back_when_mqtt_down(
+        self, tower_fan_entity, mock_coordinator
+    ):
+        """No MQTT session -> the pre-existing REST OscillationCommand path."""
+        mock_coordinator.mqtt_connected = False
+
+        await tower_fan_entity.async_oscillate(True)
+
+        mock_coordinator.async_send_fan_oscillation.assert_not_awaited()
+        mock_coordinator.async_control_device.assert_called_once()
+        call_args = mock_coordinator.async_control_device.call_args
+        assert isinstance(call_args[0][1], OscillationCommand)
+        assert call_args[0][1].oscillating is True
+
+    @pytest.mark.asyncio
+    async def test_tower_fan_oscillate_falls_back_when_send_declined(
+        self, tower_fan_entity, mock_coordinator, mock_fan_device_state
+    ):
+        """A False from the MQTT path (no client/topic) falls back to REST."""
+        mock_coordinator.async_send_fan_oscillation.return_value = False
+
+        await tower_fan_entity.async_oscillate(False)
+
+        mock_coordinator.async_control_device.assert_called_once()
+        assert isinstance(
+            mock_coordinator.async_control_device.call_args[0][1],
+            OscillationCommand,
+        )
+        # No optimistic write when the MQTT frame did not go out.
+        assert mock_fan_device_state.oscillating is True
+        tower_fan_entity.async_write_ha_state.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_tower_fan_oscillate_falls_back_when_send_raises(
+        self, tower_fan_entity, mock_coordinator
+    ):
+        """An exception on the MQTT path is logged and REST still runs."""
+        mock_coordinator.async_send_fan_oscillation.side_effect = RuntimeError(
+            "publish failed"
+        )
+
+        await tower_fan_entity.async_oscillate(False)
+
+        mock_coordinator.async_control_device.assert_called_once()
+        assert isinstance(
+            mock_coordinator.async_control_device.call_args[0][1],
+            OscillationCommand,
+        )
+
+    @pytest.mark.asyncio
+    async def test_other_fans_keep_rest_oscillation(self, fan_entity, mock_coordinator):
+        """A non-Tower-Fan-2 SKU (H7101) never touches the MQTT path."""
+        mock_coordinator.mqtt_connected = True
+        mock_coordinator.async_send_fan_oscillation = AsyncMock(return_value=True)
+
+        await fan_entity.async_oscillate(True)
+
+        mock_coordinator.async_send_fan_oscillation.assert_not_awaited()
+        mock_coordinator.async_control_device.assert_called_once()
 
 
 # ==============================================================================

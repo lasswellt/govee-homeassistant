@@ -10,11 +10,15 @@ from custom_components.govee.api.ble_packet import (
     DIY_MODE_INDICATOR,
     DREAMVIEW_COMMAND,
     DREAMVIEW_INDICATOR,
+    FAN_OSC_COMMAND,
+    FAN_OSC_MULTISYNC_PREFIX,
+    FAN_OSC_PTREAL_PREFIX,
     MUSIC_MODE_COMMAND,
     MUSIC_MODE_INDICATOR,
     MUSIC_PACKET_PREFIX,
     build_diy_scene_packet,
     build_dreamview_packet,
+    build_fan_oscillation_packet,
     build_music_mode_packet,
     build_packet,
     calculate_checksum,
@@ -574,3 +578,71 @@ class TestDiyScenePacketIntegration:
         # Verify scene ID preserved
         recovered_id = int.from_bytes(decoded[3:7], byteorder="little")
         assert recovered_id == scene_id
+
+
+# ==============================================================================
+# Tower Fan Oscillation Packet Tests
+# ==============================================================================
+
+
+def _xor(data: bytes) -> int:
+    """XOR-fold bytes (the packet checksum)."""
+    result = 0
+    for b in data:
+        result ^= b
+    return result
+
+
+class TestBuildFanOscillationPacket:
+    """Test the Tower Fan 2 (H7105/H7107) oscillation packet builder."""
+
+    # Hardware-confirmed OFF frame from homebridge-govee lib/device/fan-H7107.js.
+    HOMEBRIDGE_OFF_B64 = "Mx0AAAAAAAAAAAAAAAAAAAAAAC4="
+
+    def test_off_matches_homebridge_frame(self):
+        """OFF is byte-exact to the frame homebridge-govee proved on hardware."""
+        packet = build_fan_oscillation_packet(False)
+        assert encode_packet_base64(packet) == self.HOMEBRIDGE_OFF_B64
+
+    def test_off_layout(self):
+        """OFF = 0x33 0x1d 0x00, zero-padded, XOR checksum."""
+        packet = build_fan_oscillation_packet(False)
+        assert len(packet) == 20
+        assert packet[0] == FAN_OSC_PTREAL_PREFIX
+        assert packet[1] == FAN_OSC_COMMAND
+        assert packet[2] == 0x00
+        assert packet[3:19] == bytes(16)
+        assert packet[19] == _xor(packet[:19])
+
+    def test_on_bare(self):
+        """ON without a swing tail = 0x33 0x1d 0x01, zero-padded."""
+        packet = build_fan_oscillation_packet(True)
+        assert packet[:3] == bytes([0x33, 0x1D, 0x01])
+        assert packet[3:19] == bytes(16)
+        assert packet[19] == _xor(packet[:19])
+
+    def test_on_with_swing_tail(self):
+        """ON carries the 4 swing-range bytes right after the enable byte."""
+        packet = build_fan_oscillation_packet(True, [0x01, 0x06, 0x03, 0x50])
+        assert packet[:7] == bytes([0x33, 0x1D, 0x01, 0x01, 0x06, 0x03, 0x50])
+        assert packet[7:19] == bytes(12)
+        assert packet[19] == _xor(packet[:19])
+
+    def test_on_tail_truncated_to_four_bytes(self):
+        """Only the first 4 tail bytes are used, each masked to a byte."""
+        packet = build_fan_oscillation_packet(True, [1, 2, 3, 0x1FF, 5, 6])
+        assert packet[3:7] == bytes([1, 2, 3, 0xFF])
+        assert packet[7] == 0x00
+
+    def test_off_ignores_tail(self):
+        """The swing tail is an ON-only payload."""
+        with_tail = build_fan_oscillation_packet(False, [1, 2, 3, 4])
+        assert with_tail == build_fan_oscillation_packet(False)
+
+    def test_multisync_prefix(self):
+        """The multiSync twin swaps the 0x33 prefix for 0x3a."""
+        packet = build_fan_oscillation_packet(False, prefix=FAN_OSC_MULTISYNC_PREFIX)
+        assert packet[0] == 0x3A
+        assert packet[1] == FAN_OSC_COMMAND
+        assert packet[2] == 0x00
+        assert packet[19] == _xor(packet[:19])
