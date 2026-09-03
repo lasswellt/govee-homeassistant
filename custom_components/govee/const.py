@@ -98,6 +98,18 @@ FAHRENHEIT_REPORTING_SKUS: Final = frozenset(
 )
 
 
+# Tower Fan 2 family whose oscillation obeys ONLY the AWS IoT ptReal/multiSync
+# frames: the Platform-API oscillationToggle returns HTTP 200 and the sweep
+# motor does not react (govee2mqtt #438/#709, disforw/goveelife #70 — all on
+# the H7107). Gated to the SKUs with a hardware-confirmed frame: H7107 (PR
+# #176 on real hardware + homebridge-govee v11.33.0) and H7105 (homebridge-
+# govee v11.34.0, #1339). The H7106 reports plain on/off oscillation in
+# homebridge's capability grouping, so it is a different protocol class, and
+# the H7108 is unverified — both stay on the REST OscillationCommand, as does
+# every other fan SKU. Compared case-insensitively against GoveeDevice.sku.
+MQTT_OSCILLATION_SKUS: Final = frozenset({"H7105", "H7107"})
+
+
 # SKU-specific segment count overrides.
 # Some Govee devices report a higher segment count via the API than
 # the physical sections on the device. This dict pins the real count

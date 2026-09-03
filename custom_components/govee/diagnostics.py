@@ -151,6 +151,18 @@ def _serialize_state(state: Any) -> dict[str, Any] | None:
         }
 
 
+def _fan_swing_tail(coordinator: GoveeCoordinator, device_id: str) -> list[int] | None:
+    """Last-seen Tower-Fan swing-range tail for a device, if the client has one."""
+    client = coordinator.mqtt_client
+    if client is None:
+        return None
+    try:
+        tail = client.fan_swing_tail(device_id)
+    except Exception:  # pragma: no cover - defensive
+        return None
+    return list(tail) if isinstance(tail, list) else None
+
+
 def _transport_health(coordinator: GoveeCoordinator, device_id: str) -> dict[str, Any]:
     """Per-transport connectivity health for a device (timestamps as ISO)."""
     out: dict[str, Any] = {}
@@ -212,6 +224,9 @@ def _device_diag(
         "state": _serialize_state(coordinator.get_state(device_id)),
         "raw_api_state": raw_state.get(device_id),
         "last_mqtt_message": raw_mqtt.get(device_id),
+        # Tower Fan 2 swing-range tail replayed on oscillation ON (PR #176);
+        # None until the fan has reported an aa 1d frame on this session.
+        "fan_swing_tail": _fan_swing_tail(coordinator, device_id),
         "transport": {
             "cloud_api": True,
             "mqtt": coordinator.mqtt_connected,

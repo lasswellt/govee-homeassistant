@@ -134,9 +134,13 @@ class BlePassthroughManager:
     ) -> bool:
         """Send a Tower-Fan oscillation on/off command via BLE passthrough.
 
-        Sends the ptReal 0x33 0x1d frame and the multiSync 0x3a 0x1d twin
-        (homebridge sends both; the fan honours one and the OFF twin is what
-        makes "stop" reliable). Returns the ptReal publish result.
+        Sends the ptReal 0x33 0x1d frame and, if that went out, the multiSync
+        0x3a 0x1d twin. homebridge sends both because the fan's own
+        oscillation reports travel as multiSync; which of the two the fan
+        honours is unconfirmed (homebridge-govee #1334), so the twin is
+        best-effort and never masks the primary result. The hardware-
+        confirmed requirement for a reliable OFF is that the frame carries no
+        tail bytes — build_fan_oscillation_packet only appends them on ON.
 
         Args:
             device_id: Device identifier.
@@ -159,23 +163,31 @@ class BlePassthroughManager:
         ok: bool = await client.async_publish_ptreal(
             device_id, sku, ptreal_b64, device_topic
         )
+        if not ok:
+            # The client already logged why (no topic / not connected /
+            # publish error); don't send the twin into the same wall and log
+            # it all a second time.
+            return False
 
-        # multiSync twin (0x3a) — non-fatal if it fails.
-        try:
-            multi_b64 = encode_packet_base64(
-                build_fan_oscillation_packet(
-                    enabled, swing_tail, prefix=FAN_OSC_MULTISYNC_PREFIX
-                )
+        # multiSync twin (0x3a). The client never raises — it returns False
+        # and logs — so a lost twin is just noted at debug.
+        multi_b64 = encode_packet_base64(
+            build_fan_oscillation_packet(
+                enabled, swing_tail, prefix=FAN_OSC_MULTISYNC_PREFIX
             )
-            await client.async_publish_command(
-                device_topic,
-                "multiSync",
-                {"command": [multi_b64], "device": device_id, "sku": sku},
+        )
+        twin_ok = await client.async_publish_command(
+            device_topic,
+            "multiSync",
+            {"command": [multi_b64], "device": device_id, "sku": sku},
+        )
+        if not twin_ok:
+            _LOGGER.debug(
+                "multiSync oscillation twin for %s not delivered (non-fatal)",
+                device_id,
             )
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("multiSync oscillation twin failed (non-fatal): %s", err)
 
-        return ok
+        return True
 
     async def async_send_diy_scene(
         self,

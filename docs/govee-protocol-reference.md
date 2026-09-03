@@ -2159,10 +2159,13 @@ Key observations:
 Key observations:
 - 12 speed levels (vs 8 on H7101) — fan speed count varies by model
 - Different work mode numbering than H7101 (Auto=2 vs Auto=3)
-- `oscillationToggle` is **advertised but a no-op** on the Tower Fan 2 family
-  (H7105/H7106/H7107/H7108): the Platform API returns HTTP 200 and the sweep
-  motor does not react (govee2mqtt #438/#709, disforw/goveelife #70). The
-  state readback works; only the write is dead.
+- `oscillationToggle` is **advertised but a no-op on the H7107**: the Platform
+  API returns HTTP 200 and the sweep motor does not react (govee2mqtt #438/#709,
+  disforw/goveelife #70 — all H7107 reports). The state readback works; only
+  the write is dead. The H7105 shares the H7107's ranged-oscillation frame
+  shape (homebridge-govee #1339) and is routed the same way. The H7106 reports
+  plain on/off oscillation in homebridge's capability grouping and is NOT the
+  same protocol class; the H7108 is unverified. Neither is on this path.
 
 **Oscillation over AWS IoT (ptReal) — the channel that works.** Reverse-engineered
 in homebridge-govee `lib/device/fan-H7107.js` (v11.33.0, hardware-confirmed on
@@ -2183,11 +2186,21 @@ ACKs each frame with `state.result: 1` on its `GA/…` reporting topic).
   `aa 1d` BLE-format status frame (bytes 3-6). A bare ON (`33 1d 01`, no tail) also
   resumes the sweep on the H7107; the tail is replayed when seen so the fan keeps its
   physically-configured arc.
-- There is **no angle/range SET command** — oscillation is a boolean; the rest position
-  after OFF is wherever the sweep stopped.
-- In this integration: `fan.py` routes `async_oscillate` for `MQTT_OSCILLATION_SKUS`
-  through `BlePassthroughManager.async_send_fan_oscillation` when the AWS IoT session
-  is up, falling back to the REST `OscillationCommand` otherwise.
+- **No angle/range SET command has been reverse-engineered.** The 4 tail bytes are
+  only ever replayed from the fan's own report — two H7107 units in homebridge-govee
+  #1334 reported different tails (`03 32 03 e8` and `03 3c 03 84`), so the arc is
+  app-configurable and a set path exists somewhere in the app protocol. This
+  integration exposes oscillation as a boolean only.
+- Which of the two frames the fan honours is unconfirmed (homebridge-govee #1334);
+  the hardware-confirmed requirement for a reliable OFF is that the frame carries
+  **no tail bytes**. The multiSync twin is best-effort.
+- In this integration: `fan.py` routes `async_oscillate` for
+  `MQTT_OSCILLATION_SKUS = {"H7105", "H7107"}` (`const.py`) through
+  `GoveeCoordinator.async_send_fan_oscillation` → `BlePassthroughManager.async_send_fan_oscillation`
+  when the AWS IoT session is up, falling back to the REST `OscillationCommand`
+  otherwise (a documented no-op on these SKUs — API-key-only users are warned once
+  in the log). The send and the replayed tail land in the diagnostics download
+  (`recent_commands` transport `mqtt`, per-device `fan_swing_tail`).
 
 #### H1310 — Ceiling Fan + Light (`devices.types.light`)
 

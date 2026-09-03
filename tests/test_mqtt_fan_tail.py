@@ -38,17 +38,29 @@ def _make_client() -> GoveeAwsIotClient:
     return client
 
 
-def _message(frames: list[str | bytes]) -> MagicMock:
-    """Wrap raw frames in an inbound multiSync message from the fan."""
+def _message(
+    frames: list[str | bytes | int | None],
+    *,
+    cmd: str = "multiSync",
+    state: dict | None = None,
+) -> MagicMock:
+    """Wrap raw frames in an inbound message from the fan.
+
+    Defaults to the hub-style ``multiSync`` envelope; pass ``cmd="status"``
+    and a ``state`` dict for the fan's own status push, which carries the
+    ``op.command`` list alongside ``state``.
+    """
     encoded = [
-        f if isinstance(f, str) else base64.b64encode(f).decode() for f in frames
+        base64.b64encode(f).decode() if isinstance(f, bytes) else f for f in frames
     ]
-    payload = {
+    payload: dict = {
         "device": FAN_ID,
         "sku": "H7107",
-        "cmd": "multiSync",
+        "cmd": cmd,
         "op": {"command": encoded},
     }
+    if state is not None:
+        payload["state"] = state
     message = MagicMock()
     message.topic = "GA/account"
     message.payload = json.dumps(payload).encode()
@@ -97,6 +109,46 @@ class TestFanSwingTailCapture:
         await client._handle_message(_message([other, short]))
 
         assert client.fan_swing_tail(FAN_ID) is None
+
+    @pytest.mark.asyncio
+    async def test_status_push_captures_tail_and_still_reaches_state_callback(self):
+        """The fan's own ``cmd: status`` push (state + op.command) feeds both paths."""
+        client = _make_client()
+        on_state_update = MagicMock()
+        client._on_state_update = on_state_update
+
+        await client._handle_message(
+            _message([_aa1d([3, 0x32, 3, 0xE8])], cmd="status", state={"result": 1})
+        )
+
+        assert client.fan_swing_tail(FAN_ID) == [3, 0x32, 3, 0xE8]
+        on_state_update.assert_called_once()
+        assert on_state_update.call_args[0][0] == FAN_ID
+        assert on_state_update.call_args[0][1]["result"] == 1
+
+    @pytest.mark.asyncio
+    async def test_only_on_off_reports_are_harvested(self):
+        """An unknown ``aa 1d 02`` sub-report must not become the replayed arc."""
+        client = _make_client()
+        other = bytes([0xAA, 0x1D, 0x02, 1, 2, 3, 4]) + bytes(13)
+
+        await client._handle_message(_message([other]))
+
+        assert client.fan_swing_tail(FAN_ID) is None
+
+    @pytest.mark.asyncio
+    async def test_non_string_entry_does_not_drop_the_message(self):
+        """A non-string op.command entry is skipped; the state still lands."""
+        client = _make_client()
+        on_state_update = MagicMock()
+        client._on_state_update = on_state_update
+
+        await client._handle_message(
+            _message([None, 42, _aa1d([9, 9, 9, 9])], cmd="status", state={"onOff": 1})
+        )
+
+        assert client.fan_swing_tail(FAN_ID) == [9, 9, 9, 9]
+        on_state_update.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_bad_base64_is_skipped(self):

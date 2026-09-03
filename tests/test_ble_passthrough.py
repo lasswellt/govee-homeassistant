@@ -98,12 +98,29 @@ class TestSendFanOscillation:
 
     @pytest.mark.asyncio
     async def test_multisync_failure_is_non_fatal(self):
-        """A failing multiSync twin does not mask a successful ptReal send."""
+        """An undelivered multiSync twin does not mask a successful ptReal send.
+
+        The MQTT client never raises — it returns False and logs — so the
+        twin's result is simply ignored.
+        """
         client = _make_client()
-        client.async_publish_command.side_effect = RuntimeError("twin failed")
+        client.async_publish_command.return_value = False
         manager = _make_manager(client)
 
         result = await manager.async_send_fan_oscillation(DEVICE_ID, SKU, False)
 
         assert result is True
         client.async_publish_ptreal.assert_awaited_once()
+        client.async_publish_command.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_twin_skipped_when_primary_fails(self):
+        """If the ptReal frame did not go out, the twin is not attempted."""
+        client = _make_client()
+        client.async_publish_ptreal.return_value = False
+        manager = _make_manager(client)
+
+        result = await manager.async_send_fan_oscillation(DEVICE_ID, SKU, True)
+
+        assert result is False
+        client.async_publish_command.assert_not_awaited()

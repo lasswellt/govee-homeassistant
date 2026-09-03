@@ -27,6 +27,7 @@ from homeassistant.util.percentage import (
     percentage_to_ordered_list_item,
 )
 
+from .const import MQTT_OSCILLATION_SKUS
 from .coordinator import GoveeCoordinator
 from .entity import GoveeEntity
 from .models import (
@@ -76,15 +77,6 @@ PRESET_MODE_ALIASES = {
     "custom": "custom",
     "turbo": "turbo",
 }
-
-# Tower Fan 2 family: oscillation obeys ONLY the AWS-IoT MQTT ptReal/multiSync
-# frames — the Platform-API oscillationToggle returns 200 and does nothing
-# (govee2mqtt #438/#709, disforw/goveelife #70). Gated to the SKUs with a
-# hardware-confirmed frame (H7107: this integration + homebridge-govee
-# v11.33.0; H7105: homebridge-govee v11.34.0). H7106/H7108 are the same family
-# and likely candidates, but are left on the REST path until someone confirms.
-# Every other fan SKU keeps the existing REST OscillationCommand.
-MQTT_OSCILLATION_SKUS = {"H7105", "H7107"}
 
 
 async def async_setup_entry(
@@ -147,6 +139,11 @@ class GoveeFanEntity(GoveeEntity, FanEntity):
 
         # Set name (uses has_entity_name = True)
         self._attr_name = None  # Use device name
+
+        # Tower Fan 2: warn once (not per press) when the only channel that
+        # moves the sweep motor is unavailable because there is no account
+        # login, so an API-key-only user learns why oscillation does nothing.
+        self._warned_no_mqtt = False
 
         # Detect speed count from device capabilities
         self._manual_preset_name = PRESET_MODE_NORMAL
@@ -626,22 +623,30 @@ class GoveeFanEntity(GoveeEntity, FanEntity):
         """
         _LOGGER.debug("Setting oscillation: %s", oscillating)
 
-        if (
-            self._device.sku in MQTT_OSCILLATION_SKUS
-            and self.coordinator.mqtt_connected
-        ):
-            try:
-                if await self.coordinator.async_send_fan_oscillation(
-                    self._device_id, oscillating
-                ):
-                    state = self.device_state
-                    if state is not None:
-                        state.apply_optimistic_oscillation(oscillating)
-                        self.async_write_ha_state()
-                    return
-            except Exception as err:  # noqa: BLE001
+        if self._device.sku.upper() in MQTT_OSCILLATION_SKUS:
+            if self.coordinator.mqtt_connected:
+                try:
+                    # The coordinator owns the optimistic write and the
+                    # listener notification, like every other control path.
+                    if await self.coordinator.async_send_fan_oscillation(
+                        self._device_id, oscillating
+                    ):
+                        return
+                except Exception:  # noqa: BLE001
+                    _LOGGER.warning(
+                        "MQTT oscillation send failed for %s; falling back to the "
+                        "cloud toggle, which is a known no-op on this model",
+                        self._device.name,
+                        exc_info=True,
+                    )
+            elif not self._warned_no_mqtt:
+                self._warned_no_mqtt = True
                 _LOGGER.warning(
-                    "MQTT oscillation send failed (%s); falling back to REST", err
+                    "Oscillation on %s (%s) needs Govee account login: the cloud "
+                    "oscillationToggle is a known no-op on this model and only the "
+                    "AWS IoT frame moves the sweep motor",
+                    self._device.name,
+                    self._device.sku,
                 )
 
         await self.coordinator.async_control_device(

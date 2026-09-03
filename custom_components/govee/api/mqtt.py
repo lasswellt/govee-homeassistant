@@ -526,14 +526,24 @@ class GoveeAwsIotClient:
             # before the multiSync/state branches so it captures the tail
             # regardless of how the fan frames its report. Bytes 3-6 are the
             # swing range (homebridge fan-H7107.js), replayed on oscillation ON.
+            # Only the fan's own on/off reports (aa 1d 00 / aa 1d 01) carry
+            # the arc — homebridge caches nothing else — so an unknown aa 1d
+            # sub-report can't be replayed as a bogus range.
             op = data.get("op")
             if isinstance(op, dict):
                 for _b64frame in op.get("command", []) or []:
+                    if not isinstance(_b64frame, str):
+                        continue
                     try:
                         _fb = base64.b64decode(_b64frame)
                     except (binascii.Error, ValueError):
                         continue
-                    if len(_fb) >= 7 and _fb[0] == 0xAA and _fb[1] == 0x1D:
+                    if (
+                        len(_fb) >= 7
+                        and _fb[0] == 0xAA
+                        and _fb[1] == 0x1D
+                        and _fb[2] in (0x00, 0x01)
+                    ):
                         self._fan_swing_tail[device_id] = list(_fb[3:7])
 
             # Handle multiSync messages (leak sensor events)

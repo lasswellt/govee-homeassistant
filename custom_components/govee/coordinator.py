@@ -3387,10 +3387,14 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
     ) -> bool:
         """Send a Tower-Fan oscillation on/off frame over MQTT.
 
-        Reverse-engineered path for the H7105/H7107 family, whose oscillation
-        the dev-API oscillationToggle cannot control (no-op). Returns False if
-        the device is unknown or MQTT has no client, so the caller can fall
-        back to the REST OscillationCommand.
+        Reverse-engineered path for the SKUs in ``MQTT_OSCILLATION_SKUS``,
+        whose oscillation the dev-API oscillationToggle cannot control
+        (no-op). Returns False if the device is unknown, MQTT has no client,
+        or the frame did not go out, so the caller can fall back to the REST
+        OscillationCommand. On success the optimistic state is applied here
+        and listeners are notified — the coordinator owns state, entities
+        observe it — and the send lands in the diagnostics command history
+        with the swing tail that was replayed.
         """
         device = self._devices.get(device_id)
         if not device:
@@ -3400,9 +3404,25 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             if self._mqtt_client
             else None
         )
-        return await self._ble_manager.async_send_fan_oscillation(
+        ok = await self._ble_manager.async_send_fan_oscillation(
             device_id, device.sku, enabled, tail
         )
+        self._record_local_command(
+            device_id,
+            device.sku,
+            "mqtt",
+            OscillationCommand(oscillating=enabled),
+            delivered=ok,
+            detail=f"ptReal 33 1d {'01' if enabled else '00'} tail={tail}",
+        )
+        if not ok:
+            return False
+        self._record_transport_send(device_id, "mqtt")
+        state = self._states.get(device_id)
+        if state is not None:
+            state.apply_optimistic_oscillation(enabled)
+        self.async_set_updated_data(self._states)
+        return True
 
     async def async_control_device(
         self,

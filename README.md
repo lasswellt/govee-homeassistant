@@ -79,7 +79,7 @@ Govee in Home Assistant has several integrations, and it's easy to pick one that
 | **Multi‑zone lamps** | H60B2, H60B3 | Per‑zone on/off switches (Light Zone 1/2/3); the H60B3 uplighter adds Nebula/Side/Bottom light switches |
 | **Smart plugs / sockets** | H5080, H5083, H5089 | Switch; outlet extenders (H5089) expose each outlet separately **plus** an RGB Night Light |
 | **Ceiling fan + light combos** | H1310, H1370 | Separate Main Light & Background Light **and** a Fan entity (on/off, speed, reverse, oscillation) |
-| **Tower / pedestal fans** | H7101, H7102, H7106, H7107 | Fan (speed, oscillation, preset modes) |
+| **Tower / pedestal fans** | H7101, H7102, H7105, H7106, H7107 | Fan (speed, oscillation, preset modes); on the Tower Fan 2 (H7105/H7107) oscillation needs account login — see below |
 | **Air purifiers** | H7120–H7127 | Fan / work modes, filter‑life sensor, air‑quality (AQI) sensor, optional nightlight |
 | **Humidifiers & dehumidifiers** | H7140, H7141, H7150, H7151, H7152 | Modes + target‑humidity setpoint; dehumidifiers add a **Water Tank Full** sensor (real‑time event push, API key only) with a paired **Clear Water Alert** button |
 | **Aroma diffusers** | H7161 | Power switch + light/mist scene selector |
@@ -127,6 +127,7 @@ In the same setup flow you can enter your **Govee account email and password**. 
 - **Leak‑sensor support** (H5054 / H5055 / H5058 / H5059 via an H5040/H5043/H5044 hub)
 - **Battery levels** on battery‑powered sensors — the developer API doesn't expose them at all
 - **Thermometers the developer API doesn't return** (e.g. H5301, H5310), and readings for those it returns empty (e.g. H5179, H5112)
+- **Oscillation on the Tower Fan 2 (H7105/H7107)** — the developer API's oscillation toggle is accepted but does nothing on these fans; with account login the integration sends the raw frame the fan actually obeys
 - **MQTT‑based control**, if you turn it on in options
 
 #### Two‑factor (email code)
@@ -167,7 +168,7 @@ Every device also gets two diagnostic timestamps — **Last Updated** (when data
 
 This matters beyond speed: Govee's cloud sometimes answers a color command with `success` and never delivers it to the device (the light doesn't change, and nothing reports an error). Sending color locally sidesteps the cloud entirely — see [Colors don't apply](#troubleshooting).
 
-**Command routing.** Each command takes the fastest transport that can carry it *and confirm it*, falling back automatically: **BLE → LAN → MQTT → cloud REST**. LAN carries power, brightness, color and color temperature — exactly the four values a device reports back, which is what makes verify‑by‑read possible. MQTT (opt‑in) carries power, brightness and color. Direct BLE control is deliberately limited to one model confirmed to honour it (H6199); other models advertise Bluetooth but silently drop writes. Everything else — scenes, segments, music mode, work modes, toggles — always goes over the cloud API.
+**Command routing.** Each command takes the fastest transport that can carry it *and confirm it*, falling back automatically: **BLE → LAN → MQTT → cloud REST**. LAN carries power, brightness, color and color temperature — exactly the four values a device reports back, which is what makes verify‑by‑read possible. MQTT (opt‑in) carries power, brightness and color. Direct BLE control is deliberately limited to one model confirmed to honour it (H6199); other models advertise Bluetooth but silently drop writes. Everything else — scenes, segments, music mode, work modes, toggles — always goes over the cloud API, with one exception: Tower Fan 2 (H7105/H7107) oscillation goes over the AWS IoT session when account login is configured, because the cloud toggle is a no-op on those fans.
 
 Commands always use optimistic updates, so the UI reflects your action immediately and reconciles with the next confirmed state.
 

@@ -313,30 +313,59 @@ class TestGoveeFanEntityControls:
     async def test_tower_fan_oscillate_uses_mqtt(
         self, tower_fan_entity, mock_coordinator, mock_fan_device_state
     ):
-        """H7107 sends the MQTT frame, skips REST, and updates optimistically."""
+        """H7107 sends the MQTT frame and skips REST.
+
+        The optimistic write and listener notification belong to the
+        coordinator (see tests/test_fan_oscillation_coordinator.py), so the
+        entity itself must not touch shared state or write HA state here.
+        """
         await tower_fan_entity.async_oscillate(False)
 
         mock_coordinator.async_send_fan_oscillation.assert_awaited_once_with(
             tower_fan_entity._device_id, False
         )
         mock_coordinator.async_control_device.assert_not_called()
-        assert mock_fan_device_state.oscillating is False
-        tower_fan_entity.async_write_ha_state.assert_called_once()
+        assert mock_fan_device_state.oscillating is True
+        tower_fan_entity.async_write_ha_state.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_tower_fan_sku_match_is_case_insensitive(
+        self, mock_coordinator, mock_fan_device
+    ):
+        """A lower-case SKU from the API still takes the MQTT path."""
+        device = replace(mock_fan_device, sku="h7105")
+        mock_coordinator.devices = {device.device_id: device}
+        mock_coordinator.mqtt_connected = True
+        mock_coordinator.async_send_fan_oscillation = AsyncMock(return_value=True)
+        entity = GoveeFanEntity(mock_coordinator, device)
+
+        await entity.async_oscillate(True)
+
+        mock_coordinator.async_send_fan_oscillation.assert_awaited_once()
+        mock_coordinator.async_control_device.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_tower_fan_oscillate_falls_back_when_mqtt_down(
-        self, tower_fan_entity, mock_coordinator
+        self, tower_fan_entity, mock_coordinator, caplog
     ):
-        """No MQTT session -> the pre-existing REST OscillationCommand path."""
+        """No MQTT session -> the pre-existing REST OscillationCommand path.
+
+        API-key-only users get one WARNING telling them why the cloud toggle
+        does nothing on this model — once per entity, not once per press.
+        """
         mock_coordinator.mqtt_connected = False
 
-        await tower_fan_entity.async_oscillate(True)
+        with caplog.at_level(logging.WARNING, logger="custom_components.govee.fan"):
+            await tower_fan_entity.async_oscillate(True)
+            await tower_fan_entity.async_oscillate(False)
 
         mock_coordinator.async_send_fan_oscillation.assert_not_awaited()
-        mock_coordinator.async_control_device.assert_called_once()
-        call_args = mock_coordinator.async_control_device.call_args
+        assert mock_coordinator.async_control_device.call_count == 2
+        call_args = mock_coordinator.async_control_device.call_args_list[0]
         assert isinstance(call_args[0][1], OscillationCommand)
         assert call_args[0][1].oscillating is True
+        warnings = [r for r in caplog.records if "needs Govee account login" in r.getMessage()]
+        assert len(warnings) == 1
 
     @pytest.mark.asyncio
     async def test_tower_fan_oscillate_falls_back_when_send_declined(
@@ -358,20 +387,27 @@ class TestGoveeFanEntityControls:
 
     @pytest.mark.asyncio
     async def test_tower_fan_oscillate_falls_back_when_send_raises(
-        self, tower_fan_entity, mock_coordinator
+        self, tower_fan_entity, mock_coordinator, mock_fan_device_state, caplog
     ):
-        """An exception on the MQTT path is logged and REST still runs."""
+        """An exception on the MQTT path is logged with a traceback; REST still runs."""
         mock_coordinator.async_send_fan_oscillation.side_effect = RuntimeError(
             "publish failed"
         )
 
-        await tower_fan_entity.async_oscillate(False)
+        with caplog.at_level(logging.WARNING, logger="custom_components.govee.fan"):
+            await tower_fan_entity.async_oscillate(False)
 
         mock_coordinator.async_control_device.assert_called_once()
         assert isinstance(
             mock_coordinator.async_control_device.call_args[0][1],
             OscillationCommand,
         )
+        # No optimistic write when the MQTT frame did not go out.
+        assert mock_fan_device_state.oscillating is True
+        tower_fan_entity.async_write_ha_state.assert_not_called()
+        failed = [r for r in caplog.records if "MQTT oscillation send failed" in r.getMessage()]
+        assert len(failed) == 1
+        assert failed[0].exc_info is not None
 
     @pytest.mark.asyncio
     async def test_other_fans_keep_rest_oscillation(self, fan_entity, mock_coordinator):
