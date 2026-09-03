@@ -6,3 +6,16 @@ updates:
     # Check for updates once a week
     schedule:
       interval: "weekly"
+    ignore:
+      # The runtime requirements in requirements_test.txt are *floors* that
+      # mirror manifest.json, and they must stay satisfiable under Home
+      # Assistant core's own pins (homeassistant/package_constraints.txt —
+      # e.g. cryptography==48.0.1 as of HA 2026.9). Dependabot raising a floor
+      # past HA's pin breaks CI (ResolutionImpossible against
+      # pytest-homeassistant-custom-component, see PR #182) and, if mirrored
+      # into manifest.json, would stop the integration installing at all.
+      # Test-only dependencies stay covered.
+      - dependency-name: "aiohttp-retry"
+      - dependency-name: "aiomqtt"
+      - dependency-name: "bleak-retry-connector"
+      - dependency-name: "cryptography"
