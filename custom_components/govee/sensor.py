@@ -30,6 +30,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .api.probe_thermometer import PROBES
 from .const import (
     CONF_API_TEMPERATURE_UNIT,
     DEFAULT_API_TEMPERATURE_UNIT,
@@ -103,6 +104,19 @@ async def async_setup_entry(
         # last data received and last command sent (directional freshness).
         entities.append(GoveeAllDataLastUpdatedSensor(coordinator, device))
         entities.append(GoveeLastCommandSentSensor(coordinator, device))
+        # Probe thermometers get dedicated per-probe entities instead of the
+        # generic temperature sensor: one reading per probe and channel
+        # cannot be expressed by a single sensorTemperature value.
+        if device.is_probe_thermometer:
+            for probe in PROBES:
+                for channel in ("core", "ambient"):
+                    entities.append(
+                        GoveeProbeTemperatureSensor(
+                            coordinator, device, probe, channel
+                        )
+                    )
+            continue
+
         if device.supports_temperature_sensor:
             entities.append(GoveeTemperatureSensor(coordinator, device))
         # Second probe on dual-probe SKUs (#150). Gated on a reading actually
@@ -432,6 +446,47 @@ class GoveeSecondProbeTemperatureSensor(GoveeTemperatureSensor):
     def _raw_reading(self) -> float | None:
         state = self.device_state
         return state.sensor_temperature_2 if state else None
+
+
+class GoveeProbeTemperatureSensor(_BffThermometerAvailabilityMixin, SensorEntity):
+    """One channel of one probe on a probe thermometer (H5192).
+
+    Four per device — core and ambient for each of the two probes — created
+    unconditionally. The H5112 gates its second-probe entity on a reading being
+    present at setup, but a pull device has nothing at setup by definition, so
+    that gate would produce zero entities here. An unplugged probe reports the
+    0xFFFF sentinel, which decodes to None and shows as unknown.
+    """
+
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self,
+        coordinator: GoveeCoordinator,
+        device: GoveeDevice,
+        probe: int,
+        channel: str,
+    ) -> None:
+        """Initialize the probe temperature sensor."""
+        super().__init__(coordinator, device)
+        self._probe = probe
+        self._channel = channel
+        self._attr_unique_id = f"{device.device_id}_probe{probe}_{channel}"
+        self._attr_translation_key = f"probe_{channel}"
+        self._attr_translation_placeholders = {"probe": str(probe)}
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the current reading in degrees Celsius."""
+        state = self.device_state
+        if state is None:
+            return None
+        reading = state.probes.get(self._probe)
+        if reading is None:
+            return None
+        return getattr(reading, self._channel)
 
 
 class GoveeAirQualitySensor(GoveeEntity, SensorEntity):

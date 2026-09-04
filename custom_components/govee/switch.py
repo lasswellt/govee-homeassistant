@@ -12,6 +12,7 @@ from typing import Any
 
 from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import STATE_ON, EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -94,6 +95,12 @@ async def async_setup_entry(
     entities: list[SwitchEntity] = []
 
     for device in coordinator.devices.values():
+        # Probe thermometers only report when polled, so the poll needs an
+        # explicit, restorable on/off that the owner controls.
+        if device.is_probe_thermometer:
+            entities.append(GoveeProbeLivePollingSwitch(coordinator, device))
+            continue
+
         # Create switch for smart plugs (power on/off)
         if device.is_plug and device.supports_power:
             entities.append(GoveePlugSwitchEntity(coordinator, device))
@@ -221,6 +228,54 @@ async def async_setup_entry(
 
     async_add_entities(entities)
     _LOGGER.debug("Set up %d Govee switch entities", len(entities))
+
+
+class GoveeProbeLivePollingSwitch(GoveeEntity, SwitchEntity, RestoreEntity):
+    """Arms live polling for a probe thermometer (H5192).
+
+    Probe thermometers answer only when asked, so this switch is what makes the
+    entities update at all. It is off by default and restores across restarts:
+    polling every 30 seconds around the clock would drain a battery device that
+    is only interesting while something is cooking.
+
+    Turning it on fires one immediate read so the entities populate without
+    waiting for the first tick.
+    """
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_translation_key = "probe_live_polling"
+
+    def __init__(self, coordinator: GoveeCoordinator, device: GoveeDevice) -> None:
+        """Initialize the live polling switch."""
+        super().__init__(coordinator, device)
+        self._attr_unique_id = f"{device.device_id}_probe_live_polling"
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the previous polling state and re-arm the timer if needed."""
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state == STATE_ON:
+            self.coordinator.set_probe_polling(self._device_id, True)
+
+    @property
+    def is_on(self) -> bool:
+        """Return True while polling is armed."""
+        return self.coordinator.is_probe_polling(self._device_id)
+
+    @property
+    def available(self) -> bool:
+        """Always available: this is a local toggle, not a device capability."""
+        return True
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Arm polling and read once immediately."""
+        self.coordinator.set_probe_polling(self._device_id, True)
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Disarm polling."""
+        self.coordinator.set_probe_polling(self._device_id, False)
+        self.async_write_ha_state()
 
 
 class GoveePlugSwitchEntity(GoveeEntity, SwitchEntity):

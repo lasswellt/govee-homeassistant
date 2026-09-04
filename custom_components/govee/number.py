@@ -8,16 +8,23 @@ from __future__ import annotations
 
 import logging
 
-from homeassistant.components.number import NumberEntity, NumberMode
+from homeassistant.components.number import (
+    NumberDeviceClass,
+    NumberEntity,
+    NumberMode,
+)
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .api.probe_thermometer import PROBES
 from .const import DOMAIN, SUFFIX_HEATER_TEMPERATURE, SUFFIX_MUSIC_SENSITIVITY
 from .coordinator import GoveeCoordinator
+from .entity import GoveeEntity
 from .models import GoveeDevice, MusicModeCommand, TemperatureSettingCommand
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,6 +43,20 @@ async def async_setup_entry(
     entities: list[NumberEntity] = []
 
     for device in coordinator.devices.values():
+        # Probe thermometer alarm limits: four per probe.
+        if device.is_probe_thermometer:
+            for probe in PROBES:
+                for limit in (
+                    "core_max",
+                    "core_min",
+                    "ambient_max",
+                    "ambient_min",
+                ):
+                    entities.append(
+                        GoveeProbeLimitNumber(coordinator, device, probe, limit)
+                    )
+            continue
+
         # Music sensitivity control for devices with STRUCT-based music mode
         # Note: This doesn't require MQTT - it uses REST API
         if device.has_struct_music_mode:
@@ -73,6 +94,67 @@ async def async_setup_entry(
 
     async_add_entities(entities)
     _LOGGER.debug("Set up %d Govee number entities", len(entities))
+
+
+class GoveeProbeLimitNumber(GoveeEntity, NumberEntity):
+    """One alarm limit of one probe on a probe thermometer (H5192).
+
+    Four per probe: the core corridor and the ambient corridor, each with an
+    upper and a lower bound. Register 0x12 has no partial update, so writing
+    one value carries the other three over from state — see
+    :meth:`GoveeCoordinator.async_set_probe_limits`, which refuses the write
+    rather than guessing when one of them is still unknown.
+
+    Availability deliberately ignores ``state.online``: this SKU reports it
+    as false permanently, the same way the BFF thermo-hygrometers do.
+    """
+
+    _attr_device_class = NumberDeviceClass.TEMPERATURE
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_native_min_value = -20.0
+    _attr_native_max_value = 300.0
+    _attr_native_step = 1.0
+    _attr_mode = NumberMode.BOX
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(
+        self,
+        coordinator: GoveeCoordinator,
+        device: GoveeDevice,
+        probe: int,
+        limit: str,
+    ) -> None:
+        """Initialize the probe limit number."""
+        super().__init__(coordinator, device)
+        self._probe = probe
+        self._limit = limit
+        self._attr_unique_id = f"{device.device_id}_probe{probe}_{limit}"
+        self._attr_translation_key = f"probe_{limit}"
+        self._attr_translation_placeholders = {"probe": str(probe)}
+
+    @property
+    def available(self) -> bool:
+        """Available as soon as the coordinator holds state for the device."""
+        return self.coordinator.last_update_success and (
+            self.device_state is not None
+        )
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the limit currently stored in the device."""
+        state = self.device_state
+        if state is None:
+            return None
+        reading = state.probes.get(self._probe)
+        if reading is None:
+            return None
+        return getattr(reading, self._limit)
+
+    async def async_set_native_value(self, value: float) -> None:
+        """Write the limit to the device."""
+        await self.coordinator.async_set_probe_limits(
+            self._device_id, self._probe, **{self._limit: value}
+        )
 
 
 class GoveeMusicSensitivityNumber(
