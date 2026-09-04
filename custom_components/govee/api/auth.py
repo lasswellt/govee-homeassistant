@@ -39,6 +39,7 @@ from .exceptions import (
 from ..models.device import (
     LEAK_HUB_SKUS,
     LEAK_SENSOR_SKUS,
+    PROBE_THERMOMETER_BFF_SKUS,
     THERMO_HYGRO_BFF_READ_SKUS,
     THERMO_HYGRO_BFF_SKUS,
 )
@@ -880,6 +881,7 @@ class GoveeAuthClient:
                     if (
                         sku not in THERMO_HYGRO_BFF_SKUS
                         and sku not in THERMO_HYGRO_BFF_READ_SKUS
+                        and sku not in PROBE_THERMOMETER_BFF_SKUS
                     ):
                         continue
 
@@ -1447,6 +1449,9 @@ class GoveeAuthClient:
                     "in_leak_sensor_skus": sku in LEAK_SENSOR_SKUS,
                     "in_leak_hub_skus": sku in LEAK_HUB_SKUS,
                     "in_thermo_hygro_skus": sku in THERMO_HYGRO_BFF_SKUS,
+                    "in_probe_thermometer_skus": (
+                        sku in PROBE_THERMOMETER_BFF_SKUS
+                    ),
                     "has_sno": sno is not None,
                     # The slot number itself is a small int (0-7), not PII —
                     # surfacing it lets us confirm slot<->sno alignment against

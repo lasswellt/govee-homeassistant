@@ -29,7 +29,7 @@ from .device import (
     GoveeDevice,
     SegmentCapability,
 )
-from .state import GoveeDeviceState, RGBColor, SegmentState
+from .state import GoveeDeviceState, ProbeReading, RGBColor, SegmentState
 from .transport import TRANSPORT_KINDS, TransportHealth, TransportKind
 
 __all__ = [
@@ -40,6 +40,7 @@ __all__ = [
     "SegmentCapability",
     # State
     "GoveeDeviceState",
+    "ProbeReading",
     "RGBColor",
     "SegmentState",
     # Commands

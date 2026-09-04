@@ -163,6 +163,24 @@ class LanDevStatusLike(Protocol):
     color_temp_kelvin: int | None
 
 
+@dataclass(frozen=True)
+class ProbeReading:
+    """One probe of a probe thermometer (H5192).
+
+    ``core`` and ``ambient`` are the live temperatures; the four limits are the
+    alarm corridor stored in the device. Every field is None when the device
+    reports the 0xFFFF sentinel — an unplugged probe for the readings, an unset
+    corridor for the limits. All values are degrees Celsius.
+    """
+
+    core: float | None = None
+    ambient: float | None = None
+    core_max: float | None = None
+    core_min: float | None = None
+    ambient_max: float | None = None
+    ambient_min: float | None = None
+
+
 @dataclass
 class GoveeDeviceState:
     """Mutable device state updated from API or MQTT.
@@ -206,6 +224,12 @@ class GoveeDeviceState:
     # Appliance nightlight scene (H5089/H7124, issue #114): integer id of the
     # active named nightlightScene mode option.
     nightlight_scene: int | None = None
+
+    # Probe thermometer readings, keyed by probe number (H5192). Frozen
+    # values, so a merge replaces the entry rather than mutating it.
+    # Diagnostics dumps state with dataclasses.asdict, so these appear in
+    # downloads without extra plumbing.
+    probes: dict[int, ProbeReading] = field(default_factory=dict)
 
     # DreamView (Movie Mode) state
     dreamview_enabled: bool | None = None  # DreamView on/off
