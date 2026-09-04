@@ -1660,6 +1660,113 @@ The BLE 20-byte packet format is the canonical low-level protocol. MQTT and LAN 
 
 `ptReal` commands wrap base64-encoded BLE packets, making BLE the universal escape hatch for features not supported by the high-level JSON commands.
 
+### 6.8 Probe Thermometers (H5192)
+
+Two-probe cooking thermometers use the same 20-byte packet format as the light
+strips, but with their own registers and — unlike every other device in this
+document — a **pull model**: the H5192 never volunteers a reading. It answers
+a read request and otherwise stays silent, which is why the Govee app shows
+"not connected" for a second when a device page opens, and why its history
+graph takes a moment to populate. The app is asking, not listening.
+
+Everything below was captured from an H5192 on AWS IoT and cross-checked
+against what the app displayed at the same moment.
+
+#### Frame identification
+
+Packets arrive base64-encoded in `op.command[]` of a `status` or `ptReal`
+message, split across one or two blocks that must be concatenated before
+decoding. **Only byte 1 identifies the frame.** Byte 0 was observed as `0x40`,
+`0x42`, `0x44`, `0x45` and `0x47` on frames that were otherwise identical, so
+matching on it drops readings at random.
+
+| byte 1 | Direction | Meaning |
+|--------|-----------|---------|
+| `0x0F` | device to app | Full status: both probes, readings and limits |
+| `0x24` | both | Live reading for one probe (`0xAA` read, `0x33` push) |
+| `0x12` | both | Alarm limits for one probe |
+
+The `0xAA` / `0x33` prefix in byte 0 of a *request* follows the usual
+convention: `0xAA` reads, `0x33` writes. Byte 2 is the probe number (1 or 2).
+
+#### Temperature encoding
+
+Every temperature is a **signed 16-bit big-endian value in hundredths of a
+degree Celsius**: `0x0BB8` = 30.00 °C, `0xFF38` = -2.00 °C.
+
+`0xFFFF` is a sentinel, not a temperature. It means "probe not plugged in" for
+a reading and "limit not set" for a corridor bound. It has to be checked
+**against the unsigned word, before the signed conversion** — as a signed value
+it is -1, which is a perfectly plausible temperature for a fridge probe and
+would be shown as -0.01 °C.
+
+#### Status frame (`0x0F`)
+
+Volunteered on power-on and when an app session opens. No request was found
+that provokes it. Six values per probe, probe 1 at offset 10, probe 2 at
+offset 26 of the concatenated 40-byte payload:
+
+| Offset (probe 1) | Field |
+|---|---|
+| 10 | core temperature |
+| 12 | core max (alarm high) |
+| 14 | core min (alarm low) |
+| 16 | ambient temperature |
+| 18 | ambient max |
+| 20 | ambient min |
+
+Probe 2 repeats the same order 16 bytes later.
+
+#### Live reading (`0x24`)
+
+Read request: `AA 24 <probe> 00 …` padded to 19 bytes plus checksum.
+The reply carries the core temperature at offset 22 and the ambient
+temperature at offset 24 of the concatenated payload.
+
+The device also pushes this frame unprompted with prefix `0x33` while an app
+session is open, which is where the two-block split is most visible.
+
+#### Alarm limits (`0x12`)
+
+Read request: `AA 12 <probe>` padded to 19 bytes plus checksum. The reply
+carries four values starting at offset 3, in the order core max, core min,
+ambient max, ambient min.
+
+**Byte 11 is a flag, not padding.** It reads `0xFF` while the probe has no
+limit set at all and `0xEE` as soon as at least one is set. It does not encode
+which limit or how many — captured across all four states on an H5192 running
+firmware 1.00.81. Bytes 12-13 were `FF FF` in every capture.
+
+Writing uses the same layout with the `0x33` prefix. **There is no partial
+update** — a write carries all four values, so the three that are not being
+changed have to be supplied from the last read.
+
+`0xFFFF` is valid on a write and means "no limit". This is not a guess: a probe
+with no alarms configured reports all four as `0xFFFF`, and clearing an alarm in
+the Govee app puts them back to it. Setting a single limit out of that state —
+the normal first-use case — therefore means writing the sentinel for the other
+three, and the device accepts it and keeps them unset. An implementation that
+refuses to write while a value is unknown makes the first limit unsettable,
+because every probe starts with all four unset.
+
+#### Checksum
+
+Same as the rest of the BLE protocol: byte 19 is the XOR of bytes 0 through 18.
+
+#### Consequences for an integration
+
+- The device's BFF `lastDeviceData` stays `{"online": false}` permanently.
+  Availability must not be gated on it.
+- Nothing arrives without a request, so the poll interval *is* the update rate.
+  Polling a battery device around the clock is wasteful, so this integration
+  puts the poll behind an explicit per-device switch that is off by default.
+- The generic BFF thermometer refresh must skip these devices. It rebuilds
+  state from `create_empty()` and copies only temperature, humidity and
+  battery, which would drop the probe readings on every pass.
+- Light strips push their own `0xAA 0x05`, `0xAA 0x13` and `0xAA 0xA5` packets
+  through the same `op.command` field. Frame dispatch has to be gated on the
+  SKU, or a segment-color packet gets decoded as a probe reading.
+
 ---
 
 ## 8. State Management
