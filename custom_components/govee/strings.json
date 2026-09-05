@@ -396,7 +396,7 @@
     },
     "mqtt_disconnected": {
       "title": "Govee MQTT disconnected",
-      "description": "Real-time updates for {entry_title} are unavailable. Reason: {reason}. The integration will continue to work using polling. Check your Govee account credentials if this persists."
+      "description": "Real-time updates for {entry_title} are unavailable ({reason}). Everything keeps working over polling, and the integration keeps retrying the connection on its own \u2014 this clears itself when the connection comes back. If it stays open for more than a few minutes, reload the integration (Settings \u2192 Devices & services \u2192 Govee \u2192 \u22ee \u2192 Reload). If it comes straight back after a reload, use Reconfigure to refresh the account sign-in."
     },
     "mqtt_2fa_required": {
       "title": "Govee account requires verification",

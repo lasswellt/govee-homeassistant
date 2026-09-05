@@ -1643,14 +1643,15 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             credentials=self._iot_credentials,
             on_state_update=self._on_mqtt_state_update,
             on_give_up=self._on_mqtt_give_up,
+            on_connected=self._on_mqtt_connected,
         )
 
         if self._mqtt_client.available:
             try:
                 await self._mqtt_client.async_start()
                 _LOGGER.info("MQTT client started for real-time updates")
-                # Clear any MQTT issues on success
-                await async_delete_mqtt_issue(self.hass, self._config_entry)
+                # The disconnect repair is cleared by _on_mqtt_connected once
+                # a session is actually up, not when the task is spawned.
             except Exception as err:
                 _LOGGER.warning("MQTT client failed to start: %s", err)
                 await async_create_mqtt_issue(
@@ -1894,6 +1895,13 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             self.hass, DOMAIN, f"mqtt_token_expired_{self._config_entry.entry_id}"
         )
         _LOGGER.info("Account token refreshed — BFF data should resume")
+        # Hand the new material to the transport that authenticates with it.
+        # A running client restarts only if cert/key/topic actually changed;
+        # a client that never started (login failed at boot) starts now.
+        if self._mqtt_client is not None:
+            await self._mqtt_client.async_restart(credentials)
+        else:
+            await self._start_mqtt()
         return True
 
     def _persist_refreshed_credentials(self, credentials: GoveeIotCredentials) -> None:
@@ -3076,26 +3084,39 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 continue
         return frames
 
-    def _on_mqtt_give_up(self, attempts: int, last_error: str) -> None:
-        """Called by MQTT client when reconnect loop exhausts MAX_RECONNECT_ATTEMPTS.
+    @callback
+    def _on_mqtt_connected(self) -> None:
+        """A session is up and subscribed: clear the disconnect repair."""
+        self._config_entry.async_create_background_task(
+            self.hass,
+            async_delete_mqtt_issue(self.hass, self._config_entry),
+            name="govee_mqtt_connected_clear_issue",
+        )
 
-        Creates a repair issue so the user is prompted to reload the
-        integration. Without this, the MQTT loop exits silently and the
-        integration falls back to polling-only with no user-visible signal.
+    def _on_mqtt_give_up(self, attempts: int, last_error: str) -> None:
+        """Called once by the MQTT client after MAX_RECONNECT_ATTEMPTS failures.
+
+        The client keeps retrying; this surfaces a repair so the user knows
+        real-time updates are down, and tries a throttled re-login in case
+        the account's certificate was rotated or revoked (a refreshed set
+        restarts the client via async_restart).
         """
         _LOGGER.warning(
-            "MQTT gave up after %d attempts (last error: %s) — surfacing repair",
+            "MQTT unhealthy after %d attempts (last error: %s) — surfacing repair",
             attempts,
             last_error,
         )
-        self._config_entry.async_create_background_task(
-            self.hass,
-            async_create_mqtt_issue(
+
+        async def _surface() -> None:
+            await async_create_mqtt_issue(
                 self.hass,
                 self._config_entry,
-                f"connection lost after {attempts} reconnect attempts: {last_error}",
-            ),
-            name="govee_mqtt_give_up_issue",
+                f"{attempts} reconnect attempts failed: {last_error}",
+            )
+            await self._async_refresh_iot_credentials()
+
+        self._config_entry.async_create_background_task(
+            self.hass, _surface(), name="govee_mqtt_give_up_issue"
         )
 
     async def _async_update_data(self) -> dict[str, GoveeDeviceState]:
@@ -4602,3 +4623,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             self._lan_client = None
 
         await self._api_client.close()
+
+        # Let DataUpdateCoordinator cancel its scheduled refresh and debouncer
+        # (it is idempotent; HA also calls this on unload / HA stop).
+        await super().async_shutdown()
