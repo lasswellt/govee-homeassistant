@@ -10,6 +10,9 @@ from custom_components.govee.api.ble_packet import (
     DIY_MODE_INDICATOR,
     DREAMVIEW_COMMAND,
     DREAMVIEW_INDICATOR,
+    DREAMVIEW_SATURATION_MAX,
+    DREAMVIEW_SEGMENTS_ALL,
+    DREAMVIEW_STYLE_MOVIE,
     FAN_OSC_COMMAND,
     FAN_OSC_MULTISYNC_PREFIX,
     FAN_OSC_PTREAL_PREFIX,
@@ -346,50 +349,51 @@ class TestMusicModePacketIntegration:
 
 
 class TestBuildDreamviewPacket:
-    """Test DreamView packet building."""
+    """Test DreamView (video/camera sync) packet building."""
 
     def test_packet_length(self):
         """Test DreamView packet is 20 bytes."""
-        packet = build_dreamview_packet(True)
+        packet = build_dreamview_packet()
         assert len(packet) == 20
 
     def test_packet_header(self):
-        """Test DreamView packet has correct header."""
-        packet = build_dreamview_packet(True)
+        """Test DreamView packet selects video mode, not a scene preset."""
+        packet = build_dreamview_packet()
 
         # Byte 0: Standard command prefix (0x33)
         assert packet[0] == MUSIC_PACKET_PREFIX
         assert packet[0] == 0x33
 
-        # Byte 1: DreamView command (0x05, same as music mode)
+        # Byte 1: Colour/mode command (0x05, same as music mode)
         assert packet[1] == DREAMVIEW_COMMAND
         assert packet[1] == 0x05
 
-        # Byte 2: DreamView indicator (0x04, scene mode)
+        # Byte 2: video mode. 0x04 here would be the *scene preset*
+        # sub-command — see docs/govee-protocol-reference.md 6.4.
         assert packet[2] == DREAMVIEW_INDICATOR
-        assert packet[2] == 0x04
+        assert packet[2] == 0x00
 
-    def test_enabled_byte_position(self):
-        """Test enabled value is at correct position (byte 3)."""
-        packet_on = build_dreamview_packet(True)
-        assert packet_on[3] == 0x01
+    def test_video_parameters(self):
+        """Test the video-mode parameter bytes."""
+        packet = build_dreamview_packet()
 
-        packet_off = build_dreamview_packet(False)
-        assert packet_off[3] == 0x00
+        assert packet[3] == DREAMVIEW_SEGMENTS_ALL  # all segments
+        assert packet[4] == DREAMVIEW_STYLE_MOVIE  # movie (not game)
+        assert packet[5] == DREAMVIEW_SATURATION_MAX  # 100% saturation
 
-    def test_enabled_on(self):
-        """Test DreamView enabled packet."""
-        packet = build_dreamview_packet(True)
-        assert packet[3] == 0x01
+    def test_is_not_scene_sunset(self):
+        """Regression: the old packet was byte-for-byte Scene(Sunset).
 
-    def test_enabled_off(self):
-        """Test DreamView disabled packet."""
-        packet = build_dreamview_packet(False)
-        assert packet[3] == 0x00
+        ``33 05 04 01 00...00 33`` is the documented Sunset scene frame, so
+        enabling DreamView used to leave the device on a static orange scene.
+        """
+        assert (
+            build_dreamview_packet().hex() != "3305040100000000000000000000000000000033"
+        )
 
     def test_valid_checksum(self):
         """Test packet has valid checksum."""
-        packet = build_dreamview_packet(True)
+        packet = build_dreamview_packet()
 
         # Recalculate checksum from first 19 bytes
         expected_checksum = calculate_checksum(list(packet[:19]))
@@ -397,11 +401,11 @@ class TestBuildDreamviewPacket:
 
     def test_different_from_music_mode(self):
         """Test DreamView packet differs from music mode packet."""
-        dreamview_packet = build_dreamview_packet(True)
+        dreamview_packet = build_dreamview_packet()
         music_packet = build_music_mode_packet(True, 50)
 
-        # Byte 2 should differ (0x04 vs 0x01)
-        assert dreamview_packet[2] == 0x04
+        # Byte 2 should differ (0x00 vs 0x01)
+        assert dreamview_packet[2] == 0x00
         assert music_packet[2] == 0x01
 
         # Overall packets should be different
@@ -417,9 +421,9 @@ class TestDreamviewPacketIntegration:
     """Integration tests for DreamView packet generation."""
 
     def test_full_workflow_on(self):
-        """Test complete DreamView ON packet generation workflow."""
+        """Test complete DreamView packet generation workflow."""
         # Build packet
-        packet = build_dreamview_packet(True)
+        packet = build_dreamview_packet()
         assert len(packet) == 20
 
         # Encode for transmission
@@ -429,24 +433,8 @@ class TestDreamviewPacketIntegration:
         # Verify can be decoded back
         decoded = base64.b64decode(encoded)
         assert decoded == packet
-        assert decoded[2] == 0x04  # DreamView indicator
-        assert decoded[3] == 0x01  # Enabled
-
-    def test_full_workflow_off(self):
-        """Test complete DreamView OFF packet generation workflow."""
-        # Build packet
-        packet = build_dreamview_packet(False)
-        assert len(packet) == 20
-
-        # Encode for transmission
-        encoded = encode_packet_base64(packet)
-        assert isinstance(encoded, str)
-
-        # Verify can be decoded back
-        decoded = base64.b64decode(encoded)
-        assert decoded == packet
-        assert decoded[2] == 0x04  # DreamView indicator
-        assert decoded[3] == 0x00  # Disabled
+        assert decoded[2] == 0x00  # Video mode indicator
+        assert decoded[3] == 0x01  # All segments
 
 
 # ==============================================================================
@@ -524,12 +512,12 @@ class TestBuildDiyScenePacket:
         """Test DIY scene packet differs from music and DreamView packets."""
         diy_packet = build_diy_scene_packet(1)
         music_packet = build_music_mode_packet(True, 50)
-        dreamview_packet = build_dreamview_packet(True)
+        dreamview_packet = build_dreamview_packet()
 
-        # Byte 2 should differ (0x0A vs 0x01 vs 0x04)
+        # Byte 2 should differ (0x0A vs 0x01 vs 0x00)
         assert diy_packet[2] == 0x0A
         assert music_packet[2] == 0x01
-        assert dreamview_packet[2] == 0x04
+        assert dreamview_packet[2] == 0x00
 
     @pytest.mark.parametrize("scene_id", [1, 100, 21104832, 0xFFFFFFFF])
     def test_various_scene_ids(self, scene_id: int):

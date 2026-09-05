@@ -25,9 +25,12 @@ MUSIC_PACKET_PREFIX = 0x33
 MUSIC_MODE_COMMAND = 0x05
 MUSIC_MODE_INDICATOR = 0x01
 
-# DreamView (Movie Mode) packet constants
+# DreamView (Video/Movie Mode) packet constants
 DREAMVIEW_COMMAND = 0x05  # Same as music mode command byte
-DREAMVIEW_INDICATOR = 0x04  # Scene mode indicator (vs 0x01 for music)
+DREAMVIEW_INDICATOR = 0x00  # Video mode indicator (0x04 is a scene preset!)
+DREAMVIEW_SEGMENTS_ALL = 0x01  # 0x00 = partial, 0x01 = all segments
+DREAMVIEW_STYLE_MOVIE = 0x00  # 0x00 = movie, 0x01 = game
+DREAMVIEW_SATURATION_MAX = 0x64  # Saturation, 0x00-0x64
 DIY_MODE_INDICATOR = 0x0A  # DIY mode indicator
 
 # DIY style name to value mapping for select entity
@@ -107,24 +110,33 @@ def build_music_mode_packet(enabled: bool, sensitivity: int = 50) -> bytes:
     return build_packet(data)
 
 
-def build_dreamview_packet(enabled: bool) -> bytes:
-    """Build DreamView (Movie Mode) control packet.
+def build_dreamview_packet() -> bytes:
+    """Build the DreamView (video/camera sync) activation packet.
 
-    Uses the scene mode indicator (0x04) with on/off value.
-    Follows same pattern as music mode but with different indicator.
+    Byte 2 of a ``0x33 0x05`` frame selects the colour operation mode, and
+    video mode is ``0x00`` — see ``docs/govee-protocol-reference.md`` 6.4,
+    which already documents ``0x00 = Video/DreamView mode``.
 
-    Args:
-        enabled: True to enable DreamView, False to disable.
+    This previously used ``0x04``, which is the *scene preset* sub-command:
+    ``33 05 04 01`` is byte-for-byte the documented ``Scene(Sunset)`` frame,
+    so "DreamView ON" put the device into a static orange scene instead of
+    video sync.
+
+    There is deliberately no "disable" counterpart: the protocol has no
+    video-off opcode. A device leaves video mode by being given another
+    mode, which the integration already does over the REST colour path.
 
     Returns:
-        20-byte BLE packet for DreamView command.
+        20-byte BLE packet that enables video mode.
     """
-    # Packet: 33 05 04 [enabled] 00...00 [XOR]
+    # Packet: 33 05 00 [segments] [style] [saturation] 00...00 [XOR]
     data = [
         MUSIC_PACKET_PREFIX,  # 0x33 - Standard command prefix
         DREAMVIEW_COMMAND,  # 0x05 - Color/mode command
-        DREAMVIEW_INDICATOR,  # 0x04 - Scene mode indicator
-        0x01 if enabled else 0x00,  # Enabled state
+        DREAMVIEW_INDICATOR,  # 0x00 - Video mode indicator
+        DREAMVIEW_SEGMENTS_ALL,
+        DREAMVIEW_STYLE_MOVIE,
+        DREAMVIEW_SATURATION_MAX,
     ]
     return build_packet(data)
 

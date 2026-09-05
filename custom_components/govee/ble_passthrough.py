@@ -109,19 +109,20 @@ class BlePassthroughManager:
         self,
         device_id: str,
         sku: str,
-        enabled: bool,
     ) -> bool:
-        """Send DreamView command via BLE passthrough.
+        """Enable DreamView (video/camera sync) via BLE passthrough.
+
+        There is no disable counterpart — the protocol has no video-off
+        opcode; the device leaves video mode when given another mode.
 
         Args:
             device_id: Device identifier.
             sku: Device SKU.
-            enabled: True to enable, False to disable.
 
         Returns:
             True if command was sent successfully.
         """
-        packet = build_dreamview_packet(enabled)
+        packet = build_dreamview_packet()
         encoded = encode_packet_base64(packet)
         return await self.async_send_ble_packet(device_id, sku, encoded)
 
