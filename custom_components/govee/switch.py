@@ -28,6 +28,7 @@ from .const import (
     SUFFIX_NEBULA_LIGHT,
     SUFFIX_NIGHT_LIGHT,
     SUFFIX_SIDE_LIGHT,
+    SUFFIX_MQTT_OUTLET,
     SUFFIX_SOCKET,
 )
 from .coordinator import GoveeCoordinator
@@ -200,6 +201,14 @@ async def async_setup_entry(
                     socket_index + 1,
                     instance,
                     device.name,
+                )
+
+            # Outlets the Developer API does not expose individually but the
+            # AWS IoT `turn` bitmask can drive (H5160/H5161, issue #184).
+            for outlet_index in range(device.mqtt_outlet_count):
+                entities.append(GoveeMqttOutletSwitchEntity(coordinator, device, outlet_index))
+                _LOGGER.debug(
+                    "Created MQTT outlet switch %d for %s", outlet_index + 1, device.name
                 )
 
             # Named per-part light toggles — main/background on ceiling-fan
@@ -495,6 +504,65 @@ class GoveeSocketSwitchEntity(GoveeEntity, SwitchEntity):
             state = self.device_state
             if state is not None:
                 state.toggles[self._toggle_instance] = enabled
+            self.async_write_ha_state()
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn the outlet on."""
+        await self._set(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn the outlet off."""
+        await self._set(False)
+
+
+class GoveeMqttOutletSwitchEntity(GoveeEntity, SwitchEntity, RestoreEntity):
+    """One outlet of a multi-outlet plug driven over AWS IoT only (issue #184).
+
+    The H5160/H5161 advertise a single ``powerSwitch`` to the Developer API,
+    so the only per-outlet control is homebridge-govee's bitmask ``turn`` on
+    the account MQTT session. Optimistic and restored across restarts until
+    the plug's own per-outlet readback is decoded; unavailable without the
+    AWS IoT session because nothing else can carry the command.
+    """
+
+    _attr_device_class = SwitchDeviceClass.OUTLET
+    _attr_translation_key = "govee_socket"
+    _attr_assumed_state = True
+
+    def __init__(self, coordinator: GoveeCoordinator, device: GoveeDevice, outlet_index: int) -> None:
+        """Initialize the outlet switch entity."""
+        super().__init__(coordinator, device)
+        self._outlet_index = outlet_index
+        self._toggle_key = f"outlet{outlet_index + 1}"
+        self._attr_unique_id = f"{device.device_id}{SUFFIX_MQTT_OUTLET}{outlet_index}"
+        self._attr_translation_placeholders = {"socket": str(outlet_index + 1)}
+        self._is_on = False
+
+    async def async_added_to_hass(self) -> None:
+        """Restore optimistic state on startup."""
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state:
+            self._is_on = last_state.state == "on"
+
+    @property
+    def available(self) -> bool:
+        """Only the AWS IoT session can carry the command."""
+        return super().available and self.coordinator.mqtt_connected
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if the outlet is on (optimistic, shared via state.toggles)."""
+        state = self.device_state
+        if state is not None:
+            live = state.toggles.get(self._toggle_key)
+            if live is not None:
+                return live
+        return self._is_on
+
+    async def _set(self, enabled: bool) -> None:
+        if await self.coordinator.async_set_mqtt_outlet(self._device_id, self._outlet_index, enabled):
+            self._is_on = enabled
             self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs: Any) -> None:

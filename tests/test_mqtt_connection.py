@@ -160,6 +160,16 @@ class TestReconnectPolicy:
         assert client.last_error is not None and "bye" in client.last_error
 
     @pytest.mark.asyncio
+    async def test_disconnected_callback_fires_only_after_a_live_session(self, run_loop):
+        disconnected = MagicMock()
+        sessions = [
+            {"connect_error": OSError("x")},  # never connected: no callback
+            {"granted": (1,), "drop_error": FakeAiomqtt.MqttError("bye")},
+        ]
+        await run_loop(sessions, stop_after_sleeps=2, on_disconnected=disconnected)
+        disconnected.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_refused_subscription_is_a_failure(self, run_loop):
         """SUBACK 0x80 must not leave the client 'connected' and deaf."""
         connected = MagicMock()

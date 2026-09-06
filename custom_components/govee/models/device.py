@@ -12,7 +12,7 @@ from typing import Any
 
 from homeassistant.helpers.device_registry import DeviceInfo
 
-from ..const import MAIN_LIGHT_TOGGLE_SKUS, SKU_SEGMENT_OVERRIDES
+from ..const import MAIN_LIGHT_TOGGLE_SKUS, MULTI_OUTLET_MQTT_SKUS, SKU_SEGMENT_OVERRIDES
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -417,6 +417,17 @@ class GoveeDevice:
             if m:
                 matches.append((int(m.group(1)), cap.instance))
         return [instance for _, instance in sorted(matches)]
+
+    @property
+    def mqtt_outlet_count(self) -> int:
+        """Outlets addressable only over AWS IoT (MULTI_OUTLET_MQTT_SKUS, #184).
+
+        Zero when the Developer API already advertises ``socketToggle{N}``
+        for the plug — the live REST switches win over optimistic ones.
+        """
+        if self.is_group or self.socket_toggle_instances:
+            return 0
+        return MULTI_OUTLET_MQTT_SKUS.get(self.sku.upper(), 0)
 
     @property
     def socket_toggle_instances(self) -> list[str]:

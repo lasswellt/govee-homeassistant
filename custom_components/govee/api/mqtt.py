@@ -50,7 +50,9 @@ _LOGGER = logging.getLogger(__name__)
 
 # AWS IoT connection settings
 AWS_IOT_PORT = 8883
-AWS_IOT_KEEPALIVE = 120
+# 60 s like Home Assistant core's default: paho only notices a dead peer after
+# 1-2 keepalive periods, so this bounds a silent half-open session to ~2 min.
+AWS_IOT_KEEPALIVE = 60
 RECONNECT_BASE = 5
 RECONNECT_MAX = 300
 # aiomqtt's default budget for every broker round-trip (CONNACK, SUBACK,
@@ -132,6 +134,72 @@ o/ufQJVtMVT8QtPHRh8jrdkPSHCa2XV4cdFyQzR1bldZwgJcJmApzyMZFo6IQ6XU
 5MsI+yMRQ+hDKXJioaldXgjUkK642M4UwtBV8ob2xJNDd2ZhwLnoQdeXeGADbkpy
 rqXRfboQnoZsG4q5WTP468SQvvG5
 -----END CERTIFICATE-----"""
+
+# AWS recommends trusting every Amazon Trust Services root, not just Root CA 1:
+# the -ats endpoints serve an RSA chain (Root CA 1) today, but the ECC chains
+# (Root CA 3/4) and Root CA 2 are equally valid and a pin on one root would
+# fail verification the day AWS rotates. Source: https://www.amazontrust.com/repository/
+AMAZON_ROOT_CAS = (
+    AMAZON_ROOT_CA1
+    + "\n"
+    + """-----BEGIN CERTIFICATE-----
+MIIFQTCCAymgAwIBAgITBmyf0pY1hp8KD+WGePhbJruKNzANBgkqhkiG9w0BAQwF
+ADA5MQswCQYDVQQGEwJVUzEPMA0GA1UEChMGQW1hem9uMRkwFwYDVQQDExBBbWF6
+b24gUm9vdCBDQSAyMB4XDTE1MDUyNjAwMDAwMFoXDTQwMDUyNjAwMDAwMFowOTEL
+MAkGA1UEBhMCVVMxDzANBgNVBAoTBkFtYXpvbjEZMBcGA1UEAxMQQW1hem9uIFJv
+b3QgQ0EgMjCCAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBAK2Wny2cSkxK
+gXlRmeyKy2tgURO8TW0G/LAIjd0ZEGrHJgw12MBvIITplLGbhQPDW9tK6Mj4kHbZ
+W0/jTOgGNk3Mmqw9DJArktQGGWCsN0R5hYGCrVo34A3MnaZMUnbqQ523BNFQ9lXg
+1dKmSYXpN+nKfq5clU1Imj+uIFptiJXZNLhSGkOQsL9sBbm2eLfq0OQ6PBJTYv9K
+8nu+NQWpEjTj82R0Yiw9AElaKP4yRLuH3WUnAnE72kr3H9rN9yFVkE8P7K6C4Z9r
+2UXTu/Bfh+08LDmG2j/e7HJV63mjrdvdfLC6HM783k81ds8P+HgfajZRRidhW+me
+z/CiVX18JYpvL7TFz4QuK/0NURBs+18bvBt+xa47mAExkv8LV/SasrlX6avvDXbR
+8O70zoan4G7ptGmh32n2M8ZpLpcTnqWHsFcQgTfJU7O7f/aS0ZzQGPSSbtqDT6Zj
+mUyl+17vIWR6IF9sZIUVyzfpYgwLKhbcAS4y2j5L9Z469hdAlO+ekQiG+r5jqFoz
+7Mt0Q5X5bGlSNscpb/xVA1wf+5+9R+vnSUeVC06JIglJ4PVhHvG/LopyboBZ/1c6
++XUyo05f7O0oYtlNc/LMgRdg7c3r3NunysV+Ar3yVAhU/bQtCSwXVEqY0VThUWcI
+0u1ufm8/0i2BWSlmy5A5lREedCf+3euvAgMBAAGjQjBAMA8GA1UdEwEB/wQFMAMB
+Af8wDgYDVR0PAQH/BAQDAgGGMB0GA1UdDgQWBBSwDPBMMPQFWAJI/TPlUq9LhONm
+UjANBgkqhkiG9w0BAQwFAAOCAgEAqqiAjw54o+Ci1M3m9Zh6O+oAA7CXDpO8Wqj2
+LIxyh6mx/H9z/WNxeKWHWc8w4Q0QshNabYL1auaAn6AFC2jkR2vHat+2/XcycuUY
++gn0oJMsXdKMdYV2ZZAMA3m3MSNjrXiDCYZohMr/+c8mmpJ5581LxedhpxfL86kS
+k5Nrp+gvU5LEYFiwzAJRGFuFjWJZY7attN6a+yb3ACfAXVU3dJnJUH/jWS5E4ywl
+7uxMMne0nxrpS10gxdr9HIcWxkPo1LsmmkVwXqkLN1PiRnsn/eBG8om3zEK2yygm
+btmlyTrIQRNg91CMFa6ybRoVGld45pIq2WWQgj9sAq+uEjonljYE1x2igGOpm/Hl
+urR8FLBOybEfdF849lHqm/osohHUqS0nGkWxr7JOcQ3AWEbWaQbLU8uz/mtBzUF+
+fUwPfHJ5elnNXkoOrJupmHN5fLT0zLm4BwyydFy4x2+IoZCn9Kr5v2c69BoVYh63
+n749sSmvZ6ES8lgQGVMDMBu4Gon2nL2XA46jCfMdiyHxtN/kHNGfZQIG6lzWE7OE
+76KlXIx3KadowGuuQNKotOrN8I1LOJwZmhsoVLiJkO/KdYE+HvJkJMcYr07/R54H
+9jVlpNMKVv/1F2Rs76giJUmTtt8AF9pYfl3uxRuw0dFfIRDH+fO6AgonB8Xx1sfT
+4PsJYGw=
+-----END CERTIFICATE-----
+-----BEGIN CERTIFICATE-----
+MIIBtjCCAVugAwIBAgITBmyf1XSXNmY/Owua2eiedgPySjAKBggqhkjOPQQDAjA5
+MQswCQYDVQQGEwJVUzEPMA0GA1UEChMGQW1hem9uMRkwFwYDVQQDExBBbWF6b24g
+Um9vdCBDQSAzMB4XDTE1MDUyNjAwMDAwMFoXDTQwMDUyNjAwMDAwMFowOTELMAkG
+A1UEBhMCVVMxDzANBgNVBAoTBkFtYXpvbjEZMBcGA1UEAxMQQW1hem9uIFJvb3Qg
+Q0EgMzBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABCmXp8ZBf8ANm+gBG1bG8lKl
+ui2yEujSLtf6ycXYqm0fc4E7O5hrOXwzpcVOho6AF2hiRVd9RFgdszflZwjrZt6j
+QjBAMA8GA1UdEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgGGMB0GA1UdDgQWBBSr
+ttvXBp43rDCGB5Fwx5zEGbF4wDAKBggqhkjOPQQDAgNJADBGAiEA4IWSoxe3jfkr
+BqWTrBqYaGFy+uGh0PsceGCmQ5nFuMQCIQCcAu/xlJyzlvnrxir4tiz+OpAUFteM
+YyRIHN8wfdVoOw==
+-----END CERTIFICATE-----
+-----BEGIN CERTIFICATE-----
+MIIB8jCCAXigAwIBAgITBmyf18G7EEwpQ+Vxe3ssyBrBDjAKBggqhkjOPQQDAzA5
+MQswCQYDVQQGEwJVUzEPMA0GA1UEChMGQW1hem9uMRkwFwYDVQQDExBBbWF6b24g
+Um9vdCBDQSA0MB4XDTE1MDUyNjAwMDAwMFoXDTQwMDUyNjAwMDAwMFowOTELMAkG
+A1UEBhMCVVMxDzANBgNVBAoTBkFtYXpvbjEZMBcGA1UEAxMQQW1hem9uIFJvb3Qg
+Q0EgNDB2MBAGByqGSM49AgEGBSuBBAAiA2IABNKrijdPo1MN/sGKe0uoe0ZLY7Bi
+9i0b2whxIdIA6GO9mif78DluXeo9pcmBqqNbIJhFXRbb/egQbeOc4OO9X4Ri83Bk
+M6DLJC9wuoihKqB1+IGuYgbEgds5bimwHvouXKNCMEAwDwYDVR0TAQH/BAUwAwEB
+/zAOBgNVHQ8BAf8EBAMCAYYwHQYDVR0OBBYEFNPsxzplbszh2naaVvuc84ZtV+WB
+MAoGCCqGSM49BAMDA2gAMGUCMDqLIfG9fhGt0O9Yli/W651+kI0rz2ZVwyzjKKlw
+CkcO8DdZEv8tmZQoTipPNU0zWgIxAOp1AE47xDqUEpHJWEadIRNyp4iciuRMStuW
+1KyLa2tJElMzrdfkviT8tQp21KW8EA==
+-----END CERTIFICATE-----
+"""
+)
 
 
 # Type for state update callback
@@ -258,6 +326,7 @@ class GoveeAwsIotClient:
         on_state_update: StateUpdateCallback,
         on_give_up: GiveUpCallback | None = None,
         on_connected: Callable[[], None] | None = None,
+        on_disconnected: Callable[[], None] | None = None,
     ) -> None:
         """Initialize the AWS IoT MQTT client.
 
@@ -269,11 +338,15 @@ class GoveeAwsIotClient:
                 issue; the loop keeps retrying regardless.
             on_connected: Optional callback fired after every successful
                 CONNACK + SUBACK, so the caller can clear that repair issue.
+            on_disconnected: Optional callback fired when a live session
+                drops, so status entities reflect it immediately instead of
+                on the next poll.
         """
         self._credentials = credentials
         self._on_state_update = on_state_update
         self._on_give_up = on_give_up
         self._on_connected = on_connected
+        self._on_disconnected = on_disconnected
         self._running = False
         self._connected = False
         self._task: asyncio.Task[None] | None = None
@@ -480,7 +553,7 @@ class GoveeAwsIotClient:
             ssl_context.check_hostname = True
 
             # Load Amazon Root CA for server certificate verification
-            ssl_context.load_verify_locations(cadata=AMAZON_ROOT_CA1)
+            ssl_context.load_verify_locations(cadata=AMAZON_ROOT_CAS)
 
             # Load client certificate and private key for mutual TLS
             ssl_context.load_cert_chain(str(cert_path), str(key_path))
@@ -585,9 +658,12 @@ class GoveeAwsIotClient:
 
             except Exception as err:
                 self._client = None
+                was_connected = self._connected
                 self._connected = False
                 self._connected_since = None
                 self._last_error = f"{type(err).__name__}: {err}"
+                if was_connected:
+                    self._notify_disconnected()
 
                 if not self._running:
                     break  # type: ignore[unreachable]
@@ -642,6 +718,15 @@ class GoveeAwsIotClient:
 
         self._connected = False
         self._connected_since = None
+
+    def _notify_disconnected(self) -> None:
+        """Tell the owner a live session dropped."""
+        if self._on_disconnected is None:
+            return
+        try:
+            self._on_disconnected()
+        except Exception as err:  # pragma: no cover - defensive
+            _LOGGER.warning("disconnected callback raised: %s", err)
 
     def _notify_connected(self) -> None:
         """Tell the owner a session is up (clears the disconnect repair)."""

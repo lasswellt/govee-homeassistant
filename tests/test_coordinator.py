@@ -2932,6 +2932,20 @@ class TestLanLifecycle:
         assert coord._lan_client is None
 
     @pytest.mark.asyncio
+    async def test_async_shutdown_cancels_probe_poll_timer(self, monkeypatch):
+        """The H5192 live-poll timer (#185) must not outlive the entry."""
+        coord, _ = self._coord()
+        coord._api_client.close = _make_async(None)
+        unsub = MagicMock()
+        coord._probe_poll_unsub = unsub
+        coord._probe_polling_enabled = {"dev"}
+
+        await coord.async_shutdown()
+
+        unsub.assert_called_once()
+        assert coord._probe_poll_unsub is None
+
+    @pytest.mark.asyncio
     async def test_setup_lan_runs_last_in_async_setup(self, monkeypatch):
         """_async_setup calls _async_setup_lan after all fallible discovery steps."""
         coord, _ = self._coord()

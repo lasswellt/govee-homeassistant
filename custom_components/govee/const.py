@@ -111,6 +111,17 @@ FAHRENHEIT_REPORTING_SKUS: Final = frozenset(
 MQTT_OSCILLATION_SKUS: Final = frozenset({"H7105", "H7107"})
 
 
+# Multi-outlet plugs whose Developer API capability list carries only the
+# master powerSwitch (no socketToggle{N}) but whose outlets homebridge-govee
+# drives individually over AWS IoT with a bitmask `turn` value:
+# ((1 << i) << 4) | ((1 << i) if on else 0) — 17/16, 34/32, 68/64 for the
+# three outlets, 119/112 for all (lib/device/switch-triple.js). The public
+# REST API rejects anything other than 0/1 here, so these switches exist only
+# with account login and are optimistic until the plug's own onOff readback
+# is decoded (issue #184). SKU -> outlet count.
+MULTI_OUTLET_MQTT_SKUS: Final = {"H5160": 3, "H5161": 3}
+
+
 # SKU-specific segment count overrides.
 # Some Govee devices report a higher segment count via the API than
 # the physical sections on the device. This dict pins the real count
@@ -302,6 +313,7 @@ SUFFIX_REFRESH_SCENES: Final = "_refresh_scenes"
 SUFFIX_NIGHT_LIGHT: Final = "_night_light"
 SUFFIX_LIGHT_ZONE: Final = "_light_zone_"
 SUFFIX_SOCKET: Final = "_socket_"
+SUFFIX_MQTT_OUTLET: Final = "_mqtt_outlet_"
 SUFFIX_MAIN_LIGHT: Final = "_main_light"
 # Distinct from SUFFIX_MAIN_LIGHT (the switch backed by the cloud
 # ``mainLightToggle`` capability) — this is the dedicated main-panel light

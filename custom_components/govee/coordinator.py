@@ -7,6 +7,7 @@ Implements IStateProvider protocol for clean architecture.
 from __future__ import annotations
 
 import asyncio
+import copy
 import dataclasses
 import logging
 import time
@@ -1668,6 +1669,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             on_state_update=self._on_mqtt_state_update,
             on_give_up=self._on_mqtt_give_up,
             on_connected=self._on_mqtt_connected,
+            on_disconnected=self._on_mqtt_disconnected,
         )
 
         if self._mqtt_client.available:
@@ -2939,7 +2941,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             )
 
         async_dispatcher_send(self.hass, f"{DOMAIN}_leak_update")
-        self._bff_poll_task = self.hass.async_create_task(self._poll_bff_leak_state())
+        self._schedule_bff_leak_poll()
 
     @callback
     def _handle_probe_frame(self, device_id: str, state_data: dict[str, Any]) -> None:
@@ -3223,7 +3225,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             self._pending_button_presses.get(sensor_id, 0) + 1
         )
         async_dispatcher_send(self.hass, f"{DOMAIN}_leak_update")
-        self._bff_poll_task = self.hass.async_create_task(self._poll_bff_leak_state())
+        self._schedule_bff_leak_poll()
 
     @callback
     def _on_mqtt_state_update(self, device_id: str, state_data: dict[str, Any]) -> None:
@@ -3262,6 +3264,12 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             self._states[device_id] = state
 
         was_offline = not state.online
+        # Snapshot for change detection: a chatty hub or a fan reporting every
+        # second used to wake every entity of every device per frame. Only a
+        # frame that changed something notifies listeners (transport health is
+        # recorded either way; the "Last MQTT Received" sensor catches up on
+        # the next change or poll).
+        before = copy.deepcopy(state)
 
         # Ceiling-fan combos (H1310/H1370) report the fan and the two lights
         # as BLE-format frames in op.command, and their device-wide onOff is
@@ -3288,8 +3296,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # clear_optimistic_window, but recording MQTT health is our job).
         self._record_transport_success(device_id, "mqtt")
 
-        # Update coordinator data and notify HA
-        self.async_set_updated_data(self._states)
+        # Update coordinator data and notify HA — only if something changed.
+        if state != before:
+            self.async_set_updated_data(self._states)
 
         _LOGGER.debug(
             "MQTT state applied for %s: power=%s, presence=%s (triSta=%s)",
@@ -3319,6 +3328,27 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             self.hass,
             async_delete_mqtt_issue(self.hass, self._config_entry),
             name="govee_mqtt_connected_clear_issue",
+        )
+        # The MQTT status sensor and per-device connection-mode sensors read
+        # the client; nudge them now rather than on the next poll.
+        self.async_set_updated_data(self._states)
+
+    @callback
+    def _on_mqtt_disconnected(self) -> None:
+        """A live session dropped: let status entities show it immediately."""
+        self.async_set_updated_data(self._states)
+
+    def _schedule_bff_leak_poll(self) -> None:
+        """Run one BFF leak-state poll, coalescing bursts.
+
+        Hubs push a multiSync frame per sensor per event; each used to spawn
+        its own HTTP poll, so a burst became that many concurrent Govee calls.
+        One pending poll covers every frame that arrived while it was queued.
+        """
+        if self._bff_poll_task is not None and not self._bff_poll_task.done():
+            return
+        self._bff_poll_task = self._config_entry.async_create_background_task(
+            self.hass, self._poll_bff_leak_state(), name="govee_bff_leak_poll"
         )
 
     def _on_mqtt_give_up(self, attempts: int, last_error: str) -> None:
@@ -3674,6 +3704,46 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         except Exception as err:
             self._record_transport_failure(device_id, "cloud_api", str(err))
             return err
+
+    async def async_set_mqtt_outlet(self, device_id: str, outlet_index: int, enabled: bool) -> bool:
+        """Switch one outlet of a multi-outlet plug over AWS IoT (issue #184).
+
+        Publishes the native ``turn`` command with homebridge-govee's bitmask
+        value (switch-triple.js). Never falls back to REST: the public API
+        rejects any value other than 0/1, and a plain 0/1 would switch the
+        whole strip. Optimistic — the plug's per-outlet readback is not
+        decoded yet — so the result is written to ``state.toggles``.
+        """
+        device = self._devices.get(device_id)
+        if device is None or not (0 <= outlet_index < device.mqtt_outlet_count):
+            return False
+        if self._mqtt_client is None or not self._mqtt_client.connected:
+            _LOGGER.warning(
+                "Cannot switch outlet %d on %s: needs the AWS IoT session (account login)",
+                outlet_index + 1,
+                device.name,
+            )
+            return False
+        topic = await self._ensure_device_topic(device_id)
+        bit = 1 << outlet_index
+        value = (bit << 4) | (bit if enabled else 0)
+        ok = await self._mqtt_client.async_publish_command(topic, "turn", {"val": value})
+        self._record_local_command(
+            device_id,
+            device.sku,
+            "mqtt",
+            ToggleCommand(toggle_instance=f"outlet{outlet_index + 1}", enabled=enabled),
+            delivered=ok,
+            detail=f"turn val={value} (outlet {outlet_index + 1})",
+        )
+        if not ok:
+            return False
+        self._record_transport_send(device_id, "mqtt")
+        state = self._states.get(device_id)
+        if state is not None:
+            state.toggles[f"outlet{outlet_index + 1}"] = enabled
+        self.async_set_updated_data(self._states)
+        return True
 
     async def async_send_fan_oscillation(
         self, device_id: str, enabled: bool
