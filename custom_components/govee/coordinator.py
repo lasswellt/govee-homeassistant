@@ -4216,7 +4216,20 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         except Exception as err:
             _LOGGER.debug("REST DreamView failed for %s: %s", device.name, err)
 
-        # Fall back to BLE passthrough for devices that need it
+        # Fall back to BLE passthrough for devices that need it.
+        #
+        # Only for enabling: the protocol has no video-off opcode, so there is
+        # nothing meaningful to pass through when turning DreamView off. The
+        # device leaves video mode as soon as it is given another mode, which
+        # the REST colour path above already does.
+        if not enabled:
+            _LOGGER.debug(
+                "DreamView OFF not sent for %s: no BLE opcode exists for "
+                "leaving video mode; set a colour or scene instead",
+                device.name,
+            )
+            return False
+
         if not self._ble_manager.available:
             _LOGGER.warning(
                 "Cannot send DreamView for %s: MQTT not connected",
@@ -4224,9 +4237,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             )
             return False
 
-        success = await self._ble_manager.async_send_dreamview(
-            device_id, device.sku, enabled
-        )
+        success = await self._ble_manager.async_send_dreamview(device_id, device.sku)
 
         if success:
             state = self._states.get(device_id)
