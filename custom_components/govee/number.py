@@ -148,7 +148,8 @@ class GoveeProbeLimitNumber(GoveeEntity, NumberEntity):
         reading = state.probes.get(self._probe)
         if reading is None:
             return None
-        return getattr(reading, self._limit)
+        value = getattr(reading, self._limit)
+        return float(value) if value is not None else None
 
     async def async_set_native_value(self, value: float) -> None:
         """Write the limit to the device."""

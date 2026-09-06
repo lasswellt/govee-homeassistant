@@ -650,11 +650,22 @@ class GoveeMusicModeSwitchEntity(GoveeEntity, SwitchEntity):
             # Get current sensitivity and mode from state, or use defaults
             state = self.device_state
             sensitivity = 50
-            music_mode = 1  # Default to Rhythm mode
+            # Default to the first mode the device advertises. The old
+            # hard-coded 1 ("Rhythm" on most strips) is not a valid value on
+            # every SKU — the H6022 offers 3/4/5/6 and rejects 1 with
+            # "Parameter value out of range" (issue #186).
+            valid_modes = [
+                int(opt["value"])
+                for opt in self._device.get_music_mode_options()
+                if isinstance(opt.get("value"), int)
+            ]
+            music_mode = valid_modes[0] if valid_modes else 1
             if state:
                 if state.music_sensitivity is not None:
                     sensitivity = state.music_sensitivity
-                if state.music_mode_value is not None:
+                if state.music_mode_value is not None and (
+                    not valid_modes or state.music_mode_value in valid_modes
+                ):
                     music_mode = state.music_mode_value
 
             command = MusicModeCommand(

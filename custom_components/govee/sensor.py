@@ -486,7 +486,8 @@ class GoveeProbeTemperatureSensor(_BffThermometerAvailabilityMixin, SensorEntity
         reading = state.probes.get(self._probe)
         if reading is None:
             return None
-        return getattr(reading, self._channel)
+        value = getattr(reading, self._channel)
+        return float(value) if value is not None else None
 
 
 class GoveeAirQualitySensor(GoveeEntity, SensorEntity):

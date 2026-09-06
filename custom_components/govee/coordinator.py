@@ -3005,7 +3005,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         """
         if enabled:
             self._probe_polling_enabled.add(device_id)
-            self.hass.async_create_task(self._poll_probe_thermometers())
+            self._config_entry.async_create_background_task(
+                self.hass, self._poll_probe_thermometers(), name="govee_probe_poll_now"
+            )
             self._schedule_probe_poll()
         else:
             self._probe_polling_enabled.discard(device_id)
@@ -4449,12 +4451,24 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # device leaves video mode as soon as it is given another mode, which
         # the REST colour path above already does.
         if not enabled:
+            # No BLE opcode leaves video mode; giving the device another mode
+            # does. Restore the last known colour (or white) over the normal
+            # control path so the switch settles to off instead of sticking.
+            state = self._states.get(device_id)
+            color = (state.last_color or state.color) if state else None
+            if color is None or color.as_packed_int == 0:
+                color = RGBColor(255, 255, 255)
+            success = await self.async_control_device(device_id, ColorCommand(color=color))
+            if success and state is not None:
+                state.apply_optimistic_dreamview(False)
             _LOGGER.debug(
-                "DreamView OFF not sent for %s: no BLE opcode exists for "
-                "leaving video mode; set a colour or scene instead",
+                "DreamView OFF for %s: no BLE opcode exists for leaving video mode; "
+                "restored colour %s instead (%s)",
                 device.name,
+                color.as_tuple,
+                "ok" if success else "failed",
             )
-            return False
+            return success
 
         if not self._ble_manager.available:
             _LOGGER.warning(

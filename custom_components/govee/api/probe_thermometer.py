@@ -130,7 +130,8 @@ def _read_temperature(raw: bytes, offset: int) -> float | None:
         return None
     if struct.unpack_from(">H", raw, offset)[0] == SENTINEL:
         return None
-    return struct.unpack_from(">h", raw, offset)[0] / SCALE
+    value: int = struct.unpack_from(">h", raw, offset)[0]
+    return value / SCALE
 
 
 def concat_command_blocks(commands: list[str]) -> bytes | None:
