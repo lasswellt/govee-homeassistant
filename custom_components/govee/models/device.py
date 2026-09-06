@@ -193,6 +193,10 @@ INSTANCE_BACKGROUND_LIGHT_TOGGLE = "backgroundLightToggle"
 # Device type for stand-alone temperature/humidity sensors.
 DEVICE_TYPE_THERMOMETER = "devices.types.thermometer"
 
+# Water timer / irrigation valve (e.g. H5901 Smart Water Timer). Exposes a
+# single on_off/powerSwitch capability; gateway-attached (BLE-over-H5044).
+DEVICE_TYPE_TIMER = "devices.types.timer"
+
 
 @dataclass(frozen=True)
 class ColorTempRange:
@@ -531,7 +535,10 @@ class GoveeDevice:
         /device/snapshots endpoint 404s).
         """
         for cap in self.capabilities:
-            if cap.type == CAPABILITY_DYNAMIC_SCENE and cap.instance == INSTANCE_SNAPSHOT:
+            if (
+                cap.type == CAPABILITY_DYNAMIC_SCENE
+                and cap.instance == INSTANCE_SNAPSHOT
+            ):
                 options: list[dict[str, Any]] = cap.parameters.get("options", [])
                 return options
         return []
@@ -558,6 +565,11 @@ class GoveeDevice:
     def is_plug(self) -> bool:
         """Check if device is a smart plug."""
         return self.device_type == DEVICE_TYPE_PLUG
+
+    @property
+    def is_water_timer(self) -> bool:
+        """Check if device is a water timer / irrigation valve (e.g. H5901)."""
+        return self.device_type == DEVICE_TYPE_TIMER
 
     @property
     def is_fan(self) -> bool:
@@ -1152,7 +1164,10 @@ class GoveeDevice:
     def get_nightlight_scene_options(self) -> list[dict[str, Any]]:
         """Extract nightlightScene options as {"name", "value"} dicts (#114)."""
         for cap in self.capabilities:
-            if cap.type == CAPABILITY_MODE and cap.instance == INSTANCE_NIGHTLIGHT_SCENE:
+            if (
+                cap.type == CAPABILITY_MODE
+                and cap.instance == INSTANCE_NIGHTLIGHT_SCENE
+            ):
                 options: list[dict[str, Any]] = cap.parameters.get("options", [])
                 return options
         return []

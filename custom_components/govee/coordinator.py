@@ -3848,8 +3848,13 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             # power/brightness/color over the AWS IoT channel (~50ms) instead
             # of the REST cloud API (~500ms). Group devices and non-capable
             # commands (color temp, scenes, segments) fall through to REST.
+            #
+            # Water timers (e.g. H5901) are forced onto MQTT regardless of the
+            # opt-in: they are gateway-attached BLE devices that the developer
+            # REST API always rejects with "device offline", so MQTT is their
+            # only viable control path.
             if (
-                self._enable_mqtt_control
+                (self._enable_mqtt_control or device.is_water_timer)
                 and self.mqtt_connected
                 and not device.is_group
             ):

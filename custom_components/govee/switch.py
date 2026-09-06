@@ -106,6 +106,12 @@ async def async_setup_entry(
         if device.is_plug and device.supports_power:
             entities.append(GoveePlugSwitchEntity(coordinator, device))
 
+        # Create switch for water timers / irrigation valves (e.g. H5901). These
+        # are gateway-attached BLE devices; on/off is published to the device's
+        # MQTT topic (requires the topic from fetch_device_topics).
+        if device.is_water_timer and device.supports_power:
+            entities.append(GoveeWaterTimerSwitchEntity(coordinator, device))
+
         # Create switch for night light toggle (lights with night light mode).
         # Appliances whose nightlight has brightness/colour get a richer
         # nightlight *light* entity instead, so skip the plain switch for them
@@ -192,9 +198,7 @@ async def async_setup_entry(
             # the optimistic light zones (issue #114).
             for socket_index, instance in enumerate(device.socket_toggle_instances):
                 entities.append(
-                    GoveeSocketSwitchEntity(
-                        coordinator, device, instance, socket_index
-                    )
+                    GoveeSocketSwitchEntity(coordinator, device, instance, socket_index)
                 )
                 _LOGGER.debug(
                     "Created outlet switch %d (%s) for %s",
@@ -322,6 +326,62 @@ class GoveePlugSwitchEntity(GoveeEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the plug off."""
+        await self.coordinator.async_control_device(
+            self._device_id,
+            PowerCommand(power_on=False),
+        )
+
+
+class GoveeWaterTimerSwitchEntity(GoveeEntity, SwitchEntity):
+    """Govee water timer / irrigation valve switch (e.g. H5901 Smart Water Timer).
+
+    Publishes on/off to the device's MQTT topic via a PowerCommand. These are
+    gateway-attached (BLE-over-H5044) devices that do not reliably report power
+    state back, so ``is_on`` reflects the last known state and may be ``None``
+    until a command is sent.
+    """
+
+    _attr_device_class = SwitchDeviceClass.SWITCH
+    _attr_icon = "mdi:sprinkler-variant"
+
+    def __init__(
+        self,
+        coordinator: GoveeCoordinator,
+        device: GoveeDevice,
+    ) -> None:
+        """Initialize the water timer switch entity."""
+        super().__init__(coordinator, device)
+
+        # Use the device name as the entity name.
+        self._attr_name = None
+
+    @property
+    def available(self) -> bool:
+        """Return True while the coordinator is healthy.
+
+        Gateway-attached water timers report ``online=False`` even when they
+        are controllable, so the base entity's online gate would leave this
+        switch permanently unavailable. Mirror the group-device rationale:
+        we can't reliably query state, but control is fire-and-forget over
+        MQTT, so stay available whenever coordinator updates are succeeding.
+        """
+        return self.coordinator.last_update_success
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return True if the valve is open, or None if unknown."""
+        state = self.device_state
+        return state.power_state if state else None
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Open the valve (start watering)."""
+        await self.coordinator.async_control_device(
+            self._device_id,
+            PowerCommand(power_on=True),
+        )
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Close the valve (stop watering)."""
         await self.coordinator.async_control_device(
             self._device_id,
             PowerCommand(power_on=False),
