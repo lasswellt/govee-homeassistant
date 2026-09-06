@@ -27,6 +27,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
+from ..models.device import PROBE_THERMOMETER_BFF_SKUS
+from .probe_thermometer import (
+    concat_command_blocks,
+    decode_limits,
+    decode_probe_reading,
+    decode_status_frame,
+)
+
 # Import aiomqtt at module level to avoid blocking in event loop
 try:
     import aiomqtt
@@ -291,6 +299,11 @@ class GoveeAwsIotClient:
         # undecoded hub packets (e.g. the H5059's 0xEE 0x35 wet alarm in #87)
         # without asking end users to enable verbose logging.
         self._recent_multisync: deque[dict[str, Any]] = deque(maxlen=64)
+        # Same idea for probe-thermometer frames: keeping the raw hex means
+        # the next probe SKU can be decoded from a diagnostics download
+        # alone, without asking the owner to run verbose logging while
+        # cooking.
+        self._recent_probe_frames: deque[dict[str, Any]] = deque(maxlen=64)
         # Latest Tower-Fan swing-range tail bytes per device_id, harvested from
         # inbound aa1d status frames. Used to rebuild the oscillation-ON packet
         # so the fan resumes its own physically-configured sweep arc.
@@ -309,6 +322,11 @@ class GoveeAwsIotClient:
     def recent_multisync(self) -> list[dict[str, Any]]:
         """Recent multiSync packets (hex + decode) for leak-sensor diagnostics."""
         return list(self._recent_multisync)
+
+    @property
+    def recent_probe_frames(self) -> list[dict[str, Any]]:
+        """Recent probe-thermometer frames (hex) for diagnostics."""
+        return list(self._recent_probe_frames)
 
     @property
     def last_message_ts(self) -> datetime | None:
@@ -742,8 +760,20 @@ class GoveeAwsIotClient:
                 ):
                     self._fan_swing_tail[device_id] = list(_fb[3:7])
 
-            # Handle multiSync messages (leak sensor events)
             cmd = data.get("cmd")
+
+            # Probe thermometers (H5192) answer reads over ptReal and
+            # volunteer a status frame on power-on. Gated on the SKU because
+            # light strips push their own 0xAA 0x05/0x13/0xA5 packets
+            # through op.command, which must never reach this decoder.
+            if data.get("sku", "") in PROBE_THERMOMETER_BFF_SKUS and cmd in (
+                "status",
+                "ptReal",
+            ):
+                self._handle_probe_frame(device_id, data)
+                return
+
+            # Handle multiSync messages (leak sensor events)
             if cmd == "multiSync":
                 self._handle_multisync(device_id, data)
                 return
@@ -803,6 +833,72 @@ class GoveeAwsIotClient:
                 "hex": safe.hex(),
             }
         )
+
+    def _handle_probe_frame(self, device_id: str, data: dict[str, Any]) -> None:
+        """Handle a probe-thermometer frame (H5192) from status or ptReal.
+
+        Three frame kinds arrive on this path, all identified by byte 1 of the
+        reassembled 20-byte packet (byte 0 varies between 0x40 and 0x47 and
+        carries no meaning here):
+
+        - 0x0F: the full status frame the device volunteers on power-on, both
+          probes with readings and limits in one packet
+        - 0x24: the answer to a live read, one probe's core and ambient
+        - 0x12: the answer to a limits read, one probe's alarm corridor
+
+        Anything else is left to the diagnostics ring buffer, which is written
+        before decoding so an unknown frame from the next probe SKU survives
+        into a download.
+        """
+        raw = concat_command_blocks(data.get("op", {}).get("command", []))
+        if raw is None:
+            return
+
+        self._recent_probe_frames.append(
+            {
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "device_id": device_id,
+                "sku": data.get("sku", ""),
+                "cmd": data.get("cmd", ""),
+                "header": raw[:2].hex(),
+                "length": len(raw),
+                "hex": raw.hex(),
+            }
+        )
+
+        probes: dict[int, dict[str, float | None]] = {}
+
+        status = decode_status_frame(raw)
+        if status is not None:
+            probes = status
+        else:
+            reading = decode_probe_reading(raw)
+            if reading is not None:
+                probe, core, ambient = reading
+                probes = {probe: {"core": core, "ambient": ambient}}
+            else:
+                decoded_limits = decode_limits(raw)
+                if decoded_limits is not None:
+                    probe, limits = decoded_limits
+                    probes = {
+                        probe: {
+                            "core_max": limits.core_max,
+                            "core_min": limits.core_min,
+                            "ambient_max": limits.ambient_max,
+                            "ambient_min": limits.ambient_min,
+                        }
+                    }
+
+        if not probes:
+            _LOGGER.debug(
+                "Unhandled probe frame from %s: %s", device_id, raw[:2].hex()
+            )
+            return
+
+        try:
+            self._on_state_update(device_id, {"_probe_frame": True, "probes": probes})
+        except Exception as err:
+            _LOGGER.error("probe callback failed for %s: %s", device_id, err)
 
     def _handle_multisync(self, hub_device_id: str, data: dict[str, Any]) -> None:
         """Handle multiSync messages from hub devices (e.g., H5043 leak hub).

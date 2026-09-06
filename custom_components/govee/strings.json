@@ -135,6 +135,18 @@
       }
     },
     "number": {
+      "probe_core_max": {
+        "name": "Probe {probe} core max"
+      },
+      "probe_core_min": {
+        "name": "Probe {probe} core min"
+      },
+      "probe_ambient_max": {
+        "name": "Probe {probe} ambient max"
+      },
+      "probe_ambient_min": {
+        "name": "Probe {probe} ambient min"
+      },
       "govee_music_sensitivity": {
         "name": "Music Sensitivity"
       }
@@ -166,6 +178,9 @@
       }
     },
     "switch": {
+      "probe_live_polling": {
+        "name": "Live polling"
+      },
       "govee_plug": {
         "name": "{device_name}"
       },
@@ -207,6 +222,12 @@
       }
     },
     "sensor": {
+      "probe_core": {
+        "name": "Probe {probe} core"
+      },
+      "probe_ambient": {
+        "name": "Probe {probe} ambient"
+      },
       "rate_limit_remaining": {
         "name": "API Rate Limit Remaining"
       },

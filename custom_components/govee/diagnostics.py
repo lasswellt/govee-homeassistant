@@ -254,6 +254,7 @@ def _runtime_diag(coordinator: GoveeCoordinator) -> dict[str, Any]:
     mqtt_client = coordinator.mqtt_client
     mqtt_info: dict[str, Any] | None = None
     recent_multisync: list[dict[str, Any]] = []
+    recent_probe_frames: list[dict[str, Any]] = []
     if mqtt_client:
         mqtt_info = {
             "available": mqtt_client.available,
@@ -263,6 +264,9 @@ def _runtime_diag(coordinator: GoveeCoordinator) -> dict[str, Any]:
         # Recent hub multiSync packets (hex) — lets undecoded leak-sensor
         # packet subtypes be reverse-engineered from a download alone (#87).
         recent_multisync = mqtt_client.recent_multisync
+        # Raw probe-thermometer frames (hex). Same purpose as the multiSync
+        # buffer: the next probe SKU should be decodable from a download.
+        recent_probe_frames = mqtt_client.recent_probe_frames
     openapi_client = coordinator.openapi_events_client
     openapi_info: dict[str, Any] | None = None
     if openapi_client:
@@ -279,6 +283,7 @@ def _runtime_diag(coordinator: GoveeCoordinator) -> dict[str, Any]:
         "mqtt": mqtt_info,
         "openapi_events": openapi_info,
         "recent_multisync": recent_multisync,
+        "recent_probe_frames": recent_probe_frames,
         # Recent /device/control sends with the exact capability payload and
         # Govee's HTTP status + response body — lets "command accepted but
         # device does nothing" reports (#127) be debugged from a download

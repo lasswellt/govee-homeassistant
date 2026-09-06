@@ -73,9 +73,11 @@ from .const import (
     CONF_ENABLE_MQTT_CONTROL,
     CONF_LAN_TARGETS,
     CONF_PASSWORD,
+    CONF_PROBE_POLL_INTERVAL,
     CONF_WATER_DETECTOR_POLL_INTERVAL,
     DEFAULT_API_TEMPERATURE_UNIT,
     DEFAULT_ENABLE_MQTT_CONTROL,
+    DEFAULT_PROBE_POLL_INTERVAL,
     DEFAULT_WATER_DETECTOR_POLL_INTERVAL,
     DEVICE_REDISCOVERY_INTERVAL,
     DOMAIN,
@@ -88,7 +90,9 @@ from .const import (
     LAN_WRITE_CONFIRM_TIMEOUT,
     LAN_WRITE_SUPPRESS_SECONDS,
     LAN_WRITE_SUPPRESS_THRESHOLD,
+    MAX_PROBE_POLL_INTERVAL,
     MAX_WATER_DETECTOR_POLL_INTERVAL,
+    MIN_PROBE_POLL_INTERVAL,
     MIN_WATER_DETECTOR_POLL_INTERVAL,
     OPTIMISTIC_GRACE_CAP_SECONDS,
     resolve_fahrenheit_conversion,
@@ -96,6 +100,7 @@ from .const import (
 from .models import (
     GoveeDevice,
     GoveeDeviceState,
+    ProbeReading,
     RGBColor,
     TransportHealth,
     TransportKind,
@@ -120,6 +125,13 @@ from .models.commands import (
     WorkModeCommand,
     create_dreamview_command,
 )
+from .api.probe_thermometer import (
+    PROBES,
+    ProbeLimits,
+    build_limits_read_packet,
+    build_limits_write_packet,
+    build_probe_read_packet,
+)
 from .models.device import (
     INSTANCE_DREAMVIEW,
     INSTANCE_FAN_OSCILLATE,
@@ -131,6 +143,7 @@ from .models.device import (
     INSTANCE_THERMOSTAT_TOGGLE,
     MAINS_POWERED_BATTERY_SKUS,
     MAINS_POWERED_DEVICE_TYPES,
+    PROBE_THERMOMETER_BFF_SKUS,
 )
 from .models.device import GoveeLeakSensor, GoveeLeakSensorState
 from .scene_cache import SceneCacheManager
@@ -179,6 +192,12 @@ LAN_COLOR_TEMP_CONFIRM_TOLERANCE = 150
 
 # BFF polling interval for leak sensor state (seconds)
 BFF_POLL_INTERVAL = 300  # 5 minutes
+
+# Field names a probe frame may carry. Derived from the dataclass so a new
+# channel cannot be silently dropped by the merge.
+_PROBE_READING_FIELDS: Final = frozenset(
+    f.name for f in dataclasses.fields(ProbeReading)
+)
 
 
 def normalize_device_id(device_id: str) -> str:
@@ -425,6 +444,11 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         self._bff_poll_task: asyncio.Task[None] | None = None
         # Standalone water-detector (H5054) leak polling (issue #62).
         self._wd_poll_unsub: CALLBACK_TYPE | None = None
+        # Probe thermometers (H5192) are pull devices: nothing arrives
+        # unless we ask. The timer only runs while at least one device has
+        # its live-polling switch on, so an idle thermometer is left alone.
+        self._probe_poll_unsub: CALLBACK_TYPE | None = None
+        self._probe_polling_enabled: set[str] = set()
         # Last seen lastTime per detector — warnMessage is only called when the
         # device has freshly reported (or is currently wet), keeping the account
         # API request count low.
@@ -2348,6 +2372,25 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                         self._sensor_reading_changed_at[device_id] = dt_util.utcnow()
                     continue
 
+                if sensor["sku"] in PROBE_THERMOMETER_BFF_SKUS:
+                    self._devices[device_id] = (
+                        GoveeDevice.synthetic_probe_thermometer(
+                            device_id=device_id,
+                            sku=sensor["sku"],
+                            name=sensor["name"],
+                        )
+                    )
+                    # Membership here buys three things at once: the
+                    # Developer poll skips the device (it 404s on this SKU),
+                    # the availability mixin ignores the flapping online
+                    # flag, and readings count as already-Celsius.
+                    self._bff_thermometer_ids.add(device_id)
+                    state = GoveeDeviceState.create_empty(device_id)
+                    state.online = sensor.get("online", True)
+                    self._states[device_id] = state
+                    self._ensure_transport_health(device_id)
+                    continue
+
                 hub_device_id = sensor.get("hub_device_id", "")
                 device = GoveeDevice.synthetic_thermometer(
                     device_id=device_id,
@@ -2429,6 +2472,19 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 )
                 self._bff_thermo_pending.discard(device_id)
                 self._bff_thermometer_ids.add(device_id)
+
+            # Probe thermometers never take part in this refresh. It
+            # rebuilds state from create_empty() and copies only
+            # temp/humidity/battery, which would drop ``probes`` every five
+            # minutes — the readings only the MQTT frames carry. Their BFF
+            # entry has no reading to offer anyway.
+            #
+            # Gated on the SKU in the payload rather than on the device
+            # object: this runs before discovery has necessarily put the
+            # device in the registry, and the payload is the same source
+            # discovery itself reads.
+            if sensor.get("sku") in PROBE_THERMOMETER_BFF_SKUS:
+                continue
 
             existing = self._states.get(device_id)
             if existing is None:
@@ -2886,6 +2942,172 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         self._bff_poll_task = self.hass.async_create_task(self._poll_bff_leak_state())
 
     @callback
+    def _handle_probe_frame(self, device_id: str, state_data: dict[str, Any]) -> None:
+        """Merge a decoded probe-thermometer frame into device state.
+
+        Merges per probe and per field: a ``0x24`` reply carries only core and
+        ambient, a ``0x12`` reply only the four limits, and a status frame all
+        six. Replacing the entry instead of merging would blank whichever half
+        the current frame did not carry, so the values are folded into the
+        existing :class:`ProbeReading`.
+        """
+        device = self._devices.get(device_id)
+        if device is None:
+            return
+
+        state = self._states.get(device_id) or GoveeDeviceState.create_empty(device_id)
+        probes = dict(state.probes)
+        changed = False
+
+        for probe, fields in state_data.get("probes", {}).items():
+            current = probes.get(probe, ProbeReading())
+            merged = dataclasses.replace(
+                current,
+                **{k: v for k, v in fields.items() if k in _PROBE_READING_FIELDS},
+            )
+            if merged != current:
+                probes[probe] = merged
+                changed = True
+
+        state.probes = probes
+        # A frame is proof of life. The BFF ``online`` flag sits at false for
+        # this SKU permanently, so it must not be believed here.
+        state.online = True
+        self._states[device_id] = state
+
+        if changed or device_id not in self._sensor_reading_changed_at:
+            self._sensor_reading_changed_at[device_id] = dt_util.utcnow()
+
+        self._ensure_transport_health(device_id)
+        self._record_transport_success(device_id, "mqtt")
+        self.async_set_updated_data(self._states)
+
+    @property
+    def _probe_poll_interval(self) -> int:
+        """Configured probe-poll interval in seconds, clamped to sane bounds."""
+        raw = self._config_entry.options.get(
+            CONF_PROBE_POLL_INTERVAL, DEFAULT_PROBE_POLL_INTERVAL
+        )
+        try:
+            interval = int(raw)
+        except (TypeError, ValueError):
+            return DEFAULT_PROBE_POLL_INTERVAL
+        if not (MIN_PROBE_POLL_INTERVAL <= interval <= MAX_PROBE_POLL_INTERVAL):
+            return DEFAULT_PROBE_POLL_INTERVAL
+        return interval
+
+    def set_probe_polling(self, device_id: str, enabled: bool) -> None:
+        """Arm or disarm live polling for one probe thermometer.
+
+        Driven by the per-device switch entity. Enabling fires one immediate
+        read burst so the entities populate right away instead of staying
+        unknown until the first tick.
+        """
+        if enabled:
+            self._probe_polling_enabled.add(device_id)
+            self.hass.async_create_task(self._poll_probe_thermometers())
+            self._schedule_probe_poll()
+        else:
+            self._probe_polling_enabled.discard(device_id)
+            if not self._probe_polling_enabled and self._probe_poll_unsub:
+                self._probe_poll_unsub()
+                self._probe_poll_unsub = None
+
+    def is_probe_polling(self, device_id: str) -> bool:
+        """Return True while live polling is armed for this device."""
+        return device_id in self._probe_polling_enabled
+
+    def _schedule_probe_poll(self) -> None:
+        """Schedule the next probe read, replacing any pending timer."""
+        if self._probe_poll_unsub:
+            self._probe_poll_unsub()
+        self._probe_poll_unsub = async_call_later(
+            self.hass, self._probe_poll_interval, self._probe_poll_callback
+        )
+
+    async def _probe_poll_callback(self, _now: Any = None) -> None:
+        """Periodic callback: read every armed probe, then re-arm the timer."""
+        await self._poll_probe_thermometers()
+        if self._probe_polling_enabled:
+            self._schedule_probe_poll()
+
+    async def _poll_probe_thermometers(self) -> None:
+        """Read current values and limits from every armed probe thermometer.
+
+        One read per probe — the per-probe ``0x24`` reply is the only response
+        that could be provoked. The six-value status frame arrives unprompted
+        on power-on and when an app session opens; no request was found that
+        triggers it. Limits change rarely but are read on the same tick, which
+        costs two more small packets and keeps the number entities honest.
+        """
+        if not self._probe_polling_enabled:
+            return
+        client = self.mqtt_client
+        if client is None or not client.connected:
+            return
+
+        for device_id in list(self._probe_polling_enabled):
+            device = self._devices.get(device_id)
+            if device is None:
+                continue
+            for probe in PROBES:
+                await self._ble_manager.async_send_ble_packet(
+                    device_id, device.sku, build_probe_read_packet(probe)
+                )
+                await self._ble_manager.async_send_ble_packet(
+                    device_id, device.sku, build_limits_read_packet(probe)
+                )
+
+    async def async_set_probe_limits(
+        self,
+        device_id: str,
+        probe: int,
+        *,
+        core_max: float | None = None,
+        core_min: float | None = None,
+        ambient_max: float | None = None,
+        ambient_min: float | None = None,
+    ) -> bool:
+        """Write one or more alarm limits of a probe, carrying the rest over.
+
+        Register 0x12 has no partial update, so the three unchanged values come
+        from state. A value that is still unknown goes out as the sentinel,
+        which is how the device represents "no limit" — it reports all four
+        that way when nothing is set, and the Govee app clearing an alarm puts
+        them back to it. Passing None for a limit therefore clears it.
+        """
+        device = self._devices.get(device_id)
+        state = self._states.get(device_id)
+        if device is None or state is None:
+            return False
+
+        current = state.probes.get(probe, ProbeReading())
+        limits = ProbeLimits(
+            core_max=core_max if core_max is not None else current.core_max,
+            core_min=core_min if core_min is not None else current.core_min,
+            ambient_max=(
+                ambient_max if ambient_max is not None else current.ambient_max
+            ),
+            ambient_min=(
+                ambient_min if ambient_min is not None else current.ambient_min
+            ),
+        )
+
+        packet = build_limits_write_packet(probe, limits)
+        sent = await self._ble_manager.async_send_ble_packet(
+            device_id, device.sku, packet
+        )
+        if not sent:
+            return False
+
+        # Read back rather than trusting the write: the device acknowledges the
+        # packet, not the stored value.
+        await self._ble_manager.async_send_ble_packet(
+            device_id, device.sku, build_limits_read_packet(probe)
+        )
+        return True
+
+    @callback
     def _handle_thermo_frame(self, state_data: dict[str, Any]) -> None:
         """Apply a decoded gateway thermometer frame (issue #151).
 
@@ -3015,6 +3237,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             return
 
         # Handle gateway-bridged thermometer frames (issue #151)
+        if state_data.get("_probe_frame"):
+            self._handle_probe_frame(device_id, state_data)
+            return
+
         if state_data.get("_thermo_frame"):
             self._handle_thermo_frame(state_data)
             return
@@ -4613,6 +4839,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if self._wd_poll_unsub:
             self._wd_poll_unsub()
             self._wd_poll_unsub = None
+        # Cancel probe-thermometer polling
+        if self._probe_poll_unsub:
+            self._probe_poll_unsub()
+            self._probe_poll_unsub = None
 
         # Disconnect all BLE devices
         for ble_device in self._ble_devices.values():

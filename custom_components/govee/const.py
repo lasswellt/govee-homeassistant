@@ -23,6 +23,7 @@ CONF_ENABLE_MQTT_CONTROL: Final = "enable_mqtt_control"
 # account API's rate limit is unverified (homebridge issue #543) — users with
 # many detectors may want to back off, while a single detector can poll faster.
 CONF_WATER_DETECTOR_POLL_INTERVAL: Final = "water_detector_poll_interval"
+CONF_PROBE_POLL_INTERVAL: Final = "probe_poll_interval"
 
 # Extra LAN discovery targets for devices the local multicast scan can't reach —
 # e.g. Govee devices on a different VLAN/subnet than Home Assistant (issue #57).
@@ -168,12 +169,18 @@ DEFAULT_ENABLE_MQTT_CONTROL: Final = False
 DEFAULT_API_TEMPERATURE_UNIT: Final = "auto"
 DEFAULT_LAN_TARGETS: Final = ""
 DEFAULT_WATER_DETECTOR_POLL_INTERVAL: Final = 120  # seconds (2 minutes)
+# Probe thermometers are pull devices, so this interval is the entire
+# update rate while cooking. 30 s keeps a roast legible without hammering
+# the device; the poll only runs while its live-polling switch is on.
+DEFAULT_PROBE_POLL_INTERVAL: Final = 30  # seconds
 
 # Bounds for the configurable water-detector poll interval (seconds). The lower
 # bound keeps the unverified account-API rate limit at arm's length; the upper
 # bound (1 hour) is the slowest that still makes a leak alert useful.
 MIN_WATER_DETECTOR_POLL_INTERVAL: Final = 60
 MAX_WATER_DETECTOR_POLL_INTERVAL: Final = 3600
+MIN_PROBE_POLL_INTERVAL: Final = 10
+MAX_PROBE_POLL_INTERVAL: Final = 600
 
 # Optimistic state handling
 # Grace window (seconds) during which API polls do NOT overwrite optimistic

@@ -55,6 +55,14 @@ THERMO_HYGRO_BFF_READ_SKUS = frozenset({"H5179", "H5112"})
 # the humidity capability for these so no humidity entity is created.
 TEMP_ONLY_BFF_SKUS = frozenset({"H5310"})
 
+# Probe (cooking) thermometers reached through the BFF list. Unlike every
+# other device here these are PULL devices: they never volunteer readings,
+# they only answer read requests over ptReal (see
+# api/probe_thermometer.py). Their BFF ``lastDeviceData`` stays
+# ``{"online": false}`` permanently, so the BFF read path has nothing to
+# offer them either — the coordinator polls them instead.
+PROBE_THERMOMETER_BFF_SKUS = frozenset({"H5192"})
+
 # Capability type constants (from Govee API v2.0)
 CAPABILITY_ON_OFF = "devices.capabilities.on_off"
 CAPABILITY_RANGE = "devices.capabilities.range"
@@ -687,6 +695,11 @@ class GoveeDevice:
         """Check if device is a stand-alone thermometer/hygrometer."""
         return self.device_type == DEVICE_TYPE_THERMOMETER
 
+    @property
+    def is_probe_thermometer(self) -> bool:
+        """Check if device is a probe (cooking) thermometer, e.g. H5192."""
+        return self.sku in PROBE_THERMOMETER_BFF_SKUS
+
     def get_humidity_range(self) -> tuple[int, int]:
         """Extract target humidity range from the range.humidity capability.
 
@@ -1294,6 +1307,29 @@ class GoveeDevice:
         if hub_device_id:
             device = replace(device, hub_device_id=hub_device_id)
         return device
+
+    @classmethod
+    def synthetic_probe_thermometer(
+        cls, device_id: str, sku: str, name: str
+    ) -> GoveeDevice:
+        """Build a GoveeDevice for a BFF-discovered probe thermometer.
+
+        Deliberately carries NO ``sensorTemperature`` capability, unlike
+        :meth:`synthetic_thermometer`. A probe thermometer has one reading
+        per probe and channel, which a single capability cannot express;
+        granting it would create a generic temperature entity that sits at
+        unknown forever. The per-probe entities in ``sensor.py`` attach on
+        :attr:`is_probe_thermometer` instead.
+        """
+        return cls.from_api_response(
+            {
+                "device": device_id,
+                "sku": sku,
+                "deviceName": name,
+                "type": DEVICE_TYPE_THERMOMETER,
+                "capabilities": [],
+            }
+        )
 
 
 @dataclass(frozen=True)
