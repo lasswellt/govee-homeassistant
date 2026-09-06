@@ -25,6 +25,9 @@ A comprehensive technical reference for Govee device communication protocols, co
 10. [Scene & DIY Modes](#10-scene--diy-modes)
 11. [PCAP Analysis Details](#11-pcap-analysis-details)
 12. [References](#12-references)
+13. [Findings from Submitted Diagnostics](#13-findings-from-submitted-diagnostics-2026-03--2026-09)
+
+Per-model capability lists, state readback and account-list data for every SKU seen in a diagnostics download live in [`device-catalog.md`](device-catalog.md).
 
 ---
 
@@ -3075,4 +3078,73 @@ All connections use Perfect Forward Secrecy (PFS), preventing decryption with pr
 
 ---
 
-*This document is based on analysis of the Govee Android app via PCAP capture and community reverse engineering efforts. The undocumented APIs may change without notice.*
+## 13. Findings from Submitted Diagnostics (2026-03 → 2026-09)
+
+Sixty-seven diagnostics downloads (and inline dumps) attached to issues and pull requests between March and September 2026 were read end to end; the per-model results are in [`device-catalog.md`](device-catalog.md) (107 SKUs). The cross-cutting facts, which apply beyond any one model:
+
+### 13.1 Instances the Developer API never reads back
+
+`/device/state` returns `""` for these instances on essentially every capture that advertises them, so an integration must keep its own state for them (optimistic + `RestoreEntity`) and must not treat `""` as "off" or "none":
+
+| Instance | Captures returning `""` | Notes |
+|---|---|---|
+| `lightScene`, `diyScene` | 45 each | on every light seen — the active scene is never reported |
+| `snapshot` | 36 | |
+| `segmentedColorRgb`, `segmentedBrightness` | 34 / 33 | per-segment colour is write-only |
+| `musicMode` | 33 | |
+| `gradientToggle` | 24 | |
+| `dreamViewToggle` | 16 | |
+| `mainLightToggle`, `backgroundLightToggle` | 5 each | ceiling-fan lights (H1250/H1270/H1310/H1370) |
+| `fanToggle`, `fanSpeedMode`, `reverseAirflowToggle` | 2 each | H1310 — see §13.4 |
+| `sensorTemperature`, `sensorHumidity` | 2 each | battery thermometers between uploads (H5179/H5112 class) |
+
+Everything else (`powerSwitch`, `brightness`, `colorRgb`, `colorTemperatureK`, `online`, `workMode` on purifiers/humidifiers, property sensors) reads back with a real value.
+
+### 13.2 Models the account list knows but the Developer API does not return
+
+Seen in `bff_device_values` with no Developer-API entry at all: **H3500, H3510, H5086, H5122, H5126, H5129, H6006, H6046, H605C, H616C, H61B5, H7057, H7075, H7162, H805C**. For these the public API is not a path; support needs the account channels (AWS IoT / BFF) or BLE. The H616C case (#122) was confirmed by Govee support as "not enabled for the Developer API"; the others have not been asked about.
+
+### 13.3 Gateway-bridged sensors
+
+Every gateway relationship observed, from `deviceSettings.gatewayInfo`:
+
+| Sensor | Gateway | Seen in |
+|---|---|---|
+| H5058 | H5043 | #134 |
+| H5109 | H5042 | #62, #83, #96, #132, #134 |
+| H5110 | H5044 | #83, #102, #114, #132 |
+| H5112 | H5044 | #150 |
+| H5220 | H5044 | #114, #128 |
+| H5310 | H5044 | #86, #97, #150, #157 |
+| H5111 | H5151 | #83, #134, #144 |
+
+`lastDeviceData` keys seen across all thermometer/hygrometer entries: `tem`, `tem2`, `hum`, `online`, `gwonline`, `lastTime`, `logTime`, `logType`, `read`, `bind`, `avgDayTem`, `avgDayHum`. `tem2` only appears on dual-probe models (H5112). The account's °C/°F preference (`fahOpen`) sits in `deviceSettings` for thermometers listed there.
+
+### 13.4 AWS IoT push shapes
+
+The `state` object of a device push carried only these keys across every capture: `onOff`, `brightness`, `color`, `colorTemInKelvin`, `mode`, `sta` (`stc` string, undecoded), `result`, `wifiFuncList`. Nothing device-class-specific (no fan, toggle, sensor or segment fields) travels in `state`; that information rides as BLE-format frames in `op.command` (§6.4.1) — the H1310's `aa 31`/`aa 42`/`aa 36` fan and light frames, the H7107's `aa 1d` swing arc, the H5192's `0x24`/`0x12`/`0x0F` probe frames, and light strips' `aa 05`/`aa 13`/`aa a5` status packets all arrive that way. Since 2026.9.0 the integration attaches them to diagnostics as `last_mqtt_message._op_frames`.
+
+Hub `multiSync` frames observed: header `ee 34` (16 captures — leak and thermometer sub-device reports) and `ee 35` (2 captures, #87 — the H5059 wet alarm variant).
+
+### 13.5 Rejected control commands
+
+Every non-success answer to a control write in the captures:
+
+| SKU | Command | Answer |
+|---|---|---|
+| H6022 | `musicMode={"musicMode": 1, ...}` | HTTP 200, `Parameter value out of range` — the H6022 advertises modes 3/4/5/6 only (#186; fixed by sending the first advertised mode) |
+| H6159 | `powerSwitch`, `brightness` over LAN | `device reported a different value than was sent` — the LAN readback disagrees with the write (#149) |
+
+Govee's cloud otherwise answered `200 success` to everything — including commands the device then ignored (H6054 colour in #158, phantom segment indices in #160/#143). A `success` body is not evidence the device acted.
+
+### 13.6 Capability shapes worth knowing
+
+- `segment` fields carry both `size {min,max}` (max array length per command) and `elementRange {min,max}` (index range). **They usually do not agree.** `elementRange` is `0–14` on almost every RGBIC model regardless of how many segments it has, while `size.max` varies per model and tracks the physical count. Captures with `elementRange 0–14` and a different `size.max`: H6061 (21), H61BE (20), H61A0 (18), H6097 (14), H60A1 (13, brightness field only), H70C2/H70C4/H70C5/H70C9 (10), H6072 (8), H6076 (7), H7060 (4). `GoveeDevice.segment_count` therefore clamps the `elementRange`-derived count to `size.max`; `SKU_SEGMENT_OVERRIDES` exists for the case where both numbers are wrong (H7076: both say 15, four segments respond — #160; H7075: 15 vs 3 — #161). A `size.max` *above* `elementRange.max + 1` (H6061, H61BE, H61A0) means the device accepts more indices per call than it advertises indices — the count is still `elementRange.max + 1` there.
+- `musicMode` option value sets differ per model and are not contiguous: H1270 offers 0–11 named effects, H6054 0–7, H6022 {3,4,5,6}. Never assume `1` exists.
+- `workMode` on purifiers/humidifiers/dehumidifiers advertises `modeValue` options with `None` values for named modes (gearMode/Custom/Auto) — the numeric range lives on the manual mode only.
+- Ceiling-fan combos (H1250/H1270/H1310/H1370) report as `devices.types.light`; the fan is detectable only from `fanToggle` + `fanSpeedMode`.
+- Groups (`BaseGroup`, `SameModeGroup`, `DreamViewScenic` in the device list) have numeric ids and a single capability; `/device/state` returns 400 for them.
+
+---
+
+*This document is based on analysis of the Govee Android app via PCAP capture, community reverse engineering efforts, and diagnostics submitted by users. The undocumented APIs may change without notice.*

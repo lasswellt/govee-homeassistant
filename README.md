@@ -396,7 +396,7 @@ Govee publishes no specification for the account API, the AWS IoT topics, the BL
 - **[TheOneOgre/govee-cloud](https://github.com/TheOneOgre/govee-cloud)** — client-id derivation and account-API behaviour
 - **[egold555](https://github.com/egold555/Govee-Reverse-Engineering)** and **[BeauJBurroughs](https://github.com/BeauJBurroughs/Govee-H6127-Reverse-Engineering)** — early BLE protocol reverse-engineering that most later work builds on
 
-Detailed findings, byte maps and API shapes are documented in [`docs/govee-protocol-reference.md`](docs/govee-protocol-reference.md).
+Detailed findings, byte maps and API shapes are documented in [`docs/govee-protocol-reference.md`](docs/govee-protocol-reference.md). What Govee's APIs actually returned for every model seen in a submitted diagnostics download — capabilities, state readback, account-list data — is catalogued per SKU in [`docs/device-catalog.md`](docs/device-catalog.md).
 
 ---
 
