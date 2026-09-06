@@ -75,16 +75,17 @@ Govee in Home Assistant has several integrations, and it's easy to pick one that
 | Category | Examples | Entities you get |
 |---|---|---|
 | **Lights** (strips, bulbs, bars, TV backlights, sync boxes) | H619x, H61xx, H6058, H6099, H66A0, H6604 | Light (on/off, brightness, RGB, color temp), scene & DIY selectors, music‑mode switch, DreamView switch; sync boxes return to their HDMI/Video source when you clear the scene |
-| **RGBIC lights** | H619C, H6198, H60A6 | Everything above **plus** per‑segment color control (see [Segments](#rgbic-segment-control)); Ceiling Light Pro (H60A6) adds an ambient/backlight‑ring switch |
+| **RGBIC lights** | H619C, H6198, H60A6, H1270 | Everything above **plus** per‑segment color control (see [Segments](#rgbic-segment-control)); Ceiling Light Pro (H60A6) adds an ambient/backlight‑ring switch, and the H1270 gets an independently switchable main panel |
 | **Multi‑zone lamps** | H60B2, H60B3 | Per‑zone on/off switches (Light Zone 1/2/3); the H60B3 uplighter adds Nebula/Side/Bottom light switches |
 | **Smart plugs / sockets** | H5080, H5083, H5089, H5160, H5161 | Switch; outlet extenders (H5089) expose each outlet separately **plus** an RGB Night Light; three‑outlet strips (H5160/H5161) get per‑outlet switches with account login (optimistic until their readback is decoded) |
-| **Ceiling fan + light combos** | H1310, H1370 | Separate Main Light & Background Light **and** a Fan entity (on/off, speed, reverse, oscillation) |
+| **Ceiling fan + light combos** | H1310, H1370 | Separate Main Light & Background Light **and** a Fan entity (on/off, speed, reverse, oscillation). Govee's cloud never reports the fan's state, so with account login the integration reads it from the fan's own push frames — the entity follows the remote and the app; without it, state is what HA last sent |
 | **Tower / pedestal fans** | H7101, H7102, H7105, H7106, H7107 | Fan (speed, oscillation, preset modes); on the Tower Fan 2 (H7105/H7107) oscillation needs account login — see below |
 | **Air purifiers** | H7120–H7127 | Fan / work modes, filter‑life sensor, air‑quality (AQI) sensor, optional nightlight |
 | **Humidifiers & dehumidifiers** | H7140, H7141, H7150, H7151, H7152 | Modes + target‑humidity setpoint; dehumidifiers add a **Water Tank Full** sensor (real‑time event push, API key only) with a paired **Clear Water Alert** button |
 | **Aroma diffusers** | H7161 | Power switch + light/mist scene selector |
 | **Space heaters** | H7130, H7131, H713B, H721C | Power switch, target‑temperature number, auto‑stop switch; temperature unit follows what the device itself reports |
-| **Thermometers / hygrometers** | H5103, H5107, H5109, H5111, H5112, H5179, H5301, H5310 | Temperature & humidity sensors, **Battery** (account login) + a "Last Changed" timestamp; gateway‑bridged models (H5301/H5310 via an H5044) nest under the hub |
+| **Kettles** | H717A, H7170 | Power switch and a water‑temperature sensor (unit follows what the kettle declares) |
+| **Thermometers / hygrometers** | H5053, H5075, H5103, H5107, H5109, H5110, H5111, H5112, H5179, H5220, H5301, H5310 | Temperature & humidity sensors, **Battery** (account login) + a "Last Changed" timestamp; gateway‑bridged models (H5301/H5310 via an H5044) nest under the hub; models that report °F without saying so are converted automatically |
 | **Probe (cooking) thermometers** | H5192 | Core and ambient temperature per probe, plus the four alarm limits as editable numbers. These are **pull** devices — they answer a read and otherwise stay silent — so a **Live polling** switch (off by default, to spare the battery) controls whether readings update |
 | **Air‑quality & CO₂ monitors** | H5106, H5140 | CO₂ (ppm), air‑quality (AQI), temperature & humidity sensors |
 | **Presence sensors** | H5127 | Occupancy binary sensor, updated in real time over MQTT |
@@ -146,6 +147,7 @@ After setup, open **Settings → Devices & Services → Govee Cloud Integration 
 | Option | Default | What it does |
 |---|---|---|
 | **Polling interval (seconds)** | `60` | How often to poll the cloud for state (30–300). MQTT and LAN updates arrive between polls. |
+| **Probe thermometer polling interval (seconds)** | `30` | How often an armed probe thermometer (H5192, with its **Live polling** switch on) is read over AWS IoT (10–600). Costs battery, not API quota; leave the switch off when you are not cooking. |
 | **Leak sensor polling interval (seconds)** | `120` | How often standalone RF water detectors (e.g. H5054) are checked for a leak (60–3600). These have no push channel, so a leak surfaces with up to this much delay — lower reacts faster but makes more account API calls. Needs account login; ignored if you have no such detectors. |
 | **Temperature unit from Govee API (thermometers)** | `Auto` | Govee returns thermometer values in the device's app unit with **no** unit metadata. **Auto** (default) reads your account's own °C/°F preference where Govee exposes it, falls back to converting the models known to report Fahrenheit, and trusts the rest; pick **Fahrenheit** if a reading still looks ~1.8× too high (e.g. 74 instead of 23), or **Celsius** to never convert. |
 | **Enable group devices** | `off` | Surface the device groups you created in the Govee app as single light entities (power/brightness/color; state is best‑effort). |
@@ -163,15 +165,15 @@ RGBIC devices get a second step after submitting, where you choose a **segment m
 
 With account login configured, the integration maintains an AWS IoT MQTT connection and applies state changes the moment they happen. Without it, state comes from polling on your configured interval. A **"Govee Integration"** device exposes diagnostics for this: API rate‑limit remaining, MQTT status, and a **"Last MQTT Received"** timestamp.
 
-Every device also gets two diagnostic timestamps — **Last Updated** (when data last arrived) and **Last Command Sent** — plus a **Connectivity** sensor. Turning on **Expose per‑device transport connectivity sensors** adds one reachability sensor per transport (Cloud API, MQTT, Bluetooth, LAN) for pinpointing which path a device is actually using.
+Every device also gets two diagnostic timestamps — **Last Update Received** and **Last Command Sent** — plus a **Connectivity** binary sensor and a **Connection Mode** sensor that names the transport actually carrying the device (`ble`, `lan`, `mqtt`, `cloud_api` or `unavailable`). Turning on **Expose per‑device transport connectivity sensors** adds one reachability sensor per transport (Cloud API, MQTT, Bluetooth, LAN) for pinpointing which path a device is actually using.
 
 **Local LAN control is automatic.** If a device has Govee's LAN API turned on (Govee Home app → device settings → LAN Control), the integration finds it via a periodic local discovery scan and starts using the LAN for state reads and for **power, brightness, color and color temperature** commands — no option to enable. Every LAN write is **verified by reading the device back**; an unconfirmed write falls through to MQTT/REST instantly, and a device that stops answering is demoted back to cloud transports until it reappears. Devices on another subnet/VLAN can be reached via the **LAN device addresses** option (see above).
 
 This matters beyond speed: Govee's cloud sometimes answers a color command with `success` and never delivers it to the device (the light doesn't change, and nothing reports an error). Sending color locally sidesteps the cloud entirely — see [Colors don't apply](#troubleshooting).
 
-**Command routing.** Each command takes the fastest transport that can carry it *and confirm it*, falling back automatically: **BLE → LAN → MQTT → cloud REST**. LAN carries power, brightness, color and color temperature — exactly the four values a device reports back, which is what makes verify‑by‑read possible. MQTT (opt‑in) carries power, brightness and color. Direct BLE control is deliberately limited to one model confirmed to honour it (H6199); other models advertise Bluetooth but silently drop writes. Everything else — scenes, segments, music mode, work modes, toggles — always goes over the cloud API, with one exception: Tower Fan 2 (H7105/H7107) oscillation goes over the AWS IoT session when account login is configured, because the cloud toggle is a no-op on those fans.
+**Command routing.** Each command takes the fastest transport that can carry it *and confirm it*, falling back automatically: **BLE → LAN → MQTT → cloud REST**. LAN carries power, brightness, color and color temperature — exactly the four values a device reports back, which is what makes verify‑by‑read possible. MQTT (opt‑in) carries power, brightness and color. Direct BLE control is deliberately limited to models confirmed to honour it (H6053, H6072, H6102, H6199, H1270), including the encrypted BLE transport newer firmware requires; other models advertise Bluetooth but silently drop writes. Everything else — scenes, segments, music mode, work modes, toggles — always goes over the cloud API, with one exception: Tower Fan 2 (H7105/H7107) oscillation goes over the AWS IoT session when account login is configured, because the cloud toggle is a no-op on those fans.
 
-Commands always use optimistic updates, so the UI reflects your action immediately and reconciles with the next confirmed state.
+Commands always use optimistic updates, so the UI reflects your action immediately and reconciles with the next confirmed state. MQTT publishes are acknowledged by the broker (QoS 1); an unacknowledged send falls through to REST rather than being reported as success.
 
 ---
 
@@ -201,7 +203,8 @@ data:
 
 - **Scenes / DIY scenes** — activated through per‑device select dropdowns (toggle in options). The API doesn't reliably report the active scene, so the selection is preserved optimistically and cleared when you switch to another mode (color, color temp, music, etc.).
 - **Music mode** — exposed as a switch on capable lights.
-- **DreamView / video sync** — exposed as a switch on capable backlights.
+- **DreamView / video sync** — exposed as a switch on capable backlights. On models whose cloud toggle is rejected (e.g. H605C), the switch engages video mode over the AWS IoT session; turning it off restores your last colour, which is how the device leaves video mode.
+- **Music mode** sends the first mode the device advertises, then remembers the one you last picked from the **Music Mode** select. The available modes are whatever Govee's API lists for the model — app‑only music scenes cannot be selected from HA.
 - Use the **`govee.refresh_scenes`** service to re‑pull the scene catalog (optionally for one `device_id`).
 
 ---
@@ -258,6 +261,9 @@ Some gateway‑bridged sensors are listed by Govee with no reading attached. Whe
 | Battery missing on a sensor | Battery comes from your Govee **account** data, so account login is required — an API key alone can't see it. It's fetched every 5 minutes, so allow a few minutes after a restart. |
 | A **"Govee MQTT disconnected"** repair appears | Real‑time push is down; polling keeps everything working. The integration retries forever with backoff and clears the repair itself when the connection returns (this can take a few minutes after an outage). If it stays for longer than that, reload the integration; if it comes straight back, use **⋮ → Reconfigure** to refresh the account sign‑in. Two Home Assistant installs on one Govee account will kick each other off AWS IoT in turn — use separate accounts. |
 | No real‑time updates / no leak sensors | Add your Govee account email/password (enables MQTT). API key alone is polling‑only. |
+| Tower Fan 2 (H7105/H7107) oscillation does nothing | Govee's cloud accepts the toggle and the motor ignores it. Add account login — the integration then sends the frame the fan actually obeys. |
+| Ceiling fan entity (H1310/H1370) doesn't follow the remote or the app | The cloud never reports fan state. Add account login so the fan's own push frames are read; without it the entity only knows what HA last sent. |
+| Per‑outlet switches on an H5160/H5161 are unavailable | They exist only over the AWS IoT session — add account login. They are optimistic: they show what HA last set, not what the buttons or the app did. |
 | LAN sensor shows Disconnected / device not found locally | Enable **LAN Control** for the device in the Govee Home app. Across subnets/VLANs, add the device's IP or subnet under **LAN device addresses** in ⚙️ Configure. |
 | Re‑prompted for a 2FA code / login fails | Reconfigure the integration and complete the email‑code step; codes expire in ~15 minutes. |
 | Rate‑limit warnings | The Govee API allows 100 requests/min and 10,000/day. Increase the polling interval if you have many devices. |
@@ -285,7 +291,7 @@ If something's still wrong, grab a diagnostics download (below) and [open an iss
 2. Open the device
 3. **⋮** (top‑right) → **Download diagnostics**
 
-The download includes each device's parsed state, the verbatim cloud response, the last MQTT push, per‑transport health (including LAN discovery results), a ring buffer of recent OpenAPI event pushes (e.g. water‑tank‑full), and — for leak‑sensor and gateway‑sensor troubleshooting — recent hub packets and a privacy‑safe summary of what the account API returns for each device.
+The download includes each device's parsed state, the verbatim cloud response, the last MQTT push (with the raw status frames it carried, as `_op_frames`), per‑transport health (including LAN discovery results), a ring buffer of recent OpenAPI event pushes (e.g. water‑tank‑full), the MQTT connection loop's failure streak and last error, and — for leak‑sensor, gateway‑sensor and probe‑thermometer troubleshooting — recent hub and probe packets and a privacy‑safe summary of what the account API returns for each device.
 
 The most useful section for "I pressed the button and nothing happened" reports is **`recent_commands`**: every recent control command with the exact payload sent, which transport carried it (cloud, LAN, MQTT or BLE), and how the device or cloud answered — including *why* a local write wasn't confirmed. If a command shows `success` there and the device still didn't react, that's strong evidence the problem is on Govee's side rather than in Home Assistant.
 
@@ -358,13 +364,17 @@ People who have landed code here, alphabetically:
 [@brian6932](https://github.com/brian6932) ·
 [@chrisns](https://github.com/chrisns) ·
 [@Danimal4326](https://github.com/Danimal4326) ·
+[@DerJusty92](https://github.com/DerJusty92) ·
+[@dkalweit](https://github.com/dkalweit) ·
 [@DUC750](https://github.com/DUC750) ·
+[@JohnAposto83](https://github.com/JohnAposto83) ·
 [@maxi07](https://github.com/maxi07) ·
 [@momousta](https://github.com/momousta) ·
 [@phylix](https://github.com/phylix) ·
 [@thephw](https://github.com/thephw) ·
 [@TomK](https://github.com/TomK) ·
 [@tonyrsutton](https://github.com/tonyrsutton) ·
+[@ymickler](https://github.com/ymickler) ·
 [@yyolk](https://github.com/yyolk)
 
 ### Investigation and hardware testing
@@ -377,6 +387,11 @@ Govee's cloud API is undocumented in the places that matter most, and several fi
 - **[@andreuSignes](https://github.com/andreuSignes)** — identified the `elementRange` / `size.max` split behind phantom RGBIC segment entities, and verified the fix end-to-end on four live H7075 units. ([#161](https://github.com/lasswellt/govee-homeassistant/pull/161))
 - **[@thephw](https://github.com/thephw)** — captured and decoded the gateway BLE relay path for the H5901 water timer, including establishing that the account certificate is policy-denied from the gateway command topic. ([#135](https://github.com/lasswellt/govee-homeassistant/issues/135))
 - **[@Eschwinm](https://github.com/Eschwinm)** — tested all 15 advertised H7076 segments individually to establish which four indices actually move the light. ([#160](https://github.com/lasswellt/govee-homeassistant/issues/160))
+- **[@DerJusty92](https://github.com/DerJusty92)** — reverse‑engineered the H5192 probe thermometer end to end: proved it is a pull device (a 10 K change with the app closed produced zero frames), mapped its registers against values set in the app, and shipped the support with the captured frames as test fixtures. ([#174](https://github.com/lasswellt/govee-homeassistant/issues/174), [#185](https://github.com/lasswellt/govee-homeassistant/pull/185))
+- **[@JohnAposto83](https://github.com/JohnAposto83)** — read `main` before filing and cited the exact lines behind two silent credential failures, then hardware‑verified the Tower Fan 2 oscillation frame and contributed the fix. ([#178](https://github.com/lasswellt/govee-homeassistant/issues/178), [#179](https://github.com/lasswellt/govee-homeassistant/issues/179), [#176](https://github.com/lasswellt/govee-homeassistant/pull/176))
+- **[@dkalweit](https://github.com/dkalweit)** — caught the H5310 gateway frame's ninth temperature bit from a capture spanning the rollover, which explained a "flipping" reading nobody could reproduce. ([#180](https://github.com/lasswellt/govee-homeassistant/pull/180))
+- **[@ymickler](https://github.com/ymickler)** — found that the DreamView passthrough frame was byte‑for‑byte the `Scene(Sunset)` packet, and verified the video‑mode opcode on an H605C. ([#187](https://github.com/lasswellt/govee-homeassistant/pull/187))
+- **[@MicroDraco](https://github.com/MicroDraco)** and **[@aloke-gupta](https://github.com/aloke-gupta)** — one diagnostics download each that pinned down, respectively, the H1310's device‑wide `onOff` masquerading as the light and the H5053's unlabelled Fahrenheit. ([#181](https://github.com/lasswellt/govee-homeassistant/issues/181), [#173](https://github.com/lasswellt/govee-homeassistant/issues/173))
 - **[@ThomasADavis](https://github.com/ThomasADavis)** — reproduced a reported brightness fault in the Govee app itself, which is what identified it as firmware rather than an integration bug. ([#159](https://github.com/lasswellt/govee-homeassistant/issues/159))
 - **[@matteotomasoni](https://github.com/matteotomasoni)**, **[@thrstnbecker](https://github.com/thrstnbecker)**, **[@mikejhendricks](https://github.com/mikejhendricks)**, **[@ftremblay91](https://github.com/ftremblay91)**, **[@CrazyLukas98](https://github.com/CrazyLukas98)**, **[@PaulTubeTV](https://github.com/PaulTubeTV)**, **[@kayandwill0306-cyber](https://github.com/kayandwill0306-cyber)** — diagnostics downloads and patient re-testing across multiple releases. Several root causes in this integration were found in their attachments, not in the code.
 
