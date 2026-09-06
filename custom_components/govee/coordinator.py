@@ -3283,6 +3283,8 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             state.update_ceiling_fan_from_frames(
                 self._op_frames_from(state_data)
             )
+        if device is not None and device.mqtt_outlet_count:
+            self._apply_outlet_mask(device, state, state_data.get("onOff"))
 
         if was_offline:
             device = self._devices.get(device_id)
@@ -3503,6 +3505,8 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         try:
             state = await self._api_client.get_device_state(device_id, device.sku)
             self._record_transport_success(device_id, "cloud_api")
+            if device.mqtt_outlet_count:
+                self._apply_outlet_mask(device, state, self._raw_power_switch_value(device_id))
 
             # Preserve optimistic state fields that API doesn't reliably return.
             # Clear them when device is turned off (no longer active).
@@ -3704,6 +3708,38 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         except Exception as err:
             self._record_transport_failure(device_id, "cloud_api", str(err))
             return err
+
+    def _raw_power_switch_value(self, device_id: str) -> Any:
+        """The verbatim ``powerSwitch`` value from the last /device/state poll.
+
+        ``GoveeDeviceState`` keeps only ``bool(value)``; multi-outlet plugs
+        put a bitmask there (an H5160 with two outlets on reported ``6``).
+        """
+        raw = self._api_client.last_raw_state.get(device_id) or {}
+        for cap in raw.get("capabilities") or []:
+            if isinstance(cap, dict) and cap.get("instance") == "powerSwitch":
+                return (cap.get("state") or {}).get("value")
+        return None
+
+    @staticmethod
+    def _apply_outlet_mask(device: GoveeDevice, state: GoveeDeviceState, value: Any) -> None:
+        """Decode a multi-outlet plug's on/off bitmask into per-outlet toggles.
+
+        Both the AWS IoT push ``onOff`` and the Developer API ``powerSwitch``
+        carry a bitmask on these strips — bit i = outlet i+1 — rather than 0/1:
+        an H5160 with one outlet on pushed ``onOff: 2`` and, at another time,
+        polled ``powerSwitch: 6`` (issue #184). That matches the bit layout
+        homebridge-govee uses to *send*. A bool or anything outside the mask
+        range is left alone (the master power_state already reflects it).
+        """
+        if isinstance(value, bool) or not isinstance(value, int):
+            return
+        count = device.mqtt_outlet_count
+        if value < 0 or value >= (1 << count):
+            return
+        for index in range(count):
+            state.toggles[f"outlet{index + 1}"] = bool(value & (1 << index))
+        state.power_state = value != 0
 
     async def async_set_mqtt_outlet(self, device_id: str, outlet_index: int, enabled: bool) -> bool:
         """Switch one outlet of a multi-outlet plug over AWS IoT (issue #184).

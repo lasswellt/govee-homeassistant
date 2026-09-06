@@ -235,3 +235,49 @@ class TestDisconnectHook:
         coord._on_mqtt_connected()
 
         assert coord.async_set_updated_data.call_count == 2
+
+
+class TestOutletReadback:
+    """The strip reports its outlets as a bitmask on both channels (#184)."""
+
+    def test_push_on_off_bitmask_sets_toggles(self):
+        coord = _coordinator()
+        coord._on_mqtt_state_update(PLUG, {"onOff": 2})
+        state = coord._states[PLUG]
+        assert state.toggles == {"outlet1": False, "outlet2": True, "outlet3": False}
+        assert state.power_state is True
+
+    def test_poll_power_switch_bitmask_sets_toggles(self):
+        coord = _coordinator()
+        coord._api_client.last_raw_state = {
+            PLUG: {"capabilities": [{"instance": "powerSwitch", "state": {"value": 6}}]}
+        }
+        state = GoveeDeviceState.create_empty(PLUG)
+        coord._apply_outlet_mask(coord._devices[PLUG], state, coord._raw_power_switch_value(PLUG))
+        assert state.toggles == {"outlet1": False, "outlet2": True, "outlet3": True}
+        assert state.power_state is True
+
+    def test_all_off_and_out_of_range(self):
+        coord = _coordinator()
+        state = GoveeDeviceState.create_empty(PLUG)
+        coord._apply_outlet_mask(coord._devices[PLUG], state, 0)
+        assert state.toggles == {"outlet1": False, "outlet2": False, "outlet3": False}
+        assert state.power_state is False
+        coord._apply_outlet_mask(coord._devices[PLUG], state, 17)  # a send value, not a report
+        assert state.toggles["outlet1"] is False
+        coord._apply_outlet_mask(coord._devices[PLUG], state, True)
+        assert state.toggles["outlet1"] is False
+
+    def test_entity_stops_being_assumed_once_reported(self):
+        device = _plug()
+        state = GoveeDeviceState.create_empty(PLUG)
+        state.online = True
+        coordinator = MagicMock()
+        coordinator.devices = {PLUG: device}
+        coordinator.get_state = MagicMock(return_value=state)
+        coordinator.mqtt_connected = True
+        entity = GoveeMqttOutletSwitchEntity(coordinator, device, 1)
+        assert entity.assumed_state is True
+        state.toggles["outlet2"] = True
+        assert entity.assumed_state is False
+        assert entity.is_on is True

@@ -520,14 +520,21 @@ class GoveeMqttOutletSwitchEntity(GoveeEntity, SwitchEntity, RestoreEntity):
 
     The H5160/H5161 advertise a single ``powerSwitch`` to the Developer API,
     so the only per-outlet control is homebridge-govee's bitmask ``turn`` on
-    the account MQTT session. Optimistic and restored across restarts until
-    the plug's own per-outlet readback is decoded; unavailable without the
-    AWS IoT session because nothing else can carry the command.
+    the account MQTT session. State comes from the bitmask the plug reports
+    (push ``onOff`` / poll ``powerSwitch``, decoded by the coordinator);
+    before the first report it is optimistic and restored across restarts.
+    Unavailable without the AWS IoT session because nothing else can carry
+    the command.
     """
 
     _attr_device_class = SwitchDeviceClass.OUTLET
     _attr_translation_key = "govee_socket"
-    _attr_assumed_state = True
+
+    @property
+    def assumed_state(self) -> bool:
+        """Assumed until the plug has reported its outlet bitmask (#184)."""
+        state = self.device_state
+        return state is None or self._toggle_key not in state.toggles
 
     def __init__(self, coordinator: GoveeCoordinator, device: GoveeDevice, outlet_index: int) -> None:
         """Initialize the outlet switch entity."""
