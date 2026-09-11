@@ -3415,10 +3415,11 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # Devices the user has fully disabled cost a cloud request per poll and
         # give nothing back. On an install where a batch of devices moved to
         # another protocol, that is the largest slice of the daily API budget.
+        fully_disabled = self._devices_with_all_entities_disabled()
         pollable = {
             device_id: device
             for device_id, device in self._devices.items()
-            if not self._entities_all_disabled(device_id)
+            if device_id not in fully_disabled
         }
         skipped = len(self._devices) - len(pollable)
         if skipped:
@@ -3486,24 +3487,52 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
         return self._states
 
-    def _entities_all_disabled(self, device_id: str) -> bool:
-        """True when this device has entities and every one of them is disabled.
+    def _owning_device_id(self, unique_id: str) -> str | None:
+        """Map an entity registry unique_id back to the device it belongs to.
 
-        Polling a device whose entities are all disabled buys nothing: no
-        entity will ever show the result. Each one still spends a request
-        against Govee's documented 10,000/day budget every cycle.
+        Entity unique_ids are either the bare device id (entity.py) or the
+        device id followed by an underscore-prefixed suffix (every SUFFIX_* in
+        const.py starts with "_"). Testing a bare prefix instead would let one
+        device claim another's entities whenever one id is a prefix of the
+        other, which is not hypothetical: group devices carry purely numeric
+        ids, where prefix collisions are easy.
+        """
+        if unique_id in self._devices:
+            return unique_id
+        head = unique_id.split("_", 1)[0]
+        if head in self._devices:
+            return head
+        # Device ids are MAC-shaped or numeric, so the split above resolves
+        # them all; this is the safety net if that ever stops being true.
+        for device_id in self._devices:
+            if unique_id.startswith(f"{device_id}_"):
+                return device_id
+        return None
 
-        The common cause is a device that a better transport took over —
-        moved to Matter, or controlled locally by another integration — whose
-        cloud twin was then disabled here rather than removed. Those twins
-        stay in the account device list forever, so on a mature install they
-        can outnumber the devices still in use and dominate the daily spend.
-        The cause does not matter to this check: any device the user has
-        fully switched off is one the cloud need not be asked about.
+    def _devices_with_all_entities_disabled(self) -> set[str]:
+        """Device ids that have registry entities and every one is disabled.
 
-        A device with no registry entries is deliberately NOT skipped — that
-        is the normal state during first setup, before platforms have added
-        their entities, and skipping then would stall discovery.
+        Polling such a device buys nothing: no entity will ever show the
+        result. Each one still spends a request against Govee's documented
+        10,000/day budget every cycle.
+
+        The common cause is a device that a better transport took over — moved
+        to Matter, or controlled locally by another integration — whose cloud
+        twin was disabled here rather than removed. Those twins stay in the
+        account device list forever, so on a mature install they can outnumber
+        the devices still in use and dominate the daily spend. The cause does
+        not matter to this check: any device the user has fully switched off is
+        one the cloud need not be asked about.
+
+        Built in a single pass over the registry. Asking per device would walk
+        the whole entity list once per device on every poll, which is
+        quadratic for no gain.
+
+        A device with no registry entries is deliberately absent from the
+        result — that is the normal state during first setup, before platforms
+        have added their entities, and skipping then would stall discovery.
+        A registry failure returns an empty set, so nothing is ever skipped
+        because the lookup broke.
         """
         try:
             registry = er.async_get(self.hass)
@@ -3511,17 +3540,23 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 registry, self._config_entry.entry_id
             )
         except Exception as err:  # noqa: BLE001 - registry must never fail a poll
-            _LOGGER.debug("Entity registry unavailable, polling %s: %s", device_id, err)
-            return False
+            _LOGGER.debug("Entity registry unavailable, polling every device: %s", err)
+            return set()
 
-        found = False
+        has_entities: set[str] = set()
+        has_enabled: set[str] = set()
         for entry in entries:
-            if not entry.unique_id.startswith(device_id):
+            device_id = self._owning_device_id(entry.unique_id)
+            if device_id is None:
                 continue
-            found = True
+            has_entities.add(device_id)
             if entry.disabled_by is None:
-                return False
-        return found
+                has_enabled.add(device_id)
+        return has_entities - has_enabled
+
+    def _entities_all_disabled(self, device_id: str) -> bool:
+        """True when this one device has entities and all of them are disabled."""
+        return device_id in self._devices_with_all_entities_disabled()
 
     async def _fetch_device_state_bounded(
         self,

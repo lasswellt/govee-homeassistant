@@ -238,6 +238,10 @@ class GoveeRateLimitSensor(CoordinatorEntity["GoveeCoordinator"], SensorEntity):
         "devices x polls per day" predicts. That gap is the point, not a
         defect: the daily cap applies to all of it, so a figure that counted
         only the poll would understate the spend.
+
+        They are nonetheless a lower bound. Counting happens when a response
+        is handled, so a request that fails below the HTTP layer is missed.
+        Read these as "at least this many".
         """
         return {
             "total_limit": self.coordinator.api_rate_limit_total,

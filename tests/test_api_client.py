@@ -674,6 +674,33 @@ class TestRequestAccounting:
         # Two hourly buckets holding 30 requests.
         assert client.requests_per_hour == 15.0
 
+    def test_idle_hours_count_against_the_average(self, monkeypatch):
+        """An hour with no traffic still happened.
+
+        Buckets only exist for hours that saw requests, so dividing by buckets
+        held would drop a restart or a quiet spell out of the denominator and
+        report a rate higher than the install actually ran at.
+        """
+        client, clock = self._client(monkeypatch, 1_000_000.0)
+
+        for _ in range(10):
+            client._note_request()
+        # Three silent hours - a restart, say - then traffic again.
+        clock["now"] += 4 * self.HOUR
+        for _ in range(10):
+            client._note_request()
+
+        # 20 requests across a 5-hour span, not across the 2 hours recorded.
+        assert client.requests_per_hour == 4.0
+
+    def test_single_hour_of_traffic_averages_to_itself(self, monkeypatch):
+        client, _ = self._client(monkeypatch, 1_000_000.0)
+
+        for _ in range(7):
+            client._note_request()
+
+        assert client.requests_per_hour == 7.0
+
     @pytest.mark.asyncio
     async def test_handle_response_counts_the_request(self, monkeypatch):
         """Every answered request is counted, whatever the status."""

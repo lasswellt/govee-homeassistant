@@ -198,6 +198,13 @@ class GoveeApiClient:
 
         Counted for every response, including 429s and errors: a rejected
         request still consumed the allowance.
+
+        Called from response handling, so the totals are a FLOOR, not an exact
+        figure. A request that dies below the HTTP layer — connection timeout,
+        DNS failure, a retry chain exhausting itself — never reaches here but
+        may still have been counted on Govee's side. Undercounting is the safe
+        direction for the question these numbers exist to answer: if the floor
+        already exceeds the daily cap, the real spend certainly does.
         """
         now = time.time()
         hour = int(now // 3600)
@@ -238,16 +245,23 @@ class GoveeApiClient:
 
     @property
     def requests_per_hour(self) -> float:
-        """Mean requests/hour over the buckets held, 0.0 before the first hour.
+        """Mean requests/hour across the span of history held, 0.0 if none.
 
-        Only complete history is averaged, so this is a description of what has
-        happened, not a projection.
+        Divided by hours *elapsed*, not by buckets recorded. A bucket only
+        exists for an hour that saw traffic, so averaging over buckets would
+        drop idle hours out of the denominator — a restart or a reload would
+        make the rate read higher than it truly was, on an attribute people
+        will read as a plain average.
+
+        This describes what has happened over the window held; it is not a
+        projection of what the next 24 hours will cost.
         """
         cutoff = int(time.time() // 3600) - (REQUEST_HISTORY_HOURS - 1)
         buckets = [b for b in self._request_buckets if b[0] >= cutoff]
         if not buckets:
             return 0.0
-        return round(sum(count for _, count in buckets) / len(buckets), 1)
+        hours_elapsed = buckets[-1][0] - buckets[0][0] + 1
+        return round(sum(count for _, count in buckets) / hours_elapsed, 1)
 
     def _update_rate_limits(self, headers: Any) -> None:
         """Update rate limit tracking from response headers."""

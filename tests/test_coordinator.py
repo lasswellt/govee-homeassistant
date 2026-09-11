@@ -4529,3 +4529,115 @@ class TestSkipFullyDisabledDevices:
 
         assert called is False
         assert result is coord._states
+
+
+class TestDeviceIdPrefixCollisions:
+    """One device must never claim another's entities.
+
+    Entity unique_ids are the device id, optionally plus an underscore-led
+    suffix. A bare `startswith` test lets a device whose id is a strict prefix
+    of another's absorb that other device's entities. Group devices carry
+    purely numeric ids, so prefixes genuinely collide in a real install.
+
+    The failure is quiet: the short device sees the long device's enabled
+    entities, concludes it is still in use, and gets polled forever. Nothing
+    breaks, the saving just silently does not happen.
+    """
+
+    SHORT = "118259"
+    LONG = "11825917"
+
+    def _coord(self, device_ids):
+        import custom_components.govee.coordinator as coord_mod
+
+        hass = MagicMock()
+        config_entry = MagicMock()
+        config_entry.entry_id = "test_entry"
+        config_entry.options = {}
+        coord = coord_mod.GoveeCoordinator(
+            hass=hass,
+            config_entry=config_entry,
+            api_client=MagicMock(),
+            iot_credentials=None,
+            poll_interval=60,
+        )
+        caps = (
+            GoveeCapability(
+                type=CAPABILITY_ON_OFF, instance=INSTANCE_POWER, parameters={}
+            ),
+        )
+        for dev_id in device_ids:
+            coord._devices[dev_id] = GoveeDevice(
+                device_id=dev_id,
+                sku="GROUP",
+                name=f"Group {dev_id}",
+                device_type="devices.types.group",
+                capabilities=caps,
+                is_group=True,
+            )
+            coord._states[dev_id] = GoveeDeviceState.create_empty(dev_id)
+        coord.async_set_updated_data = MagicMock()
+        return coord, coord_mod
+
+    def _with_registry(self, coord_mod, monkeypatch, entries):
+        monkeypatch.setattr(coord_mod.er, "async_get", lambda hass: MagicMock())
+        monkeypatch.setattr(
+            coord_mod.er,
+            "async_entries_for_config_entry",
+            lambda registry, entry_id: entries,
+        )
+
+    def test_entities_are_attributed_to_the_right_device(self, monkeypatch):
+        coord, coord_mod = self._coord([self.SHORT, self.LONG])
+        self._with_registry(coord_mod, monkeypatch, [])
+
+        assert coord._owning_device_id(self.SHORT) == self.SHORT
+        assert coord._owning_device_id(self.LONG) == self.LONG
+        assert coord._owning_device_id(f"{self.LONG}_scene_select") == self.LONG
+        assert coord._owning_device_id(f"{self.SHORT}_music_mode") == self.SHORT
+
+    def test_unrelated_unique_id_belongs_to_no_device(self, monkeypatch):
+        """Hub-level entities are keyed on the config entry, not a device."""
+        coord, coord_mod = self._coord([self.SHORT])
+        self._with_registry(coord_mod, monkeypatch, [])
+
+        assert coord._owning_device_id("test_entry_rate_limit") is None
+
+    def test_longer_devices_entities_do_not_rescue_the_shorter_one(
+        self, monkeypatch
+    ):
+        """The regression: SHORT is disabled, LONG is live, SHORT must skip."""
+        coord, coord_mod = self._coord([self.SHORT, self.LONG])
+        self._with_registry(
+            coord_mod,
+            monkeypatch,
+            [
+                _FakeRegistryEntry(self.SHORT, disabled_by="user"),
+                _FakeRegistryEntry(f"{self.SHORT}_scene_select", disabled_by="user"),
+                _FakeRegistryEntry(self.LONG, disabled_by=None),
+                _FakeRegistryEntry(f"{self.LONG}_scene_select", disabled_by=None),
+            ],
+        )
+
+        fully_disabled = coord._devices_with_all_entities_disabled()
+
+        assert self.SHORT in fully_disabled
+        assert self.LONG not in fully_disabled
+
+    def test_registry_is_walked_once_per_poll_not_once_per_device(
+        self, monkeypatch
+    ):
+        """Asking per device makes the poll quadratic in entity count."""
+        coord, coord_mod = self._coord([self.SHORT, self.LONG, "998877"])
+        calls = {"n": 0}
+
+        def _entries(registry, entry_id):
+            calls["n"] += 1
+            return [_FakeRegistryEntry(self.SHORT, disabled_by="user")]
+
+        monkeypatch.setattr(coord_mod.er, "async_get", lambda hass: MagicMock())
+        monkeypatch.setattr(coord_mod.er, "async_entries_for_config_entry", _entries)
+
+        coord._devices_with_all_entities_disabled()
+
+        assert calls["n"] == 1
