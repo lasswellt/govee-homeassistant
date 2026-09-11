@@ -228,6 +228,12 @@ class TestDisconnectHook:
         coord = GoveeCoordinator.__new__(GoveeCoordinator)
         coord.hass = MagicMock()
         coord._config_entry = MagicMock()
+        # _on_mqtt_connected also schedules a background status-poll query;
+        # a bare MagicMock never awaits the coroutine it's handed, which
+        # leaks it and trips "coroutine was never awaited" under this
+        # project's filterwarnings=error. Close it instead of letting a
+        # real coordinator (with no devices/client set up) run it.
+        coord._config_entry.async_create_background_task = lambda hass, coro, name=None: coro.close()
         coord._states = {}
         coord.async_set_updated_data = MagicMock()
 

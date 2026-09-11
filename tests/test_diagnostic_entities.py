@@ -13,7 +13,10 @@ from unittest.mock import MagicMock, patch
 
 from custom_components.govee.binary_sensor import GoveeDeviceConnectivity
 from custom_components.govee.models import TransportHealth
-from custom_components.govee.sensor import GoveeLastCommandSentSensor
+from custom_components.govee.sensor import (
+    GoveeLastCommandSentSensor,
+    GoveeMqttLastReceivedPerDeviceSensor,
+)
 
 
 def _device() -> MagicMock:
@@ -49,6 +52,54 @@ class TestLastCommandSentSensor:
         entity._device = device
         assert entity.native_value == ts
         coordinator.device_last_command_sent.assert_called_once_with(device.device_id)
+
+
+class TestMqttLastReceivedPerDeviceSensor:
+    """Isolates the MQTT-only freshness signal from "Last Update Received"
+    (the max across every transport), which stays "just now" from a healthy
+    Cloud API poll alone even when MQTT specifically has gone quiet.
+    """
+
+    def test_native_value_delegates(self):
+        ts = datetime(2026, 9, 11, tzinfo=timezone.utc)
+        coordinator = MagicMock()
+        coordinator.mqtt_last_receive_for.return_value = ts
+        device = _device()
+        with patch.object(
+            GoveeMqttLastReceivedPerDeviceSensor,
+            "__init__",
+            lambda self, *a, **k: None,
+        ):
+            entity = GoveeMqttLastReceivedPerDeviceSensor.__new__(
+                GoveeMqttLastReceivedPerDeviceSensor
+            )
+        entity.coordinator = coordinator
+        entity._device = device
+        assert entity.native_value == ts
+        coordinator.mqtt_last_receive_for.assert_called_once_with(device.device_id)
+
+    def test_native_value_none_before_any_mqtt_push(self):
+        coordinator = MagicMock()
+        coordinator.mqtt_last_receive_for.return_value = None
+        device = _device()
+        with patch.object(
+            GoveeMqttLastReceivedPerDeviceSensor,
+            "__init__",
+            lambda self, *a, **k: None,
+        ):
+            entity = GoveeMqttLastReceivedPerDeviceSensor.__new__(
+                GoveeMqttLastReceivedPerDeviceSensor
+            )
+        entity.coordinator = coordinator
+        entity._device = device
+        assert entity.native_value is None
+
+    def test_unique_id_is_scoped_to_the_device(self):
+        """The real __init__ (unpatched), for the unique_id it sets."""
+        coordinator = MagicMock()
+        device = _device()
+        entity = GoveeMqttLastReceivedPerDeviceSensor(coordinator, device)
+        assert entity.unique_id == f"{device.device_id}_mqtt_last_received"
 
 
 class TestDeviceConnectivity:

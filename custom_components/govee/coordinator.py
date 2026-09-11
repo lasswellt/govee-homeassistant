@@ -73,11 +73,13 @@ from .const import (
     CONF_EMAIL,
     CONF_ENABLE_MQTT_CONTROL,
     CONF_LAN_TARGETS,
+    CONF_MQTT_STATUS_INTERVAL,
     CONF_PASSWORD,
     CONF_PROBE_POLL_INTERVAL,
     CONF_WATER_DETECTOR_POLL_INTERVAL,
     DEFAULT_API_TEMPERATURE_UNIT,
     DEFAULT_ENABLE_MQTT_CONTROL,
+    DEFAULT_MQTT_STATUS_INTERVAL,
     DEFAULT_PROBE_POLL_INTERVAL,
     DEFAULT_WATER_DETECTOR_POLL_INTERVAL,
     DEVICE_REDISCOVERY_INTERVAL,
@@ -91,8 +93,10 @@ from .const import (
     LAN_WRITE_CONFIRM_TIMEOUT,
     LAN_WRITE_SUPPRESS_SECONDS,
     LAN_WRITE_SUPPRESS_THRESHOLD,
+    MAX_MQTT_STATUS_INTERVAL,
     MAX_PROBE_POLL_INTERVAL,
     MAX_WATER_DETECTOR_POLL_INTERVAL,
+    MIN_MQTT_STATUS_INTERVAL,
     MIN_PROBE_POLL_INTERVAL,
     MIN_WATER_DETECTOR_POLL_INTERVAL,
     OPTIMISTIC_GRACE_CAP_SECONDS,
@@ -450,6 +454,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # its live-polling switch on, so an idle thermometer is left alone.
         self._probe_poll_unsub: CALLBACK_TYPE | None = None
         self._probe_polling_enabled: set[str] = set()
+        # Periodic per-device MQTT status re-query (see async_publish_status_query
+        # docstring) — devices don't reliably push spontaneously; this is what the
+        # Govee app itself does while its device list is on screen.
+        self._status_poll_unsub: CALLBACK_TYPE | None = None
         # Last seen lastTime per detector — warnMessage is only called when the
         # device has freshly reported (or is currently wet), keeping the account
         # API request count low.
@@ -1056,6 +1064,16 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             await self._run_startup_step(
                 self._fetch_device_topics(), "fetch device topics"
             )
+            # Devices are largely poll-triggered responders on their own MQTT
+            # topic, not autonomous pushers (see async_publish_status_query).
+            # The initial query itself is fired from _on_mqtt_connected, not
+            # here: _start_mqtt only spawns the connection-loop task and
+            # returns immediately, so a query attempted at this point would
+            # see client.connected still False (the TLS handshake and
+            # CONNACK/SUBACK haven't completed yet) and silently no-op. Arm
+            # the recurring timer here regardless, as a backstop independent
+            # of when the connection actually lands.
+            self._schedule_status_poll()
 
         # OpenAPI event subscription — needs only the API key (no account
         # login), so it runs regardless of IoT credentials. Failure-isolated:
@@ -3062,6 +3080,73 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                     device_id, device.sku, build_limits_read_packet(probe)
                 )
 
+    @property
+    def _mqtt_status_poll_interval(self) -> int:
+        """Configured MQTT status-poll interval (seconds), clamped to bounds.
+
+        Read per tick so the value is picked up on the reload that follows an
+        options change. Out-of-range or non-numeric values (e.g. hand-edited
+        options) fall back to the default rather than arming a bad timer.
+        """
+        raw = self._config_entry.options.get(
+            CONF_MQTT_STATUS_INTERVAL, DEFAULT_MQTT_STATUS_INTERVAL
+        )
+        try:
+            interval = int(raw)
+        except (TypeError, ValueError):
+            return DEFAULT_MQTT_STATUS_INTERVAL
+        if not (MIN_MQTT_STATUS_INTERVAL <= interval <= MAX_MQTT_STATUS_INTERVAL):
+            return DEFAULT_MQTT_STATUS_INTERVAL
+        return interval
+
+    @property
+    def _mqtt_status_poll_targets(self) -> list[str]:
+        """Device IDs eligible for the periodic MQTT status re-query.
+
+        Any device with a known device-specific MQTT topic — anything the
+        coordinator could also publish a command to. Groups have no topic of
+        their own and are excluded.
+        """
+        return [
+            device_id
+            for device_id, device in self._devices.items()
+            if not device.is_group and device_id in self._device_topics
+        ]
+
+    def _schedule_status_poll(self) -> None:
+        """Schedule the next MQTT status re-query, replacing any pending timer."""
+        if self._status_poll_unsub:
+            self._status_poll_unsub()
+        self._status_poll_unsub = async_call_later(
+            self.hass, self._mqtt_status_poll_interval, self._status_poll_callback
+        )
+
+    async def _status_poll_callback(self, _now: Any = None) -> None:
+        """Periodic callback: re-query every eligible device, then re-arm."""
+        await self._poll_mqtt_status()
+        self._schedule_status_poll()
+
+    async def _poll_mqtt_status(self) -> None:
+        """Publish a status query to every device's own MQTT topic.
+
+        See ``GoveeAwsIotClient.async_publish_status_query`` for why this
+        exists — without it, devices that don't autonomously push (most of
+        them, per the Android app reverse-engineering) go stale the moment
+        nobody has asked in a while. Queries go out sequentially, one device
+        at a time, rather than in parallel: the interval already trades update
+        latency for request volume, so there is no reason to burst all of them
+        at once.
+        """
+        client = self._mqtt_client
+        if client is None or not client.connected:
+            return
+
+        for device_id in self._mqtt_status_poll_targets:
+            topic = self._device_topics.get(device_id)
+            if not topic:
+                continue
+            await client.async_publish_status_query(topic)
+
     async def async_set_probe_limits(
         self,
         device_id: str,
@@ -3334,6 +3419,18 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # The MQTT status sensor and per-device connection-mode sensors read
         # the client; nudge them now rather than on the next poll.
         self.async_set_updated_data(self._states)
+        # Devices are poll-triggered responders (see async_publish_status_query)
+        # — query every device now that a session is actually confirmed live,
+        # rather than waiting up to a full _mqtt_status_poll_interval. This is
+        # the initial query for a fresh connection (a query attempted during
+        # _async_setup would race the handshake and lose — see the comment
+        # there) and also covers every later reconnect, so a drop-and-recover
+        # doesn't leave state stale for up to the full interval either.
+        self._config_entry.async_create_background_task(
+            self.hass,
+            self._poll_mqtt_status(),
+            name="govee_mqtt_connected_status_poll",
+        )
 
     @callback
     def _on_mqtt_disconnected(self) -> None:
@@ -4963,6 +5060,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if self._probe_poll_unsub:
             self._probe_poll_unsub()
             self._probe_poll_unsub = None
+        # Cancel periodic MQTT status re-query
+        if self._status_poll_unsub:
+            self._status_poll_unsub()
+            self._status_poll_unsub = None
 
         # Disconnect all BLE devices
         for ble_device in self._ble_devices.values():

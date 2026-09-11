@@ -1211,6 +1211,68 @@ class GoveeAwsIotClient:
             _LOGGER.error("Failed to publish %s: %s", cmd, err)
             return False
 
+    async def async_publish_status_query(
+        self,
+        device_topic: str | None,
+        *,
+        cmd_version: int = 2,
+    ) -> bool:
+        """Publish a status query to a device's own MQTT topic.
+
+        Mirrors the Govee Android app's own status request (``Cmd4Status`` /
+        ``Iot.A()``), which the app's device-list screen sends to every device
+        roughly every 30-60s while it is on screen. Reverse-engineering found
+        that devices in general are not reliably autonomous pushers — most
+        account-topic "status" traffic is a *reply* to this exact query, from
+        whoever last asked. Calling this periodically is what keeps every
+        MQTT-controlled device's state fresh without the Govee app open, not
+        just devices whose fields happen to have no REST poll fallback.
+
+        Deliberately not built on ``async_publish_command``: a status query
+        uses ``type: 0`` (query) with no ``data`` key, while that method
+        hardcodes ``type: 1`` (control) and always includes one — reusing it
+        here would publish a malformed request.
+
+        Args:
+            device_topic: Device-specific MQTT topic to query. Required for
+                          AWS IoT - obtained from undocumented API.
+            cmd_version: Command version. 2 matches the app's own default for
+                         status requests.
+
+        Returns:
+            True if publish succeeded, False otherwise.
+        """
+        if not self._connected or self._client is None:
+            _LOGGER.debug("Cannot publish status query: MQTT not connected")
+            return False
+
+        if not device_topic:
+            _LOGGER.debug("Cannot publish status query: No device topic available")
+            return False
+
+        payload = {
+            "msg": {
+                "cmd": "status",
+                "cmdVersion": cmd_version,
+                "transaction": f"v_{int(time.time() * 1000)}",
+                "type": 0,
+            }
+        }
+
+        try:
+            await self._client.publish(
+                device_topic, json.dumps(payload), qos=1, timeout=ACK_TIMEOUT
+            )
+            _LOGGER.debug("Published status query to %s...", device_topic[:30])
+            return True
+        except Exception as err:
+            _LOGGER.debug(
+                "Failed to publish status query to %s...: %s",
+                device_topic[:30],
+                err,
+            )
+            return False
+
     async def async_publish_ptreal(
         self,
         device_id: str,

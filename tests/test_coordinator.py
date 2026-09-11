@@ -2144,6 +2144,247 @@ class TestWaterDetectorPollInterval:
         assert seen["delay"] == 300
 
 
+class TestMqttStatusPollInterval:
+    """The MQTT status re-query interval is a user-configurable option.
+
+    Devices are largely poll-triggered responders rather than autonomous
+    pushers (see async_publish_status_query) — this is what keeps every
+    MQTT-controlled device's state fresh without the Govee app open.
+    """
+
+    def _coord_with_options(self, options):
+        import custom_components.govee.coordinator as coord_mod
+
+        config_entry = MagicMock()
+        config_entry.entry_id = "test_entry"
+        config_entry.options = options
+        return coord_mod.GoveeCoordinator(
+            hass=MagicMock(),
+            config_entry=config_entry,
+            api_client=MagicMock(),
+            iot_credentials=MagicMock(token="tok"),
+            poll_interval=60,
+        )
+
+    @staticmethod
+    def _device(device_id, is_group=False):
+        return GoveeDevice(
+            device_id=device_id,
+            sku="H6001",
+            name=device_id,
+            device_type="devices.types.light",
+            capabilities=(),
+            is_group=is_group,
+        )
+
+    def test_default_when_option_unset(self):
+        coord = self._coord_with_options({})
+        assert coord._mqtt_status_poll_interval == const.DEFAULT_MQTT_STATUS_INTERVAL
+
+    def test_configured_value_is_used(self):
+        coord = self._coord_with_options({const.CONF_MQTT_STATUS_INTERVAL: 600})
+        assert coord._mqtt_status_poll_interval == 600
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            const.MIN_MQTT_STATUS_INTERVAL - 1,
+            const.MAX_MQTT_STATUS_INTERVAL + 1,
+            "not-a-number",
+            None,
+        ],
+    )
+    def test_out_of_range_or_bad_value_falls_back(self, value):
+        """Hand-edited options must not arm a bad timer."""
+        coord = self._coord_with_options({const.CONF_MQTT_STATUS_INTERVAL: value})
+        assert coord._mqtt_status_poll_interval == const.DEFAULT_MQTT_STATUS_INTERVAL
+
+    def test_schedule_uses_configured_interval(self, monkeypatch):
+        import custom_components.govee.coordinator as coord_mod
+
+        coord = self._coord_with_options({const.CONF_MQTT_STATUS_INTERVAL: 90})
+        seen = {}
+
+        def _capture(hass, delay, callback):
+            seen["delay"] = delay
+            return lambda: None
+
+        monkeypatch.setattr(coord_mod, "async_call_later", _capture)
+        coord._schedule_status_poll()
+
+        assert seen["delay"] == 90
+
+    def test_schedule_cancels_a_pending_timer_first(self, monkeypatch):
+        """Rescheduling (e.g. after an options change) must not leak timers."""
+        import custom_components.govee.coordinator as coord_mod
+
+        coord = self._coord_with_options({})
+        monkeypatch.setattr(coord_mod, "async_call_later", lambda *a, **k: MagicMock())
+
+        coord._schedule_status_poll()
+        pending = coord._status_poll_unsub
+        coord._schedule_status_poll()
+
+        pending.assert_called_once()
+
+    def test_reschedules_after_each_callback(self, monkeypatch):
+        """The timer re-arms itself so polling continues indefinitely."""
+        import custom_components.govee.coordinator as coord_mod
+
+        coord = self._coord_with_options({})
+        calls: list[int] = []
+
+        def _capture(hass, delay, callback):
+            calls.append(delay)
+            return lambda: None
+
+        monkeypatch.setattr(coord_mod, "async_call_later", _capture)
+
+        async def _noop():
+            return None
+
+        coord._poll_mqtt_status = _noop
+        asyncio.get_event_loop().run_until_complete(coord._status_poll_callback())
+
+        assert calls == [const.DEFAULT_MQTT_STATUS_INTERVAL]
+
+    def test_poll_targets_exclude_groups_and_topicless_devices(self):
+        coord = self._coord_with_options({})
+        coord._devices = {
+            "A": self._device("A"),
+            "B": self._device("B", is_group=True),
+            "C": self._device("C"),
+        }
+        coord._device_topics = {"A": "GD/a"}  # B has no topic; C never got one
+
+        assert coord._mqtt_status_poll_targets == ["A"]
+
+    @pytest.mark.asyncio
+    async def test_poll_queries_every_eligible_device(self):
+        coord = self._coord_with_options({})
+        coord._devices = {
+            "A": self._device("A"),
+            "B": self._device("B"),
+        }
+        coord._device_topics = {"A": "GD/a", "B": "GD/b"}
+        mqtt_client = MagicMock()
+        mqtt_client.connected = True
+        mqtt_client.async_publish_status_query = AsyncMock(return_value=True)
+        coord._mqtt_client = mqtt_client
+
+        await coord._poll_mqtt_status()
+
+        from unittest.mock import call
+
+        assert mqtt_client.async_publish_status_query.await_args_list == [
+            call("GD/a"),
+            call("GD/b"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_poll_skips_a_target_with_a_falsy_topic(self):
+        """Defensive: a target is only reachable via _device_topics, but an
+        empty-string topic (rather than a missing key) must still be skipped
+        rather than published to.
+        """
+        coord = self._coord_with_options({})
+        coord._devices = {"A": self._device("A")}
+        coord._device_topics = {"A": ""}
+        mqtt_client = MagicMock()
+        mqtt_client.connected = True
+        mqtt_client.async_publish_status_query = AsyncMock(return_value=True)
+        coord._mqtt_client = mqtt_client
+
+        await coord._poll_mqtt_status()
+
+        mqtt_client.async_publish_status_query.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_poll_is_a_no_op_without_a_connected_client(self):
+        coord = self._coord_with_options({})
+        coord._devices = {"A": self._device("A")}
+        coord._device_topics = {"A": "GD/a"}
+        coord._mqtt_client = None
+
+        await coord._poll_mqtt_status()  # must not raise
+
+        mqtt_client = MagicMock()
+        mqtt_client.connected = False
+        mqtt_client.async_publish_status_query = AsyncMock()
+        coord._mqtt_client = mqtt_client
+
+        await coord._poll_mqtt_status()
+
+        mqtt_client.async_publish_status_query.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_async_setup_schedules_without_polling_immediately(self, monkeypatch):
+        """_async_setup must NOT attempt an immediate query itself.
+
+        Regression test: _start_mqtt only spawns the connection-loop task and
+        returns before the TLS handshake/CONNACK/SUBACK complete, so a query
+        attempted here would see client.connected still False and silently
+        no-op — state would stay empty until the first scheduled tick, up to
+        a full interval later. The initial query is instead fired from
+        _on_mqtt_connected (see the test below), once a session is actually
+        confirmed live. Setup only needs to arm the recurring timer.
+        """
+        import custom_components.govee.coordinator as coord_mod
+
+        coord = self._coord_with_options({})
+
+        async def _noop():
+            return None
+
+        monkeypatch.setattr(coord, "_discover_devices", _noop)
+        monkeypatch.setattr(coord, "_start_mqtt", _noop)
+        monkeypatch.setattr(coord, "_fetch_device_topics", _noop)
+        monkeypatch.setattr(coord, "_start_openapi_events", _noop)
+        monkeypatch.setattr(coord, "_discover_leak_sensors", _noop)
+        monkeypatch.setattr(coord, "_discover_bff_thermometers", _noop)
+        monkeypatch.setattr(coord, "_async_setup_lan", _noop)
+
+        poll_called = False
+
+        async def _poll():
+            nonlocal poll_called
+            poll_called = True
+
+        scheduled = False
+
+        def _schedule():
+            nonlocal scheduled
+            scheduled = True
+
+        monkeypatch.setattr(coord, "_poll_mqtt_status", _poll)
+        monkeypatch.setattr(coord, "_schedule_status_poll", _schedule)
+        monkeypatch.setattr(coord_mod, "async_call_later", lambda *a, **k: None)
+
+        await coord._async_setup()
+
+        assert scheduled is True
+        assert poll_called is False
+
+    def test_on_mqtt_connected_polls_status_in_the_background(self):
+        """A confirmed-live session is the reliable trigger for the initial
+        (and every reconnect's) status query — see the regression test above
+        for why _async_setup itself cannot do this reliably.
+        """
+        coord = self._coord_with_options({})
+        coord._config_entry = MagicMock()
+        seen: dict[str, Any] = {}
+
+        def _capture(hass, coro, name=None):
+            seen[name] = coro
+            coro.close()  # avoid an "never awaited" warning; call site is what's under test
+
+        coord._config_entry.async_create_background_task = _capture
+
+        coord._on_mqtt_connected()
+
+        assert "govee_mqtt_connected_status_poll" in seen
+
+
 class _AsyncCM:
     """Minimal async context manager yielding a configured inner mock."""
 
@@ -2944,6 +3185,19 @@ class TestLanLifecycle:
 
         unsub.assert_called_once()
         assert coord._probe_poll_unsub is None
+
+    @pytest.mark.asyncio
+    async def test_async_shutdown_cancels_status_poll_timer(self, monkeypatch):
+        """The MQTT status-poll timer must not outlive the entry either."""
+        coord, _ = self._coord()
+        coord._api_client.close = _make_async(None)
+        unsub = MagicMock()
+        coord._status_poll_unsub = unsub
+
+        await coord.async_shutdown()
+
+        unsub.assert_called_once()
+        assert coord._status_poll_unsub is None
 
     @pytest.mark.asyncio
     async def test_setup_lan_runs_last_in_async_setup(self, monkeypatch):

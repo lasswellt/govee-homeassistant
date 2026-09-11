@@ -42,6 +42,7 @@ from .const import (
     CONF_ENABLE_SCENES,
     CONF_EXPOSE_TRANSPORT_ENTITIES,
     CONF_LAN_TARGETS,
+    CONF_MQTT_STATUS_INTERVAL,
     CONF_PASSWORD,
     CONF_POLL_INTERVAL,
     CONF_PROBE_POLL_INTERVAL,
@@ -54,6 +55,7 @@ from .const import (
     DEFAULT_ENABLE_SCENES,
     DEFAULT_EXPOSE_TRANSPORT_ENTITIES,
     DEFAULT_LAN_TARGETS,
+    DEFAULT_MQTT_STATUS_INTERVAL,
     DEFAULT_POLL_INTERVAL,
     DEFAULT_PROBE_POLL_INTERVAL,
     DEFAULT_SEGMENT_MODE,
@@ -61,8 +63,10 @@ from .const import (
     DOMAIN,
     KEY_IOT_CREDENTIALS,
     KEY_IOT_LOGIN_FAILED,
+    MAX_MQTT_STATUS_INTERVAL,
     MAX_PROBE_POLL_INTERVAL,
     MAX_WATER_DETECTOR_POLL_INTERVAL,
+    MIN_MQTT_STATUS_INTERVAL,
     MIN_PROBE_POLL_INTERVAL,
     MIN_WATER_DETECTOR_POLL_INTERVAL,
     SEGMENT_MODE_BOTH,
@@ -456,6 +460,7 @@ class GoveeConfigFlow(ConfigFlow, domain=DOMAIN):
                     DEFAULT_WATER_DETECTOR_POLL_INTERVAL
                 ),
                 CONF_PROBE_POLL_INTERVAL: DEFAULT_PROBE_POLL_INTERVAL,
+                CONF_MQTT_STATUS_INTERVAL: DEFAULT_MQTT_STATUS_INTERVAL,
             },
         )
 
@@ -791,6 +796,19 @@ class GoveeOptionsFlow(OptionsFlow):
                         vol.Range(
                             min=MIN_PROBE_POLL_INTERVAL,
                             max=MAX_PROBE_POLL_INTERVAL,
+                        ),
+                    ),
+                    vol.Optional(
+                        CONF_MQTT_STATUS_INTERVAL,
+                        default=source.get(
+                            CONF_MQTT_STATUS_INTERVAL,
+                            DEFAULT_MQTT_STATUS_INTERVAL,
+                        ),
+                    ): vol.All(
+                        vol.Coerce(int),
+                        vol.Range(
+                            min=MIN_MQTT_STATUS_INTERVAL,
+                            max=MAX_MQTT_STATUS_INTERVAL,
                         ),
                     ),
                     vol.Optional(

@@ -25,6 +25,16 @@ CONF_ENABLE_MQTT_CONTROL: Final = "enable_mqtt_control"
 CONF_WATER_DETECTOR_POLL_INTERVAL: Final = "water_detector_poll_interval"
 CONF_PROBE_POLL_INTERVAL: Final = "probe_poll_interval"
 
+# Interval (seconds) for re-querying every MQTT-controlled device's own status
+# over AWS IoT. Reverse-engineering the Govee Android app found that
+# account-topic "status" pushes are overwhelmingly *replies* to an explicit
+# per-device status query the app's device-list screen sends every ~30-60s
+# while it is on screen (`AbsOnlyIotModel.checkIotOnline()`/`Iot.A()`) —
+# devices are not reliably autonomous pushers. Without ever asking, this
+# integration could go quiet the moment the Govee app was closed. Configurable
+# so accounts with many devices can back off from the app's own cadence.
+CONF_MQTT_STATUS_INTERVAL: Final = "mqtt_status_interval"
+
 # Extra LAN discovery targets for devices the local multicast scan can't reach —
 # e.g. Govee devices on a different VLAN/subnet than Home Assistant (issue #57).
 # Free-text list (comma / newline / space separated) of device IPs, broadcast
@@ -184,6 +194,11 @@ DEFAULT_WATER_DETECTOR_POLL_INTERVAL: Final = 120  # seconds (2 minutes)
 # update rate while cooking. 30 s keeps a roast legible without hammering
 # the device; the poll only runs while its live-polling switch is on.
 DEFAULT_PROBE_POLL_INTERVAL: Final = 30  # seconds
+# Slower than the Govee app's own ~30-60s cadence on purpose: this integration
+# queries every eligible device on every tick (the app only queries whatever
+# is currently on screen), so a lower default would multiply request volume
+# with device count. 5 minutes keeps most devices fresh without that.
+DEFAULT_MQTT_STATUS_INTERVAL: Final = 300  # seconds (5 minutes)
 
 # Bounds for the configurable water-detector poll interval (seconds). The lower
 # bound keeps the unverified account-API rate limit at arm's length; the upper
@@ -192,6 +207,12 @@ MIN_WATER_DETECTOR_POLL_INTERVAL: Final = 60
 MAX_WATER_DETECTOR_POLL_INTERVAL: Final = 3600
 MIN_PROBE_POLL_INTERVAL: Final = 10
 MAX_PROBE_POLL_INTERVAL: Final = 600
+
+# Bounds for the configurable MQTT status-poll interval (seconds). The lower
+# bound matches the fastest cadence observed from the Govee app itself, so
+# this integration can never out-poll what the app already does routinely.
+MIN_MQTT_STATUS_INTERVAL: Final = 60
+MAX_MQTT_STATUS_INTERVAL: Final = 3600
 
 # Optimistic state handling
 # Grace window (seconds) during which API polls do NOT overwrite optimistic

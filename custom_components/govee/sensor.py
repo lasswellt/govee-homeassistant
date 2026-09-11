@@ -104,6 +104,13 @@ async def async_setup_entry(
         # last data received and last command sent (directional freshness).
         entities.append(GoveeAllDataLastUpdatedSensor(coordinator, device))
         entities.append(GoveeLastCommandSentSensor(coordinator, device))
+        # "Last Update Received" above is the max across every transport, so a
+        # healthy Cloud API poll keeps it looking fresh even when MQTT
+        # specifically has been silent for hours — misleading for diagnosing
+        # devices whose state depends entirely on MQTT (no capability or poll
+        # fallback for some fields). This is the MQTT-only signal.
+        if coordinator.mqtt_client is not None:
+            entities.append(GoveeMqttLastReceivedPerDeviceSensor(coordinator, device))
         # Probe thermometers get dedicated per-probe entities instead of the
         # generic temperature sensor: one reading per probe and channel
         # cannot be expressed by a single sensorTemperature value.
@@ -705,6 +712,36 @@ class GoveeLastCommandSentSensor(GoveeEntity, SensorEntity):
     @property
     def native_value(self) -> datetime | None:
         return self.coordinator.device_last_command_sent(self._device.device_id)
+
+
+class GoveeMqttLastReceivedPerDeviceSensor(GoveeEntity, SensorEntity):
+    """When this specific device last received an inbound MQTT push.
+
+    "Last Update Received" (``GoveeAllDataLastUpdatedSensor``) is the max
+    across every transport, so a healthy Cloud API poll (default every 60s)
+    keeps it looking fresh even when MQTT specifically has gone quiet for a
+    long time — misleading for diagnosing devices whose state depends
+    entirely on MQTT with no capability or poll fallback. This sensor
+    isolates the MQTT-only signal instead.
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "mqtt_last_received_device"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:cloud-sync-outline"
+
+    def __init__(
+        self,
+        coordinator: GoveeCoordinator,
+        device: GoveeDevice,
+    ) -> None:
+        super().__init__(coordinator, device)
+        self._attr_unique_id = f"{device.device_id}_mqtt_last_received"
+
+    @property
+    def native_value(self) -> datetime | None:
+        return self.coordinator.mqtt_last_receive_for(self._device.device_id)
 
 
 class GoveeConnectionModeSensor(GoveeEntity, SensorEntity):
