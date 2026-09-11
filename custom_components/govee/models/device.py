@@ -28,6 +28,15 @@ LEAK_HUB_SKUS = frozenset({"H5043", "H5044"})
 # SKU-locked here, consistent with LEAK_SENSOR_SKUS. Add new presence SKUs here.
 PRESENCE_SENSOR_SKUS = frozenset({"H5127"})
 
+# Pump-model dehumidifiers (H7152 "Max") — the drain-pump/hose variant,
+# distinct from the tank-only H7150/H7151. Live temperature and humidity
+# have no capability at all (confirmed absent from the discovered
+# capabilities list even though the app shows live readings for both) —
+# they arrive only over the AWS IoT push's BLE-format ``op.command``
+# frames (issue #114 follow-up). Detection is SKU-locked, same pattern as
+# LEAK_SENSOR_SKUS/PRESENCE_SENSOR_SKUS above.
+PUMP_DEHUMIDIFIER_SKUS = frozenset({"H7152"})
+
 # Thermo-hygrometer SKUs that the Govee *Developer* API (/user/devices) does
 # NOT return, so they never reach capability-based discovery and "don't show
 # up" (issue #86). These battery WiFi sensors are present in the account-login
@@ -653,7 +662,13 @@ class GoveeDevice:
     @property
     def supports_temperature_sensor(self) -> bool:
         """Check if device exposes a sensorTemperature property (e.g. H5109,
-        H5179). The capability is read-only — surfaced as an HA sensor."""
+        H5179), or is a pump-model dehumidifier (H7152) whose AWS IoT push
+        frames carry a reverse-engineered live temperature reading — no
+        capability exists for that one at all, see
+        GoveeDeviceState.update_temperature_from_frames. The capability path
+        is read-only — surfaced as an HA sensor either way."""
+        if self.sku.upper() in PUMP_DEHUMIDIFIER_SKUS:
+            return True
         return any(
             cap.type == CAPABILITY_PROPERTY
             and cap.instance == INSTANCE_SENSOR_TEMPERATURE
@@ -662,7 +677,13 @@ class GoveeDevice:
 
     @property
     def supports_humidity_sensor(self) -> bool:
-        """Check if device exposes a sensorHumidity property."""
+        """Check if device exposes a sensorHumidity property, or is a
+        pump-model dehumidifier (H7152) whose AWS IoT push frames carry a
+        reverse-engineered live humidity reading alongside temperature — no
+        capability exists for that one at all, see
+        GoveeDeviceState.update_temperature_from_frames."""
+        if self.sku.upper() in PUMP_DEHUMIDIFIER_SKUS:
+            return True
         return any(
             cap.type == CAPABILITY_PROPERTY and cap.instance == INSTANCE_SENSOR_HUMIDITY
             for cap in self.capabilities

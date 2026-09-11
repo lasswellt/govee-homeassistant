@@ -674,6 +674,51 @@ class GoveeDeviceState:
         self.toggles["backgroundLightToggle"] = background
         self.power_state = any_lit
 
+    def update_temperature_from_frames(self, frames: Iterable[bytes]) -> bool:
+        """Apply the live temperature and humidity readings a pump-model
+        dehumidifier (H7152) carries in its AWS IoT push.
+
+        The H7152 has no ``sensorTemperature``/``sensorHumidity`` capability
+        at all (confirmed: absent from the discovered capabilities list even
+        though the app shows live readings for both) — the app's ambient
+        readout is BLE-adjacent but reachable remotely, so it travels over
+        this same AWS IoT push, not local BLE (issue #114 follow-up).
+
+        The ``aa 10 81`` frame in ``op.command`` is the app's own BLE status
+        frame (opcode ``0x10``, sub-type ``0x81``, decoded app-side into a
+        ``ThermometerInfo``): bytes 3-5 are a single big-endian 3-byte
+        packed value, temperature and humidity each x10 and concatenated
+        (``temp_decidegrees * 1000 + humidity_decipercent``)::
+
+            raw = (frame[3] << 16) | (frame[4] << 8) | frame[5]
+            temperature_c = (raw // 1000) / 10.0
+            humidity_pct = (raw % 1000) / 10.0
+
+        Byte 3 is part of this packed value, not a fixed header byte — it
+        happens to read ``0x03`` across every captured sample because they
+        all fall in the ~19.7-26.2 degC room-temperature band, where that's
+        the packed value's high byte. Matching on it would silently stop
+        decoding outside that band, so the frame is identified by the
+        3-byte ``aa 10 81`` prefix alone.
+
+        Confirmed against real capture pairs spanning 20.9-22.4 degC with
+        zero residual error against the app's own displayed temperature and
+        humidity alike.
+
+        Args:
+            frames: Decoded (not base64) frames from ``op.command``.
+
+        Returns:
+            True if the frame was recognised.
+        """
+        for raw in frames:
+            if len(raw) >= 6 and raw[0] == 0xAA and raw[1] == 0x10 and raw[2] == 0x81:
+                packed = (raw[3] << 16) | (raw[4] << 8) | raw[5]
+                self.sensor_temperature = round((packed // 1000) / 10.0, 1)
+                self.sensor_humidity = round((packed % 1000) / 10.0, 1)
+                return True
+        return False
+
     def update_from_lan(
         self, data: LanDevStatusLike, *, skip_power_brightness: bool = False
     ) -> None:

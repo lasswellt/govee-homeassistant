@@ -145,6 +145,7 @@ from .models.device import (
     MAINS_POWERED_BATTERY_SKUS,
     MAINS_POWERED_DEVICE_TYPES,
     PROBE_THERMOMETER_BFF_SKUS,
+    PUMP_DEHUMIDIFIER_SKUS,
 )
 from .models.device import GoveeLeakSensor, GoveeLeakSensorState
 from .scene_cache import SceneCacheManager
@@ -3283,6 +3284,11 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             state.update_ceiling_fan_from_frames(
                 self._op_frames_from(state_data)
             )
+        # Pump-model dehumidifiers (H7152) carry live temperature/humidity
+        # only in these BLE-format status frames — no capability exists for
+        # either (issue #114 follow-up).
+        if device is not None and device.sku.upper() in PUMP_DEHUMIDIFIER_SKUS:
+            state.update_temperature_from_frames(self._op_frames_from(state_data))
         if device is not None and device.mqtt_outlet_count:
             self._apply_outlet_mask(device, state, state_data.get("onOff"))
 
