@@ -3396,22 +3396,16 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # BLE-capable devices would stay cloud-only until a manual reload.
         self._ble_handler.enroll_from_cache()
 
-        # Create tasks for parallel fetching
+        # Create tasks for parallel fetching. Each fetch carries its own
+        # deadline: a single timeout around the whole gather discarded every
+        # device's result as soon as one device was slow, so one unreachable
+        # bulb held the entire house's state hostage for that cycle.
         tasks = [
-            self._fetch_device_state(device_id, device)
+            self._fetch_device_state_bounded(device_id, device)
             for device_id, device in self._devices.items()
         ]
 
-        # Scale timeout based on device count (2s per device, min 30s, max 120s)
-        timeout = min(max(STATE_FETCH_TIMEOUT, len(self._devices) * 2), 120)
-
-        # Wait for all with timeout
-        try:
-            async with asyncio.timeout(timeout):
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-        except TimeoutError:
-            _LOGGER.warning("State fetch timed out after %ds", timeout)
-            return self._states
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Process results
         successful_updates = 0
@@ -3458,6 +3452,41 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             _LOGGER.debug("Govee LAN read refresh failed: %s", err)
 
         return self._states
+
+    async def _fetch_device_state_bounded(
+        self,
+        device_id: str,
+        device: GoveeDevice,
+    ) -> GoveeDeviceState | Exception:
+        """Fetch one device's state under its own deadline.
+
+        Returns the exception rather than raising so ``asyncio.gather`` keeps
+        every other device's result. ``_fetch_device_state`` already converts
+        most failures into a returned exception; this bounds the call in time
+        and catches anything that escapes, so a device that never answers
+        costs only its own slot in the poll.
+
+        Args:
+            device_id: Device identifier.
+            device: Device instance.
+
+        Returns:
+            GoveeDeviceState, or the Exception that stopped the fetch.
+        """
+        try:
+            async with asyncio.timeout(STATE_FETCH_TIMEOUT):
+                return await self._fetch_device_state(device_id, device)
+        except TimeoutError as err:
+            _LOGGER.debug(
+                "State fetch for %s timed out after %ds",
+                device_id,
+                STATE_FETCH_TIMEOUT,
+            )
+            self._record_transport_failure(device_id, "cloud_api", "poll_timeout")
+            return err
+        except Exception as err:  # noqa: BLE001 - isolate one device's failure
+            self._record_transport_failure(device_id, "cloud_api", str(err))
+            return err
 
     async def _fetch_device_state(
         self,

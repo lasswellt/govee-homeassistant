@@ -4212,3 +4212,142 @@ class TestHumidityVerificationPoll:
         await self._scheduled_coro(coord)
 
         assert record["verification_poll"] == {"error": "boom"}
+
+
+class TestPerDeviceFetchIsolation:
+    """One slow device must not void the whole poll batch.
+
+    Before the per-device deadline, a single ``asyncio.timeout`` wrapped the
+    entire ``asyncio.gather``: one unreachable device meant `_async_update_data`
+    returned the previous states wholesale, so every other device's fresh
+    reading was thrown away. On a cloud-only house that is how a bulb stayed
+    stale for hours after a power cut.
+    """
+
+    DEVICE_A = "AA:BB:CC:DD:EE:FF:00:11"
+    DEVICE_B = "AA:BB:CC:DD:EE:FF:00:22"
+
+    def _coord(self, device_ids):
+        import custom_components.govee.coordinator as coord_mod
+
+        hass = MagicMock()
+        config_entry = MagicMock()
+        config_entry.entry_id = "test_entry"
+        config_entry.options = {}
+        coord = coord_mod.GoveeCoordinator(
+            hass=hass,
+            config_entry=config_entry,
+            api_client=MagicMock(),
+            iot_credentials=None,
+            poll_interval=60,
+        )
+        caps = (
+            GoveeCapability(
+                type=CAPABILITY_ON_OFF, instance=INSTANCE_POWER, parameters={}
+            ),
+        )
+        for dev_id in device_ids:
+            coord._devices[dev_id] = GoveeDevice(
+                device_id=dev_id,
+                sku="H6008",
+                name=f"Bulb {dev_id[-2:]}",
+                device_type="devices.types.light",
+                capabilities=caps,
+                is_group=False,
+            )
+            coord._states[dev_id] = GoveeDeviceState.create_empty(dev_id)
+        coord.async_set_updated_data = MagicMock()
+        return coord, coord_mod
+
+    def _quieten(self, coord, monkeypatch):
+        """Stub the side paths _async_update_data runs around the fetch."""
+
+        async def _noop(*args, **kwargs):
+            return None
+
+        monkeypatch.setattr(coord, "_async_maybe_rediscover_devices", _noop)
+        monkeypatch.setattr(coord, "_async_maybe_rescan_lan", _noop)
+        monkeypatch.setattr(coord, "_refresh_lan_reads", _noop)
+        monkeypatch.setattr(coord._ble_handler, "enroll_from_cache", lambda: None)
+
+    @pytest.mark.asyncio
+    async def test_bounded_fetch_returns_timeout_instead_of_raising(
+        self, monkeypatch
+    ):
+        """A device that never answers yields a TimeoutError as a value."""
+        coord, coord_mod = self._coord([self.DEVICE_A])
+        monkeypatch.setattr(coord_mod, "STATE_FETCH_TIMEOUT", 0.01)
+
+        async def _hang(device_id, device):
+            await asyncio.sleep(5)
+
+        monkeypatch.setattr(coord, "_fetch_device_state", _hang)
+
+        result = await coord._fetch_device_state_bounded(
+            self.DEVICE_A, coord._devices[self.DEVICE_A]
+        )
+
+        assert isinstance(result, TimeoutError)
+
+    @pytest.mark.asyncio
+    async def test_bounded_fetch_passes_through_a_good_state(self, monkeypatch):
+        """The wrapper is transparent when the fetch answers in time."""
+        coord, _ = self._coord([self.DEVICE_A])
+        fresh = GoveeDeviceState.create_empty(self.DEVICE_A)
+        fresh.power_state = True
+
+        async def _ok(device_id, device):
+            return fresh
+
+        monkeypatch.setattr(coord, "_fetch_device_state", _ok)
+
+        result = await coord._fetch_device_state_bounded(
+            self.DEVICE_A, coord._devices[self.DEVICE_A]
+        )
+
+        assert result is fresh
+
+    @pytest.mark.asyncio
+    async def test_hanging_device_does_not_discard_the_others(self, monkeypatch):
+        """Device B's fresh reading survives Device A hanging past the deadline."""
+        coord, coord_mod = self._coord([self.DEVICE_A, self.DEVICE_B])
+        monkeypatch.setattr(coord_mod, "STATE_FETCH_TIMEOUT", 0.01)
+        self._quieten(coord, monkeypatch)
+
+        async def _fetch(device_id, device):
+            if device_id == self.DEVICE_A:
+                await asyncio.sleep(5)
+            fresh = GoveeDeviceState.create_empty(device_id)
+            fresh.power_state = True
+            fresh.source = "api"
+            return fresh
+
+        monkeypatch.setattr(coord, "_fetch_device_state", _fetch)
+
+        result = await coord._async_update_data()
+
+        # B landed despite A hanging.
+        assert result[self.DEVICE_B].power_state is True
+        assert result[self.DEVICE_B].source == "api"
+        # A kept its previous state rather than taking B's down with it.
+        assert result[self.DEVICE_A].power_state is not True
+
+    @pytest.mark.asyncio
+    async def test_batch_is_not_bounded_by_device_count(self, monkeypatch):
+        """Every device still gets its full deadline, in parallel."""
+        coord, coord_mod = self._coord([self.DEVICE_A, self.DEVICE_B])
+        monkeypatch.setattr(coord_mod, "STATE_FETCH_TIMEOUT", 0.5)
+        self._quieten(coord, monkeypatch)
+
+        async def _fetch(device_id, device):
+            await asyncio.sleep(0.05)
+            fresh = GoveeDeviceState.create_empty(device_id)
+            fresh.source = "api"
+            return fresh
+
+        monkeypatch.setattr(coord, "_fetch_device_state", _fetch)
+
+        result = await coord._async_update_data()
+
+        assert result[self.DEVICE_A].source == "api"
+        assert result[self.DEVICE_B].source == "api"
