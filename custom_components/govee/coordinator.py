@@ -521,6 +521,21 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         return self._api_client.rate_limit_reset
 
     @property
+    def api_requests_last_24h(self) -> int:
+        """Requests spent in the trailing 24 hours (hourly resolution)."""
+        return self._api_client.requests_last_24h
+
+    @property
+    def api_requests_today(self) -> int:
+        """Requests spent since UTC midnight."""
+        return self._api_client.requests_today
+
+    @property
+    def api_requests_per_hour(self) -> float:
+        """Mean requests/hour over the history held."""
+        return self._api_client.requests_per_hour
+
+    @property
     def mqtt_client(self) -> GoveeAwsIotClient | None:
         """Return MQTT client instance."""
         return self._mqtt_client

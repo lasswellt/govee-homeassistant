@@ -35,6 +35,7 @@ from .const import (
     CONF_API_TEMPERATURE_UNIT,
     DEFAULT_API_TEMPERATURE_UNIT,
     DOMAIN,
+    GOVEE_DAILY_REQUEST_LIMIT,
     resolve_fahrenheit_conversion,
 )
 from .coordinator import GoveeCoordinator
@@ -223,11 +224,21 @@ class GoveeRateLimitSensor(CoordinatorEntity["GoveeCoordinator"], SensorEntity):
         return self.coordinator.api_rate_limit_remaining
 
     @property
-    def extra_state_attributes(self) -> dict[str, int]:
-        """Return additional rate limit info."""
+    def extra_state_attributes(self) -> dict[str, float]:
+        """Return additional rate limit info.
+
+        The sensor's own value is the per-minute allowance Govee reports in
+        response headers. The daily cap is not reported by the API at all, so
+        the request counts here are measured locally — without them an install
+        has no way to tell whether it is inside the documented 10,000/day.
+        """
         return {
             "total_limit": self.coordinator.api_rate_limit_total,
             "reset_time": self.coordinator.api_rate_limit_reset,
+            "requests_today": self.coordinator.api_requests_today,
+            "requests_last_24h": self.coordinator.api_requests_last_24h,
+            "requests_per_hour": self.coordinator.api_requests_per_hour,
+            "daily_limit": GOVEE_DAILY_REQUEST_LIMIT,
         }
 
 
