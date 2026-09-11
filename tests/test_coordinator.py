@@ -4212,3 +4212,432 @@ class TestHumidityVerificationPoll:
         await self._scheduled_coro(coord)
 
         assert record["verification_poll"] == {"error": "boom"}
+
+
+class TestPerDeviceFetchIsolation:
+    """One slow device must not void the whole poll batch.
+
+    Before the per-device deadline, a single ``asyncio.timeout`` wrapped the
+    entire ``asyncio.gather``: one unreachable device meant `_async_update_data`
+    returned the previous states wholesale, so every other device's fresh
+    reading was thrown away. On a cloud-only house that is how a bulb stayed
+    stale for hours after a power cut.
+    """
+
+    DEVICE_A = "AA:BB:CC:DD:EE:FF:00:11"
+    DEVICE_B = "AA:BB:CC:DD:EE:FF:00:22"
+
+    def _coord(self, device_ids):
+        import custom_components.govee.coordinator as coord_mod
+
+        hass = MagicMock()
+        config_entry = MagicMock()
+        config_entry.entry_id = "test_entry"
+        config_entry.options = {}
+        coord = coord_mod.GoveeCoordinator(
+            hass=hass,
+            config_entry=config_entry,
+            api_client=MagicMock(),
+            iot_credentials=None,
+            poll_interval=60,
+        )
+        caps = (
+            GoveeCapability(
+                type=CAPABILITY_ON_OFF, instance=INSTANCE_POWER, parameters={}
+            ),
+        )
+        for dev_id in device_ids:
+            coord._devices[dev_id] = GoveeDevice(
+                device_id=dev_id,
+                sku="H6008",
+                name=f"Bulb {dev_id[-2:]}",
+                device_type="devices.types.light",
+                capabilities=caps,
+                is_group=False,
+            )
+            coord._states[dev_id] = GoveeDeviceState.create_empty(dev_id)
+        coord.async_set_updated_data = MagicMock()
+        return coord, coord_mod
+
+    def _quieten(self, coord, monkeypatch):
+        """Stub the side paths _async_update_data runs around the fetch."""
+
+        async def _noop(*args, **kwargs):
+            return None
+
+        monkeypatch.setattr(coord, "_async_maybe_rediscover_devices", _noop)
+        monkeypatch.setattr(coord, "_async_maybe_rescan_lan", _noop)
+        monkeypatch.setattr(coord, "_refresh_lan_reads", _noop)
+        monkeypatch.setattr(coord._ble_handler, "enroll_from_cache", lambda: None)
+
+    @pytest.mark.asyncio
+    async def test_bounded_fetch_returns_timeout_instead_of_raising(
+        self, monkeypatch
+    ):
+        """A device that never answers yields a TimeoutError as a value."""
+        coord, coord_mod = self._coord([self.DEVICE_A])
+        monkeypatch.setattr(coord_mod, "STATE_FETCH_TIMEOUT", 0.01)
+
+        async def _hang(device_id, device):
+            await asyncio.sleep(5)
+
+        monkeypatch.setattr(coord, "_fetch_device_state", _hang)
+
+        result = await coord._fetch_device_state_bounded(
+            self.DEVICE_A, coord._devices[self.DEVICE_A]
+        )
+
+        assert isinstance(result, TimeoutError)
+
+    @pytest.mark.asyncio
+    async def test_bounded_fetch_passes_through_a_good_state(self, monkeypatch):
+        """The wrapper is transparent when the fetch answers in time."""
+        coord, _ = self._coord([self.DEVICE_A])
+        fresh = GoveeDeviceState.create_empty(self.DEVICE_A)
+        fresh.power_state = True
+
+        async def _ok(device_id, device):
+            return fresh
+
+        monkeypatch.setattr(coord, "_fetch_device_state", _ok)
+
+        result = await coord._fetch_device_state_bounded(
+            self.DEVICE_A, coord._devices[self.DEVICE_A]
+        )
+
+        assert result is fresh
+
+    @pytest.mark.asyncio
+    async def test_hanging_device_does_not_discard_the_others(self, monkeypatch):
+        """Device B's fresh reading survives Device A hanging past the deadline."""
+        coord, coord_mod = self._coord([self.DEVICE_A, self.DEVICE_B])
+        monkeypatch.setattr(coord_mod, "STATE_FETCH_TIMEOUT", 0.01)
+        self._quieten(coord, monkeypatch)
+
+        async def _fetch(device_id, device):
+            if device_id == self.DEVICE_A:
+                await asyncio.sleep(5)
+            fresh = GoveeDeviceState.create_empty(device_id)
+            fresh.power_state = True
+            fresh.source = "api"
+            return fresh
+
+        monkeypatch.setattr(coord, "_fetch_device_state", _fetch)
+
+        result = await coord._async_update_data()
+
+        # B landed despite A hanging.
+        assert result[self.DEVICE_B].power_state is True
+        assert result[self.DEVICE_B].source == "api"
+        # A kept its previous state rather than taking B's down with it.
+        assert result[self.DEVICE_A].power_state is not True
+
+    @pytest.mark.asyncio
+    async def test_batch_is_not_bounded_by_device_count(self, monkeypatch):
+        """Every device still gets its full deadline, in parallel."""
+        coord, coord_mod = self._coord([self.DEVICE_A, self.DEVICE_B])
+        monkeypatch.setattr(coord_mod, "STATE_FETCH_TIMEOUT", 0.5)
+        self._quieten(coord, monkeypatch)
+
+        async def _fetch(device_id, device):
+            await asyncio.sleep(0.05)
+            fresh = GoveeDeviceState.create_empty(device_id)
+            fresh.source = "api"
+            return fresh
+
+        monkeypatch.setattr(coord, "_fetch_device_state", _fetch)
+
+        result = await coord._async_update_data()
+
+        assert result[self.DEVICE_A].source == "api"
+        assert result[self.DEVICE_B].source == "api"
+
+
+class _FakeRegistryEntry:
+    """Minimal stand-in for an entity registry entry."""
+
+    def __init__(self, unique_id: str, disabled_by: object = None) -> None:
+        self.unique_id = unique_id
+        self.disabled_by = disabled_by
+
+
+class TestSkipFullyDisabledDevices:
+    """Devices with every entity disabled must not cost a poll request.
+
+    Govee documents 10,000 requests/day. A house that migrated a batch of
+    bulbs to another protocol and disabled them here was still paying for
+    them on every cycle, for a result no entity would ever display.
+    """
+
+    ACTIVE = "AA:BB:CC:DD:EE:FF:00:11"
+    DISABLED = "AA:BB:CC:DD:EE:FF:00:22"
+
+    def _coord(self, device_ids):
+        import custom_components.govee.coordinator as coord_mod
+
+        hass = MagicMock()
+        config_entry = MagicMock()
+        config_entry.entry_id = "test_entry"
+        config_entry.options = {}
+        coord = coord_mod.GoveeCoordinator(
+            hass=hass,
+            config_entry=config_entry,
+            api_client=MagicMock(),
+            iot_credentials=None,
+            poll_interval=60,
+        )
+        caps = (
+            GoveeCapability(
+                type=CAPABILITY_ON_OFF, instance=INSTANCE_POWER, parameters={}
+            ),
+        )
+        for dev_id in device_ids:
+            coord._devices[dev_id] = GoveeDevice(
+                device_id=dev_id,
+                sku="H6008",
+                name=f"Bulb {dev_id[-2:]}",
+                device_type="devices.types.light",
+                capabilities=caps,
+                is_group=False,
+            )
+            coord._states[dev_id] = GoveeDeviceState.create_empty(dev_id)
+        coord.async_set_updated_data = MagicMock()
+        return coord, coord_mod
+
+    def _with_registry(self, coord_mod, monkeypatch, entries):
+        """Point the coordinator's registry lookup at a fixed entry list."""
+        monkeypatch.setattr(coord_mod.er, "async_get", lambda hass: MagicMock())
+        monkeypatch.setattr(
+            coord_mod.er,
+            "async_entries_for_config_entry",
+            lambda registry, entry_id: entries,
+        )
+
+    def test_all_entities_disabled_is_skipped(self, monkeypatch):
+        coord, coord_mod = self._coord([self.DISABLED])
+        self._with_registry(
+            coord_mod,
+            monkeypatch,
+            [
+                _FakeRegistryEntry(self.DISABLED, disabled_by="user"),
+                _FakeRegistryEntry(f"{self.DISABLED}_brightness", disabled_by="user"),
+            ],
+        )
+
+        assert coord._entities_all_disabled(self.DISABLED) is True
+
+    def test_one_enabled_entity_keeps_the_device_polled(self, monkeypatch):
+        coord, coord_mod = self._coord([self.ACTIVE])
+        self._with_registry(
+            coord_mod,
+            monkeypatch,
+            [
+                _FakeRegistryEntry(self.ACTIVE, disabled_by="user"),
+                _FakeRegistryEntry(f"{self.ACTIVE}_brightness", disabled_by=None),
+            ],
+        )
+
+        assert coord._entities_all_disabled(self.ACTIVE) is False
+
+    def test_device_with_no_entities_is_not_skipped(self, monkeypatch):
+        """First setup: entities don't exist yet and discovery must not stall."""
+        coord, coord_mod = self._coord([self.ACTIVE])
+        self._with_registry(coord_mod, monkeypatch, [])
+
+        assert coord._entities_all_disabled(self.ACTIVE) is False
+
+    def test_registry_failure_falls_back_to_polling(self, monkeypatch):
+        """A registry problem must never silently stop the poll."""
+        coord, coord_mod = self._coord([self.ACTIVE])
+
+        def _boom(hass):
+            raise RuntimeError("registry gone")
+
+        monkeypatch.setattr(coord_mod.er, "async_get", _boom)
+
+        assert coord._entities_all_disabled(self.ACTIVE) is False
+
+    @pytest.mark.asyncio
+    async def test_poll_skips_disabled_device_and_keeps_the_rest(self, monkeypatch):
+        coord, coord_mod = self._coord([self.ACTIVE, self.DISABLED])
+
+        async def _noop(*args, **kwargs):
+            return None
+
+        monkeypatch.setattr(coord, "_async_maybe_rediscover_devices", _noop)
+        monkeypatch.setattr(coord, "_async_maybe_rescan_lan", _noop)
+        monkeypatch.setattr(coord, "_refresh_lan_reads", _noop)
+        monkeypatch.setattr(coord._ble_handler, "enroll_from_cache", lambda: None)
+
+        self._with_registry(
+            coord_mod,
+            monkeypatch,
+            [
+                _FakeRegistryEntry(self.ACTIVE, disabled_by=None),
+                _FakeRegistryEntry(self.DISABLED, disabled_by="user"),
+            ],
+        )
+
+        fetched: list[str] = []
+
+        async def _fetch(device_id, device):
+            fetched.append(device_id)
+            fresh = GoveeDeviceState.create_empty(device_id)
+            fresh.power_state = True
+            fresh.source = "api"
+            return fresh
+
+        monkeypatch.setattr(coord, "_fetch_device_state", _fetch)
+
+        result = await coord._async_update_data()
+
+        # Only the active device cost a request.
+        assert fetched == [self.ACTIVE]
+        assert result[self.ACTIVE].source == "api"
+        # The skipped device keeps its previous state rather than being dropped.
+        assert self.DISABLED in result
+        assert result[self.DISABLED].power_state is not True
+
+    @pytest.mark.asyncio
+    async def test_all_devices_disabled_makes_no_requests(self, monkeypatch):
+        coord, coord_mod = self._coord([self.ACTIVE, self.DISABLED])
+
+        async def _noop(*args, **kwargs):
+            return None
+
+        monkeypatch.setattr(coord, "_async_maybe_rediscover_devices", _noop)
+        monkeypatch.setattr(coord._ble_handler, "enroll_from_cache", lambda: None)
+        self._with_registry(
+            coord_mod,
+            monkeypatch,
+            [
+                _FakeRegistryEntry(self.ACTIVE, disabled_by="user"),
+                _FakeRegistryEntry(self.DISABLED, disabled_by="user"),
+            ],
+        )
+
+        called = False
+
+        async def _fetch(device_id, device):
+            nonlocal called
+            called = True
+            return GoveeDeviceState.create_empty(device_id)
+
+        monkeypatch.setattr(coord, "_fetch_device_state", _fetch)
+
+        result = await coord._async_update_data()
+
+        assert called is False
+        assert result is coord._states
+
+
+class TestDeviceIdPrefixCollisions:
+    """One device must never claim another's entities.
+
+    Entity unique_ids are the device id, optionally plus an underscore-led
+    suffix. A bare `startswith` test lets a device whose id is a strict prefix
+    of another's absorb that other device's entities. Group devices carry
+    purely numeric ids, so prefixes genuinely collide in a real install.
+
+    The failure is quiet: the short device sees the long device's enabled
+    entities, concludes it is still in use, and gets polled forever. Nothing
+    breaks, the saving just silently does not happen.
+    """
+
+    SHORT = "118259"
+    LONG = "11825917"
+
+    def _coord(self, device_ids):
+        import custom_components.govee.coordinator as coord_mod
+
+        hass = MagicMock()
+        config_entry = MagicMock()
+        config_entry.entry_id = "test_entry"
+        config_entry.options = {}
+        coord = coord_mod.GoveeCoordinator(
+            hass=hass,
+            config_entry=config_entry,
+            api_client=MagicMock(),
+            iot_credentials=None,
+            poll_interval=60,
+        )
+        caps = (
+            GoveeCapability(
+                type=CAPABILITY_ON_OFF, instance=INSTANCE_POWER, parameters={}
+            ),
+        )
+        for dev_id in device_ids:
+            coord._devices[dev_id] = GoveeDevice(
+                device_id=dev_id,
+                sku="GROUP",
+                name=f"Group {dev_id}",
+                device_type="devices.types.group",
+                capabilities=caps,
+                is_group=True,
+            )
+            coord._states[dev_id] = GoveeDeviceState.create_empty(dev_id)
+        coord.async_set_updated_data = MagicMock()
+        return coord, coord_mod
+
+    def _with_registry(self, coord_mod, monkeypatch, entries):
+        monkeypatch.setattr(coord_mod.er, "async_get", lambda hass: MagicMock())
+        monkeypatch.setattr(
+            coord_mod.er,
+            "async_entries_for_config_entry",
+            lambda registry, entry_id: entries,
+        )
+
+    def test_entities_are_attributed_to_the_right_device(self, monkeypatch):
+        coord, coord_mod = self._coord([self.SHORT, self.LONG])
+        self._with_registry(coord_mod, monkeypatch, [])
+
+        assert coord._owning_device_id(self.SHORT) == self.SHORT
+        assert coord._owning_device_id(self.LONG) == self.LONG
+        assert coord._owning_device_id(f"{self.LONG}_scene_select") == self.LONG
+        assert coord._owning_device_id(f"{self.SHORT}_music_mode") == self.SHORT
+
+    def test_unrelated_unique_id_belongs_to_no_device(self, monkeypatch):
+        """Hub-level entities are keyed on the config entry, not a device."""
+        coord, coord_mod = self._coord([self.SHORT])
+        self._with_registry(coord_mod, monkeypatch, [])
+
+        assert coord._owning_device_id("test_entry_rate_limit") is None
+
+    def test_longer_devices_entities_do_not_rescue_the_shorter_one(
+        self, monkeypatch
+    ):
+        """The regression: SHORT is disabled, LONG is live, SHORT must skip."""
+        coord, coord_mod = self._coord([self.SHORT, self.LONG])
+        self._with_registry(
+            coord_mod,
+            monkeypatch,
+            [
+                _FakeRegistryEntry(self.SHORT, disabled_by="user"),
+                _FakeRegistryEntry(f"{self.SHORT}_scene_select", disabled_by="user"),
+                _FakeRegistryEntry(self.LONG, disabled_by=None),
+                _FakeRegistryEntry(f"{self.LONG}_scene_select", disabled_by=None),
+            ],
+        )
+
+        fully_disabled = coord._devices_with_all_entities_disabled()
+
+        assert self.SHORT in fully_disabled
+        assert self.LONG not in fully_disabled
+
+    def test_registry_is_walked_once_per_poll_not_once_per_device(
+        self, monkeypatch
+    ):
+        """Asking per device makes the poll quadratic in entity count."""
+        coord, coord_mod = self._coord([self.SHORT, self.LONG, "998877"])
+        calls = {"n": 0}
+
+        def _entries(registry, entry_id):
+            calls["n"] += 1
+            return [_FakeRegistryEntry(self.SHORT, disabled_by="user")]
+
+        monkeypatch.setattr(coord_mod.er, "async_get", lambda hass: MagicMock())
+        monkeypatch.setattr(coord_mod.er, "async_entries_for_config_entry", _entries)
+
+        coord._devices_with_all_entities_disabled()
+
+        assert calls["n"] == 1

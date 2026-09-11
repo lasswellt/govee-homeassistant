@@ -193,6 +193,11 @@ MAX_WATER_DETECTOR_POLL_INTERVAL: Final = 3600
 MIN_PROBE_POLL_INTERVAL: Final = 10
 MAX_PROBE_POLL_INTERVAL: Final = 600
 
+# Govee's documented developer-API quotas. The per-minute figure comes back
+# in response headers; the daily one never does, so it is carried here so
+# the rate-limit sensor can say how much of it an install has spent.
+GOVEE_DAILY_REQUEST_LIMIT: Final = 10000
+
 # Optimistic state handling
 # Grace window (seconds) during which API polls do NOT overwrite optimistic
 # power/brightness. Masks out-of-range BLE devices and slow cloud responses

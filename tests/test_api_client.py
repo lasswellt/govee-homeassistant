@@ -559,3 +559,173 @@ class TestRecordLocalCommand:
             "colorRgb",
             "brightness",
         ]
+
+
+# ==============================================================================
+# Daily request accounting
+# ==============================================================================
+
+
+class TestRequestAccounting:
+    """Local counting of requests against Govee's undocumented-in-headers cap.
+
+    Govee reports the per-minute allowance in response headers but never the
+    daily one, so an install has no way to know what it spends per day unless
+    it counts locally. These counters are the measurement that has to exist
+    before any polling behaviour is tuned.
+    """
+
+    HOUR = 3600
+    DAY = 86400
+
+    def _client(self, monkeypatch, now: float):
+        """A client whose clock is fixed at ``now`` and movable."""
+        import custom_components.govee.api.client as client_mod
+
+        clock = {"now": now}
+        monkeypatch.setattr(client_mod.time, "time", lambda: clock["now"])
+        return GoveeApiClient("test_key", session=MagicMock()), clock
+
+    def test_starts_at_zero(self, monkeypatch):
+        client, _ = self._client(monkeypatch, 1_000_000.0)
+
+        assert client.requests_today == 0
+        assert client.requests_last_24h == 0
+        assert client.requests_per_hour == 0.0
+
+    def test_counts_each_request(self, monkeypatch):
+        client, _ = self._client(monkeypatch, 1_000_000.0)
+
+        for _ in range(5):
+            client._note_request()
+
+        assert client.requests_today == 5
+        assert client.requests_last_24h == 5
+
+    def test_buckets_by_hour(self, monkeypatch):
+        client, clock = self._client(monkeypatch, 1_000_000.0)
+
+        client._note_request()
+        clock["now"] += self.HOUR
+        client._note_request()
+        client._note_request()
+
+        assert client.requests_last_24h == 3
+        assert len(client._request_buckets) == 2
+
+    def test_drops_history_older_than_24h(self, monkeypatch):
+        client, clock = self._client(monkeypatch, 1_000_000.0)
+
+        client._note_request()
+        # Walk forward a full day; the first hour must fall out of the window.
+        clock["now"] += 24 * self.HOUR
+        client._note_request()
+
+        assert client.requests_last_24h == 1
+        assert len(client._request_buckets) == 1
+
+    def test_history_is_bounded(self, monkeypatch):
+        """A week of traffic must not grow the history without limit."""
+        client, clock = self._client(monkeypatch, 1_000_000.0)
+
+        for _ in range(24 * 7):
+            client._note_request()
+            clock["now"] += self.HOUR
+
+        assert len(client._request_buckets) <= 24
+
+    def test_requests_today_resets_at_utc_midnight(self, monkeypatch):
+        # Start mid-day so the rollover is unambiguous.
+        start = 1_000_000.0
+        client, clock = self._client(monkeypatch, start)
+
+        client._note_request()
+        client._note_request()
+        assert client.requests_today == 2
+
+        # Cross into the next UTC day.
+        clock["now"] = (int(start // self.DAY) + 1) * self.DAY + 10
+        assert client.requests_today == 0
+
+        client._note_request()
+        assert client.requests_today == 1
+
+    def test_rolling_window_survives_the_day_rollover(self, monkeypatch):
+        """The trailing-24h figure is independent of the calendar reset."""
+        start = 1_000_000.0
+        client, clock = self._client(monkeypatch, start)
+
+        client._note_request()
+        clock["now"] = (int(start // self.DAY) + 1) * self.DAY + 10
+        client._note_request()
+
+        assert client.requests_today == 1
+        assert client.requests_last_24h == 2
+
+    def test_requests_per_hour_averages_held_history(self, monkeypatch):
+        client, clock = self._client(monkeypatch, 1_000_000.0)
+
+        for _ in range(10):
+            client._note_request()
+        clock["now"] += self.HOUR
+        for _ in range(20):
+            client._note_request()
+
+        # Two hourly buckets holding 30 requests.
+        assert client.requests_per_hour == 15.0
+
+    def test_idle_hours_count_against_the_average(self, monkeypatch):
+        """An hour with no traffic still happened.
+
+        Buckets only exist for hours that saw requests, so dividing by buckets
+        held would drop a restart or a quiet spell out of the denominator and
+        report a rate higher than the install actually ran at.
+        """
+        client, clock = self._client(monkeypatch, 1_000_000.0)
+
+        for _ in range(10):
+            client._note_request()
+        # Three silent hours - a restart, say - then traffic again.
+        clock["now"] += 4 * self.HOUR
+        for _ in range(10):
+            client._note_request()
+
+        # 20 requests across a 5-hour span, not across the 2 hours recorded.
+        assert client.requests_per_hour == 4.0
+
+    def test_single_hour_of_traffic_averages_to_itself(self, monkeypatch):
+        client, _ = self._client(monkeypatch, 1_000_000.0)
+
+        for _ in range(7):
+            client._note_request()
+
+        assert client.requests_per_hour == 7.0
+
+    @pytest.mark.asyncio
+    async def test_handle_response_counts_the_request(self, monkeypatch):
+        """Every answered request is counted, whatever the status."""
+        client, _ = self._client(monkeypatch, 1_000_000.0)
+
+        response = MagicMock()
+        response.headers = {}
+        response.status = 200
+        response.json = AsyncMock(return_value={"code": 200, "data": {}})
+
+        await client._handle_response(response)
+
+        assert client.requests_today == 1
+
+    @pytest.mark.asyncio
+    async def test_rejected_request_still_counts(self, monkeypatch):
+        """A 429 consumed the allowance too — not counting it hides the spend."""
+        client, _ = self._client(monkeypatch, 1_000_000.0)
+
+        response = MagicMock()
+        response.headers = {}
+        response.status = 429
+        response.json = AsyncMock(return_value={"message": "rate limited"})
+
+        with pytest.raises(GoveeRateLimitError):
+            await client._handle_response(response)
+
+        assert client.requests_today == 1

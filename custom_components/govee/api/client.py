@@ -7,6 +7,7 @@ Implements IApiClient protocol.
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from collections import deque
 from datetime import datetime, timezone
@@ -31,6 +32,11 @@ if TYPE_CHECKING:
     from ..models.commands import DeviceCommand
 
 _LOGGER = logging.getLogger(__name__)
+
+# How many hourly buckets of request history to keep. Govee documents a
+# 10,000/day cap but returns no daily counter of its own, so the only way
+# to know what an install actually spends is to count locally.
+REQUEST_HISTORY_HOURS = 24
 
 # Govee API v2.0 endpoints
 API_BASE = "https://openapi.api.govee.com/router/api/v1"
@@ -97,6 +103,15 @@ class GoveeApiClient:
         self.rate_limit_remaining: int = 100
         self.rate_limit_total: int = 100
         self.rate_limit_reset: int = 0
+
+        # Local request accounting. The per-minute allowance comes back in
+        # response headers, but the daily one does not, so it is counted here.
+        # Hourly buckets rather than per-request timestamps: 24 small entries
+        # instead of tens of thousands, which is ample to answer "are we over
+        # the daily cap, and by how much".
+        self._request_buckets: deque[list[int]] = deque()
+        self._request_day: int = 0
+        self._requests_today: int = 0
 
         # Last raw API responses, retained for diagnostics (redacted at dump
         # time). Lets a diagnostics download include exactly what the device
@@ -178,6 +193,76 @@ class GoveeApiClient:
             "Accept": "application/json",
         }
 
+    def _note_request(self) -> None:
+        """Record that one request was spent against the Govee quota.
+
+        Counted for every response, including 429s and errors: a rejected
+        request still consumed the allowance.
+
+        Called from response handling, so the totals are a FLOOR, not an exact
+        figure. A request that dies below the HTTP layer — connection timeout,
+        DNS failure, a retry chain exhausting itself — never reaches here but
+        may still have been counted on Govee's side. Undercounting is the safe
+        direction for the question these numbers exist to answer: if the floor
+        already exceeds the daily cap, the real spend certainly does.
+        """
+        now = time.time()
+        hour = int(now // 3600)
+        day = int(now // 86400)
+
+        if day != self._request_day:
+            self._request_day = day
+            self._requests_today = 0
+        self._requests_today += 1
+
+        if self._request_buckets and self._request_buckets[-1][0] == hour:
+            self._request_buckets[-1][1] += 1
+        else:
+            self._request_buckets.append([hour, 1])
+
+        cutoff = hour - (REQUEST_HISTORY_HOURS - 1)
+        while self._request_buckets and self._request_buckets[0][0] < cutoff:
+            self._request_buckets.popleft()
+
+    @property
+    def requests_last_24h(self) -> int:
+        """Requests spent in the trailing 24 hours, to hourly resolution."""
+        cutoff = int(time.time() // 3600) - (REQUEST_HISTORY_HOURS - 1)
+        return sum(count for hour, count in self._request_buckets if hour >= cutoff)
+
+    @property
+    def requests_today(self) -> int:
+        """Requests spent since UTC midnight.
+
+        Tracked alongside the rolling figure because a daily cap resets on a
+        clock boundary, and the two answer different questions: this one says
+        how much of today's allowance is gone, the rolling one says what a
+        steady state actually costs.
+        """
+        if int(time.time() // 86400) != self._request_day:
+            return 0
+        return self._requests_today
+
+    @property
+    def requests_per_hour(self) -> float:
+        """Mean requests/hour across the span of history held, 0.0 if none.
+
+        Divided by hours *elapsed*, not by buckets recorded. A bucket only
+        exists for an hour that saw traffic, so averaging over buckets would
+        drop idle hours out of the denominator — a restart or a reload would
+        make the rate read higher than it truly was, on an attribute people
+        will read as a plain average.
+
+        This describes what has happened over the window held; it is not a
+        projection of what the next 24 hours will cost.
+        """
+        cutoff = int(time.time() // 3600) - (REQUEST_HISTORY_HOURS - 1)
+        buckets = [b for b in self._request_buckets if b[0] >= cutoff]
+        if not buckets:
+            return 0.0
+        hours_elapsed = buckets[-1][0] - buckets[0][0] + 1
+        return round(sum(count for _, count in buckets) / hours_elapsed, 1)
+
     def _update_rate_limits(self, headers: Any) -> None:
         """Update rate limit tracking from response headers."""
         if "X-RateLimit-Remaining" in headers:
@@ -216,6 +301,7 @@ class GoveeApiClient:
             GoveeDeviceNotFoundError: 400 for missing device.
             GoveeApiError: Other API errors.
         """
+        self._note_request()
         self._update_rate_limits(response.headers)
 
         try:

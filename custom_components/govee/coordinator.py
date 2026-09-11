@@ -19,6 +19,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -518,6 +519,21 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
     def api_rate_limit_reset(self) -> int:
         """Return API rate limit reset time."""
         return self._api_client.rate_limit_reset
+
+    @property
+    def api_requests_last_24h(self) -> int:
+        """Requests spent in the trailing 24 hours (hourly resolution)."""
+        return self._api_client.requests_last_24h
+
+    @property
+    def api_requests_today(self) -> int:
+        """Requests spent since UTC midnight."""
+        return self._api_client.requests_today
+
+    @property
+    def api_requests_per_hour(self) -> float:
+        """Mean requests/hour over the history held."""
+        return self._api_client.requests_per_hour
 
     @property
     def mqtt_client(self) -> GoveeAwsIotClient | None:
@@ -3396,26 +3412,38 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # BLE-capable devices would stay cloud-only until a manual reload.
         self._ble_handler.enroll_from_cache()
 
-        # Create tasks for parallel fetching
-        tasks = [
-            self._fetch_device_state(device_id, device)
+        # Devices the user has fully disabled cost a cloud request per poll and
+        # give nothing back. On an install where a batch of devices moved to
+        # another protocol, that is the largest slice of the daily API budget.
+        fully_disabled = self._devices_with_all_entities_disabled()
+        pollable = {
+            device_id: device
             for device_id, device in self._devices.items()
+            if device_id not in fully_disabled
+        }
+        skipped = len(self._devices) - len(pollable)
+        if skipped:
+            _LOGGER.debug(
+                "Skipping %d device(s) with all entities disabled", skipped
+            )
+
+        if not pollable:
+            return self._states
+
+        # Create tasks for parallel fetching. Each fetch carries its own
+        # deadline: a single timeout around the whole gather discarded every
+        # device's result as soon as one device was slow, so one unreachable
+        # bulb held the entire house's state hostage for that cycle.
+        tasks = [
+            self._fetch_device_state_bounded(device_id, device)
+            for device_id, device in pollable.items()
         ]
 
-        # Scale timeout based on device count (2s per device, min 30s, max 120s)
-        timeout = min(max(STATE_FETCH_TIMEOUT, len(self._devices) * 2), 120)
-
-        # Wait for all with timeout
-        try:
-            async with asyncio.timeout(timeout):
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-        except TimeoutError:
-            _LOGGER.warning("State fetch timed out after %ds", timeout)
-            return self._states
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Process results
         successful_updates = 0
-        for device_id, result in zip(self._devices.keys(), results):
+        for device_id, result in zip(pollable.keys(), results):
             if isinstance(result, GoveeDeviceState):
                 self._states[device_id] = result
                 successful_updates += 1
@@ -3458,6 +3486,112 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             _LOGGER.debug("Govee LAN read refresh failed: %s", err)
 
         return self._states
+
+    def _owning_device_id(self, unique_id: str) -> str | None:
+        """Map an entity registry unique_id back to the device it belongs to.
+
+        Entity unique_ids are either the bare device id (entity.py) or the
+        device id followed by an underscore-prefixed suffix (every SUFFIX_* in
+        const.py starts with "_"). Testing a bare prefix instead would let one
+        device claim another's entities whenever one id is a prefix of the
+        other, which is not hypothetical: group devices carry purely numeric
+        ids, where prefix collisions are easy.
+        """
+        if unique_id in self._devices:
+            return unique_id
+        head = unique_id.split("_", 1)[0]
+        if head in self._devices:
+            return head
+        # Device ids are MAC-shaped or numeric, so the split above resolves
+        # them all; this is the safety net if that ever stops being true.
+        for device_id in self._devices:
+            if unique_id.startswith(f"{device_id}_"):
+                return device_id
+        return None
+
+    def _devices_with_all_entities_disabled(self) -> set[str]:
+        """Device ids that have registry entities and every one is disabled.
+
+        Polling such a device buys nothing: no entity will ever show the
+        result. Each one still spends a request against Govee's documented
+        10,000/day budget every cycle.
+
+        The common cause is a device that a better transport took over — moved
+        to Matter, or controlled locally by another integration — whose cloud
+        twin was disabled here rather than removed. Those twins stay in the
+        account device list forever, so on a mature install they can outnumber
+        the devices still in use and dominate the daily spend. The cause does
+        not matter to this check: any device the user has fully switched off is
+        one the cloud need not be asked about.
+
+        Built in a single pass over the registry. Asking per device would walk
+        the whole entity list once per device on every poll, which is
+        quadratic for no gain.
+
+        A device with no registry entries is deliberately absent from the
+        result — that is the normal state during first setup, before platforms
+        have added their entities, and skipping then would stall discovery.
+        A registry failure returns an empty set, so nothing is ever skipped
+        because the lookup broke.
+        """
+        try:
+            registry = er.async_get(self.hass)
+            entries = er.async_entries_for_config_entry(
+                registry, self._config_entry.entry_id
+            )
+        except Exception as err:  # noqa: BLE001 - registry must never fail a poll
+            _LOGGER.debug("Entity registry unavailable, polling every device: %s", err)
+            return set()
+
+        has_entities: set[str] = set()
+        has_enabled: set[str] = set()
+        for entry in entries:
+            device_id = self._owning_device_id(entry.unique_id)
+            if device_id is None:
+                continue
+            has_entities.add(device_id)
+            if entry.disabled_by is None:
+                has_enabled.add(device_id)
+        return has_entities - has_enabled
+
+    def _entities_all_disabled(self, device_id: str) -> bool:
+        """True when this one device has entities and all of them are disabled."""
+        return device_id in self._devices_with_all_entities_disabled()
+
+    async def _fetch_device_state_bounded(
+        self,
+        device_id: str,
+        device: GoveeDevice,
+    ) -> GoveeDeviceState | Exception:
+        """Fetch one device's state under its own deadline.
+
+        Returns the exception rather than raising so ``asyncio.gather`` keeps
+        every other device's result. ``_fetch_device_state`` already converts
+        most failures into a returned exception; this bounds the call in time
+        and catches anything that escapes, so a device that never answers
+        costs only its own slot in the poll.
+
+        Args:
+            device_id: Device identifier.
+            device: Device instance.
+
+        Returns:
+            GoveeDeviceState, or the Exception that stopped the fetch.
+        """
+        try:
+            async with asyncio.timeout(STATE_FETCH_TIMEOUT):
+                return await self._fetch_device_state(device_id, device)
+        except TimeoutError as err:
+            _LOGGER.debug(
+                "State fetch for %s timed out after %ds",
+                device_id,
+                STATE_FETCH_TIMEOUT,
+            )
+            self._record_transport_failure(device_id, "cloud_api", "poll_timeout")
+            return err
+        except Exception as err:  # noqa: BLE001 - isolate one device's failure
+            self._record_transport_failure(device_id, "cloud_api", str(err))
+            return err
 
     async def _fetch_device_state(
         self,
