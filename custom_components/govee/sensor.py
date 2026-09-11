@@ -231,6 +231,13 @@ class GoveeRateLimitSensor(CoordinatorEntity["GoveeCoordinator"], SensorEntity):
         response headers. The daily cap is not reported by the API at all, so
         the request counts here are measured locally — without them an install
         has no way to tell whether it is inside the documented 10,000/day.
+
+        What the counts include: every REST call the integration makes, which
+        is the state poll plus periodic device rediscovery and scene fetches —
+        not the state poll alone. They will therefore read somewhat above what
+        "devices x polls per day" predicts. That gap is the point, not a
+        defect: the daily cap applies to all of it, so a figure that counted
+        only the poll would understate the spend.
         """
         return {
             "total_limit": self.coordinator.api_rate_limit_total,

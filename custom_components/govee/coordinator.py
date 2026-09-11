@@ -3491,9 +3491,15 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
         Polling a device whose entities are all disabled buys nothing: no
         entity will ever show the result. Each one still spends a request
-        against Govee's documented 10,000/day budget every cycle, so on an
-        install where a batch of devices has been migrated to another
-        protocol and switched off here, they can dominate the daily spend.
+        against Govee's documented 10,000/day budget every cycle.
+
+        The common cause is a device that a better transport took over —
+        moved to Matter, or controlled locally by another integration — whose
+        cloud twin was then disabled here rather than removed. Those twins
+        stay in the account device list forever, so on a mature install they
+        can outnumber the devices still in use and dominate the daily spend.
+        The cause does not matter to this check: any device the user has
+        fully switched off is one the cloud need not be asked about.
 
         A device with no registry entries is deliberately NOT skipped — that
         is the normal state during first setup, before platforms have added
