@@ -19,6 +19,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -3396,20 +3397,37 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # BLE-capable devices would stay cloud-only until a manual reload.
         self._ble_handler.enroll_from_cache()
 
+        # Devices the user has fully disabled cost a cloud request per poll and
+        # give nothing back. On an install where a batch of devices moved to
+        # another protocol, that is the largest slice of the daily API budget.
+        pollable = {
+            device_id: device
+            for device_id, device in self._devices.items()
+            if not self._entities_all_disabled(device_id)
+        }
+        skipped = len(self._devices) - len(pollable)
+        if skipped:
+            _LOGGER.debug(
+                "Skipping %d device(s) with all entities disabled", skipped
+            )
+
+        if not pollable:
+            return self._states
+
         # Create tasks for parallel fetching. Each fetch carries its own
         # deadline: a single timeout around the whole gather discarded every
         # device's result as soon as one device was slow, so one unreachable
         # bulb held the entire house's state hostage for that cycle.
         tasks = [
             self._fetch_device_state_bounded(device_id, device)
-            for device_id, device in self._devices.items()
+            for device_id, device in pollable.items()
         ]
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Process results
         successful_updates = 0
-        for device_id, result in zip(self._devices.keys(), results):
+        for device_id, result in zip(pollable.keys(), results):
             if isinstance(result, GoveeDeviceState):
                 self._states[device_id] = result
                 successful_updates += 1
@@ -3452,6 +3470,37 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             _LOGGER.debug("Govee LAN read refresh failed: %s", err)
 
         return self._states
+
+    def _entities_all_disabled(self, device_id: str) -> bool:
+        """True when this device has entities and every one of them is disabled.
+
+        Polling a device whose entities are all disabled buys nothing: no
+        entity will ever show the result. Each one still spends a request
+        against Govee's documented 10,000/day budget every cycle, so on an
+        install where a batch of devices has been migrated to another
+        protocol and switched off here, they can dominate the daily spend.
+
+        A device with no registry entries is deliberately NOT skipped — that
+        is the normal state during first setup, before platforms have added
+        their entities, and skipping then would stall discovery.
+        """
+        try:
+            registry = er.async_get(self.hass)
+            entries = er.async_entries_for_config_entry(
+                registry, self._config_entry.entry_id
+            )
+        except Exception as err:  # noqa: BLE001 - registry must never fail a poll
+            _LOGGER.debug("Entity registry unavailable, polling %s: %s", device_id, err)
+            return False
+
+        found = False
+        for entry in entries:
+            if not entry.unique_id.startswith(device_id):
+                continue
+            found = True
+            if entry.disabled_by is None:
+                return False
+        return found
 
     async def _fetch_device_state_bounded(
         self,
