@@ -28,6 +28,13 @@ LEAK_HUB_SKUS = frozenset({"H5043", "H5044"})
 # SKU-locked here, consistent with LEAK_SENSOR_SKUS. Add new presence SKUs here.
 PRESENCE_SENSOR_SKUS = frozenset({"H5127"})
 
+# Pump-model dehumidifiers (H7152 "Max") — the only variant with a drain
+# pump/hose, distinct from the H7150/H7151 tank-only models. Neither the
+# pump-fault flag nor the hose-connection mode is a capability or event; both
+# are decoded from AWS IoT push frames (see GoveeDeviceState). Detection is
+# therefore SKU-locked, issue #114 follow-up.
+PUMP_DEHUMIDIFIER_SKUS = frozenset({"H7152"})
+
 # Thermo-hygrometer SKUs that the Govee *Developer* API (/user/devices) does
 # NOT return, so they never reach capability-based discovery and "don't show
 # up" (issue #86). These battery WiFi sensors are present in the account-login
@@ -615,6 +622,18 @@ class GoveeDevice:
             cap.type == CAPABILITY_EVENT and cap.instance == INSTANCE_WATER_FULL_EVENT
             for cap in self.capabilities
         )
+
+    @property
+    def supports_pump_state(self) -> bool:
+        """Check if device can report a pump-fault flag (H7152 "Max").
+
+        Not a capability (absent from the discovered capabilities list even
+        while the fault is active), not on the OpenAPI event channel, and not
+        in the flat MQTT ``state`` keys — confirmed empty across live fault
+        captures. Detection is SKU-locked (``PUMP_DEHUMIDIFIER_SKUS``) rather
+        than capability-based, since the flag never surfaces there at all.
+        """
+        return self.sku.upper() in PUMP_DEHUMIDIFIER_SKUS
 
     @property
     def supports_presence_event(self) -> bool:

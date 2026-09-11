@@ -3283,6 +3283,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             state.update_ceiling_fan_from_frames(
                 self._op_frames_from(state_data)
             )
+        if device is not None and device.supports_pump_state:
+            frames = self._op_frames_from(state_data)
+            state.update_pump_state_from_frames(frames)
+            state.update_dehumidifier_mode_from_frames(frames)
         if device is not None and device.mqtt_outlet_count:
             self._apply_outlet_mask(device, state, state_data.get("onOff"))
 
@@ -3620,6 +3624,16 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                     state.battery = existing_state.battery
                 if existing_state.water_full is not None and state.water_full is None:
                     state.water_full = existing_state.water_full
+                # Pump-abnormal and hose-connection mode (H7152) are decoded
+                # only from AWS IoT push frames — the Developer poll has no
+                # field for either, so the fresh state has them as None.
+                # Preserve the push-derived values across the poll or the
+                # sensors flicker to "unknown" every poll cycle (same class
+                # of bug as #118/#124).
+                if existing_state.pump_state is not None and state.pump_state is None:
+                    state.pump_state = existing_state.pump_state
+                if existing_state.dehumidifier_mode is not None and state.dehumidifier_mode is None:
+                    state.dehumidifier_mode = existing_state.dehumidifier_mode
                 # Occupancy (H5127) is a momentary push event; the developer
                 # /device/state poll returns only `online` for it (never the
                 # bodyAppearedEvent value), so the fresh state has presence=None.

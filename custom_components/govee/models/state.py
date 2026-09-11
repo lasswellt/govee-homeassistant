@@ -264,6 +264,26 @@ class GoveeDeviceState:
     # H7150 — see GoveeDevice.auto_mode_value_is_setpoint.
     configured_humidity: int | None = None
 
+    # Pump-fault status for pump-model dehumidifiers (H7152 "Max"). Not
+    # advertised as a capability by the Developer API and never carried in the
+    # flat MQTT ``state`` keys or the OpenAPI event-push channel (confirmed by
+    # a live capture during an actual clogged-drain fault, with zero footprint
+    # on either channel) — only in the AWS IoT status push's ``op.command``
+    # BLE-format frames, decoded in :meth:`update_pump_state_from_frames`.
+    # Live/level flag, not edge-latched like water_full: it clears on its own
+    # once the app's pump-fault alert clears.
+    pump_state: bool | None = None
+
+    # Hose-connection mode for pump-model dehumidifiers (H7152 "Max"),
+    # decoded from byte offset 9 of the AWS IoT ``aa 19`` status frame.
+    # "pump" = drain hose physically connected (app's "Pump Mode"); "tank" =
+    # hose disconnected, draining into the bucket instead (app's "Water Tank
+    # Mode"). Confirmed directly against the app: repeatedly pressing and
+    # holding the device's physical hose-connection button (~5s per hold)
+    # toggled the app's own Mode label in exact lockstep with this byte on
+    # every single transition. See update_dehumidifier_mode_from_frames.
+    dehumidifier_mode: str | None = None  # "pump" | "tank"
+
     # Standalone water-leak detector trip (H5054, issue #62). True when water
     # is detected. Arrives via the bodyAppearedEvent event capability — the
     # developer-API device-state poll only returns `online`, so the trip
@@ -938,6 +958,55 @@ class GoveeDeviceState:
             self.active_scene = None
             self.active_scene_name = None
             self.active_diy_scene = None
+
+    def update_pump_state_from_frames(self, frames: Iterable[bytes]) -> bool:
+        """Apply the pump-fault flag an H7152 carries in its AWS IoT push.
+
+        Reverse-engineered from a live clogged-drain capture: the app's
+        pump-fault alert corresponds to byte offset 12 of an ``aa 17``
+        status frame in the push's ``op.command`` list — ``0x00`` normally,
+        ``0x01`` while the fault is active, back to ``0x00`` once it clears.
+        Confirmed against three captures (before / during / after an actual
+        fault) with the checksum consistent across all three, and stable at
+        ``0x00`` across unrelated mode changes in between. Also confirmed
+        live against two independent real-world faults caught by the shipped
+        sensor, one of which lined up with Home Assistant's own recorded
+        state-transition timestamp to the second.
+
+        Args:
+            frames: Decoded (not base64) frames from ``op.command``.
+
+        Returns:
+            True if the frame was recognised.
+        """
+        for raw in frames:
+            if len(raw) >= 13 and raw[0] == 0xAA and raw[1] == 0x17:
+                self.pump_state = raw[12] == 0x01
+                return True
+        return False
+
+    def update_dehumidifier_mode_from_frames(self, frames: Iterable[bytes]) -> bool:
+        """Apply hose-connection mode from an H7152's AWS IoT ``aa 19``
+        status frame.
+
+        Reverse-engineered from a live test pressing and holding the
+        device's own hose-connection button repeatedly (~5s per hold):
+        byte offset 9 toggled in exact lockstep with the app's Mode label on
+        every single press, in both directions — ``0x01`` while the drain
+        hose reads as connected ("Pump Mode"), ``0x00`` once it doesn't
+        ("Water Tank Mode").
+
+        Args:
+            frames: Decoded (not base64) frames from ``op.command``.
+
+        Returns:
+            True if the frame was recognised.
+        """
+        for raw in frames:
+            if len(raw) >= 10 and raw[0] == 0xAA and raw[1] == 0x19:
+                self.dehumidifier_mode = "pump" if raw[9] == 0x01 else "tank"
+                return True
+        return False
 
     @classmethod
     def create_empty(cls, device_id: str) -> GoveeDeviceState:

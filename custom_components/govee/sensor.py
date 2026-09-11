@@ -119,6 +119,11 @@ async def async_setup_entry(
 
         if device.supports_temperature_sensor:
             entities.append(GoveeTemperatureSensor(coordinator, device))
+        # Hose-connection mode for pump-model dehumidifiers (H7152 "Max") —
+        # same SKU gate as the pump-fault sensor, since both are decoded
+        # from the same AWS IoT push (issue #114 follow-up).
+        if device.supports_pump_state:
+            entities.append(GoveeDehumidifierModeSensor(coordinator, device))
         # Second probe on dual-probe SKUs (#150). Gated on a reading actually
         # being present rather than on the SKU: the same model ships with one
         # or two probes connected, and a device with nothing on probe 2 must
@@ -411,6 +416,35 @@ class GoveeTemperatureSensor(_BffThermometerAvailabilityMixin, SensorEntity):
             return (value - 32.0) * (5.0 / 9.0)
 
         return value
+
+
+class GoveeDehumidifierModeSensor(GoveeEntity, SensorEntity):
+    """Hose-connection mode for pump-model dehumidifiers (H7152 "Max").
+
+    "Pump" while the drain hose reads as connected (the app's "Pump Mode");
+    "Water Tank" once it doesn't (draining into the bucket instead). Decoded
+    from byte offset 9 of the AWS IoT push's ``aa 19`` status frame — see
+    :meth:`GoveeDeviceState.update_dehumidifier_mode_from_frames` for how
+    this was confirmed (a live test toggling the device's own hose-detection
+    button, watched against the app's own Mode label).
+    """
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "govee_dehumidifier_mode"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = ["pump", "tank"]
+    _attr_icon = "mdi:pump"
+
+    def __init__(self, coordinator: GoveeCoordinator, device: GoveeDevice) -> None:
+        """Initialize the dehumidifier-mode sensor."""
+        super().__init__(coordinator, device)
+        self._attr_unique_id = f"{device.device_id}_dehumidifier_mode"
+
+    @property
+    def native_value(self) -> str | None:
+        """Return "pump" or "tank", or None until a push has landed."""
+        state = self.device_state
+        return state.dehumidifier_mode if state else None
 
 
 class GoveeSecondProbeTemperatureSensor(GoveeTemperatureSensor):
