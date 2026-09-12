@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="192" viewBox="0 0 480 192" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
+<rect x="0.5" y="0.5" width="479" height="191" rx="12" fill="#161b22" stroke="#30363d"/>
+<text x="20" y="34" font-size="11" fill="#8b949e" font-weight="600" text-anchor="start" letter-spacing="1.5">ACTIVE INSTALLS</text>
+<text x="20" y="88" font-size="46" fill="#41BDF5" font-weight="700" text-anchor="start">5.2k</text>
+<text x="24" y="116" font-size="12" fill="#3fb950" font-weight="600" text-anchor="start">▲ +166 / 7d</text>
+<defs><linearGradient id="ig" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#41BDF5" stop-opacity="0.45"/><stop offset="1" stop-color="#41BDF5" stop-opacity="0"/></linearGradient></defs>
+<path d="M190,162 L190.0,162.0 L196.9,159.9 L203.8,156.5 L210.8,153.1 L217.7,149.4 L224.6,146.6 L231.5,143.4 L238.5,140.6 L245.4,137.1 L252.3,134.4 L259.2,132.5 L266.2,129.3 L273.1,126.1 L280.0,126.1 L286.9,119.7 L293.8,115.8 L300.8,112.7 L307.7,109.9 L314.6,109.9 L321.5,103.7 L328.5,103.7 L335.4,97.6 L342.3,97.6 L349.2,93.1 L356.2,90.6 L363.1,86.5 L370.0,82.7 L376.9,79.9 L383.8,74.7 L390.8,71.2 L397.7,68.2 L404.6,67.0 L411.5,64.6 L418.5,64.6 L425.4,58.6 L432.3,54.0 L439.2,50.2 L446.2,47.0 L453.1,47.0 L460.0,40.0 L460.0,162 Z" fill="url(#ig)"/>
+<polyline points="190.0,162.0 196.9,159.9 203.8,156.5 210.8,153.1 217.7,149.4 224.6,146.6 231.5,143.4 238.5,140.6 245.4,137.1 252.3,134.4 259.2,132.5 266.2,129.3 273.1,126.1 280.0,126.1 286.9,119.7 293.8,115.8 300.8,112.7 307.7,109.9 314.6,109.9 321.5,103.7 328.5,103.7 335.4,97.6 342.3,97.6 349.2,93.1 356.2,90.6 363.1,86.5 370.0,82.7 376.9,79.9 383.8,74.7 390.8,71.2 397.7,68.2 404.6,67.0 411.5,64.6 418.5,64.6 425.4,58.6 432.3,54.0 439.2,50.2 446.2,47.0 453.1,47.0 460.0,40.0" fill="none" stroke="#41BDF5" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="460.0" cy="40.0" r="3.5" fill="#41BDF5"/>
+<text x="20" y="178" font-size="10.5" fill="#8b949e" font-weight="400" text-anchor="start">HA analytics · of 11k domain total</text>
+<text x="460" y="178" font-size="10.5" fill="#8b949e" font-weight="400" text-anchor="end">updated 2026-09-12 06:40 UTC</text>
+</svg>
