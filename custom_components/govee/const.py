@@ -11,6 +11,7 @@ CONF_PASSWORD: Final = "password"
 
 # Options keys
 CONF_POLL_INTERVAL: Final = "poll_interval"
+CONF_DAILY_REQUEST_BUDGET: Final = "daily_request_budget"
 CONF_ENABLE_GROUPS: Final = "enable_groups"
 CONF_ENABLE_SCENES: Final = "enable_scenes"
 CONF_ENABLE_DIY_SCENES: Final = "enable_diy_scenes"
@@ -221,6 +222,17 @@ MAX_PROBE_POLL_INTERVAL: Final = 600
 # in response headers; the daily one never does, so it is carried here so
 # the rate-limit sensor can say how much of it an install has spent.
 GOVEE_DAILY_REQUEST_LIMIT: Final = 10000
+# How much of that daily allowance this integration is willing to spend on
+# its own polling, leaving headroom for user commands, scene fetches, device
+# rediscovery and the retries none of those count. The adaptive poll pacing
+# in request_budget.py aims to land the day's spend on this figure.
+DEFAULT_DAILY_REQUEST_BUDGET: Final = 9000
+MIN_DAILY_REQUEST_BUDGET: Final = 500
+MAX_DAILY_REQUEST_BUDGET: Final = GOVEE_DAILY_REQUEST_LIMIT
+# Ceiling (seconds) the budget pacing may stretch the poll to. Fifteen
+# minutes: slow enough to keep a large install inside the cap, fast enough
+# that a device with no local transport is never more than that behind.
+MAX_BUDGET_PACED_INTERVAL: Final = 900
 # Bounds for the configurable MQTT status-poll interval (seconds). The lower
 # bound matches the fastest cadence observed from the Govee app itself, so
 # this integration can never out-poll what the app already does routinely.

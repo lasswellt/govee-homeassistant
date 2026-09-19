@@ -90,6 +90,7 @@
         "description": "If you have RGBIC devices, per-device segment settings will appear after submitting.",
         "data": {
           "poll_interval": "Polling interval (seconds)",
+          "daily_request_budget": "Daily cloud request budget",
           "water_detector_poll_interval": "Leak sensor polling interval (seconds)",
           "probe_poll_interval": "Probe thermometer polling interval (seconds)",
           "mqtt_status_interval": "MQTT status re-query interval (seconds)",
@@ -103,6 +104,7 @@
         },
         "data_description": {
           "poll_interval": "How often every device is polled over the Govee cloud API for its state. Real-time updates over MQTT and LAN arrive between polls. Range 30 to 300 seconds, default 60. Each poll spends one request per device against Govee's limit of 100 per minute and 10,000 per day.",
+          "daily_request_budget": "How many Govee cloud requests per day this integration aims to spend on polling. The polling interval is stretched automatically so the day's spend lands on this figure. Govee's own cap is 10,000 per day; the default of 9,000 leaves headroom for commands, scene lookups and device rediscovery.",
           "api_temperature_unit": "Auto (default) first uses the temperature unit your Govee account reports for the device, then falls back to converting the thermometers known to report Fahrenheit (for example H5179, H5109, H5110, H5111, H5053, H5075, H5100), and trusts the rest. Choose Fahrenheit if a reading still looks about 1.8 times too high (for example 74 instead of 23), or Celsius to force no conversion. Govee's API omits unit metadata, so the value cannot always be auto-detected.",
           "water_detector_poll_interval": "How often standalone Govee water and leak detectors (for example H5054) are checked for a leak. These RF-only sensors have no push channel, so a leak surfaces with up to this much delay. Lower reacts faster but makes more account API calls; raise it if you have many detectors. Range 60 to 3600 seconds, default 120. Requires email and password login; ignored if you have no such detectors.",
           "probe_poll_interval": "How often an armed probe (cooking) thermometer such as the H5192 is read over AWS IoT while its Live polling switch is on. These devices never volunteer a reading, so this interval is the update rate. Costs battery rather than API quota. Range 10 to 600 seconds, default 30. Requires email and password login.",
