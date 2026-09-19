@@ -266,6 +266,30 @@ class GoveeApiClient:
         hours_elapsed = buckets[-1][0] - buckets[0][0] + 1
         return round(sum(count for _, count in buckets) / hours_elapsed, 1)
 
+    @property
+    def rate_limit_reset_in(self) -> int:
+        """Seconds until the rate-limit window resets, per the last response.
+
+        ``X-RateLimit-Reset`` is sent in two shapes in the wild — an absolute
+        epoch timestamp, or a plain seconds-until-reset — and Govee does not
+        document which. Both are accepted: a value in the future is read as
+        an epoch stamp and differenced, anything else small enough to be a
+        duration is taken as one, and a past epoch stamp reads as 0.
+
+        Returns 0 when nothing is known, which callers read as "no reason to
+        back off".
+        """
+        reset = self.rate_limit_reset
+        if reset <= 0:
+            return 0
+        now = int(time.time())
+        if reset > now:
+            return reset - now
+        # Too large to be a duration, and not in the future: a stale stamp.
+        if reset > 86400:
+            return 0
+        return reset
+
     def _update_rate_limits(self, headers: Any) -> None:
         """Update rate limit tracking from response headers."""
         if "X-RateLimit-Remaining" in headers:

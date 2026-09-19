@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import math
 
-__all__ = ["budget_paced_interval", "cloud_poll_divisor", "local_reading_is_fresh"]
+__all__ = ["budget_paced_interval", "cloud_poll_divisor", "header_backoff_interval", "local_reading_is_fresh"]
 
 
 def budget_paced_interval(
@@ -172,3 +172,41 @@ def cloud_poll_divisor(
     if seconds_since_change is None or seconds_since_change < idle_after:
         return 1
     return max(1, idle_divisor)
+
+
+def header_backoff_interval(
+    *,
+    remaining: int,
+    reset_in: int,
+    requests_per_cycle: int,
+    base_interval: int,
+    max_interval: int,
+) -> int | None:
+    """Interval to back off to on the API's own numbers, or None to proceed.
+
+    Govee returns ``X-RateLimit-Remaining`` and ``X-RateLimit-Reset`` on every
+    response. The integration parsed them and showed them on a sensor, but
+    throttled on nothing but a hard 429 — so the only way to learn the window
+    was exhausted was to exhaust it, which costs a request and a repair issue
+    every time.
+
+    The test is affordability, not a fixed threshold: back off when the
+    allowance left is smaller than one poll cycle costs, because that cycle
+    would be the one that earns the 429. Reset then dictates how long — the
+    counter refills at the reset, so waiting for it is the exact wait needed.
+
+    Args:
+        remaining: ``X-RateLimit-Remaining`` from the last response.
+        reset_in: Seconds until that allowance refills.
+        requests_per_cycle: What one poll cycle would cost right now.
+        base_interval: The interval in force; a back-off never shortens it.
+        max_interval: Ceiling on the back-off.
+
+    Returns:
+        The interval to back off to, or None when the cycle is affordable.
+    """
+    if requests_per_cycle <= 0 or reset_in <= 0:
+        return None
+    if remaining >= requests_per_cycle:
+        return None
+    return max(base_interval, min(reset_in, max_interval))

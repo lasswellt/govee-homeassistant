@@ -114,7 +114,12 @@ from .const import (
     RECENT_COMMAND_WINDOW_SECONDS,
     resolve_fahrenheit_conversion,
 )
-from .request_budget import budget_paced_interval, cloud_poll_divisor, local_reading_is_fresh
+from .request_budget import (
+    budget_paced_interval,
+    cloud_poll_divisor,
+    header_backoff_interval,
+    local_reading_is_fresh,
+)
 from .models import (
     GoveeDevice,
     GoveeDeviceState,
@@ -3573,6 +3578,12 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if not pollable:
             return self._states
 
+        # Govee's own numbers get the last word: if the allowance left will
+        # not cover this cycle, wait for it to refill rather than spending
+        # the requests that would earn a 429.
+        if self._defer_for_rate_limit_headers(len(pollable)):
+            return self._states
+
         # Create tasks for parallel fetching. Each fetch carries its own
         # deadline: a single timeout around the whole gather discarded every
         # device's result as soon as one device was slow, so one unreachable
@@ -3711,6 +3722,45 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         """True when this one device has entities and all of them are disabled."""
         return device_id in self._devices_with_all_entities_disabled()
 
+    def _defer_for_rate_limit_headers(self, requests_per_cycle: int) -> bool:
+        """Back off on the API's reported allowance, before a 429 happens.
+
+        ``X-RateLimit-Remaining``/``-Reset`` were parsed and displayed but
+        throttled nothing; only a hard 429 reacted, which meant the only way
+        to learn the window was exhausted was to exhaust it.
+
+        Returns True when this cycle should be skipped entirely, having set
+        ``update_interval`` to cover the reset. Isolated from bad readings:
+        a header that does not parse as a number leaves the poll alone.
+        """
+        remaining = self._api_client.rate_limit_remaining
+        reset_in = self._api_client.rate_limit_reset_in
+        if not isinstance(remaining, int) or not isinstance(reset_in, int):
+            # Headers that did not parse as numbers are no reason to stall a
+            # poll. Tested explicitly, because silently deferring forever on
+            # a malformed header would look exactly like a dead integration.
+            _LOGGER.debug("Rate-limit headers unusable, polling as normal")
+            return False
+
+        interval = header_backoff_interval(
+            remaining=remaining,
+            reset_in=reset_in,
+            requests_per_cycle=requests_per_cycle,
+            base_interval=int(self._original_update_interval.total_seconds()),
+            max_interval=MAX_BUDGET_PACED_INTERVAL,
+        )
+        if interval is None:
+            return False
+
+        _LOGGER.debug(
+            "Govee reports %s request(s) left, this cycle needs %d — deferring %ds until reset",
+            self._api_client.rate_limit_remaining,
+            requests_per_cycle,
+            interval,
+        )
+        self.update_interval = timedelta(seconds=interval)
+        return True
+
     def _note_state_change(self, device_id: str, state: GoveeDeviceState) -> None:
         """Stamp the time a freshly read state differs from the one held.
 
@@ -3847,21 +3897,22 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
         now = time.time()
         seconds_remaining_today = int(86400 - (now % 86400))
-        try:
-            interval = budget_paced_interval(
-                base_interval=int(self._original_update_interval.total_seconds()),
-                requests_today=int(self._api_client.requests_today),
-                requests_per_cycle=requests_per_cycle,
-                seconds_remaining_today=seconds_remaining_today,
-                daily_budget=int(self._daily_request_budget),
-                max_interval=MAX_BUDGET_PACED_INTERVAL,
-            )
-        except (TypeError, ValueError) as err:
-            # Pacing is an optimisation, never a reason to fail a poll: if a
-            # counter reads back as something non-numeric, leave the interval
-            # where the user put it.
-            _LOGGER.debug("Budget pacing skipped, counters unusable: %s", err)
+        requests_today = self._api_client.requests_today
+        if not isinstance(requests_today, int) or not isinstance(self._daily_request_budget, int):
+            # Pacing is an optimisation, never a reason to disturb a poll: if
+            # a counter reads back as something non-numeric, leave the
+            # interval where the user put it.
+            _LOGGER.debug("Budget pacing skipped, counters unusable")
             return
+
+        interval = budget_paced_interval(
+            base_interval=int(self._original_update_interval.total_seconds()),
+            requests_today=requests_today,
+            requests_per_cycle=requests_per_cycle,
+            seconds_remaining_today=seconds_remaining_today,
+            daily_budget=self._daily_request_budget,
+            max_interval=MAX_BUDGET_PACED_INTERVAL,
+        )
         paced = timedelta(seconds=interval)
         if paced != self.update_interval:
             _LOGGER.debug(
