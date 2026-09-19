@@ -233,6 +233,17 @@ MAX_DAILY_REQUEST_BUDGET: Final = GOVEE_DAILY_REQUEST_LIMIT
 # minutes: slow enough to keep a large install inside the cap, fast enough
 # that a device with no local transport is never more than that behind.
 MAX_BUDGET_PACED_INTERVAL: Final = 900
+
+# Transports that deliver the same state fields as the /device/state poll at
+# no cost against Govee's quota. A reading from one of these newer than the
+# poll interval makes that cycle's cloud read redundant.
+LOCAL_STATE_TRANSPORTS: Final[frozenset[str]] = frozenset({"lan", "mqtt", "ble"})
+# How many cloud reads in a row a device may skip on the strength of local
+# readings before one is forced anyway. Five, so a device with a healthy
+# local transport still reconciles against the cloud roughly every sixth
+# cycle — cheap insurance against a local transport that reports confidently
+# wrong values, and against cloud-only fields the local frames never carry.
+MAX_LOCAL_FRESH_SKIPS: Final = 5
 # Bounds for the configurable MQTT status-poll interval (seconds). The lower
 # bound matches the fastest cadence observed from the Govee app itself, so
 # this integration can never out-poll what the app already does routinely.

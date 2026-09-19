@@ -95,7 +95,9 @@ from .const import (
     LAN_WRITE_CONFIRM_TIMEOUT,
     LAN_WRITE_SUPPRESS_SECONDS,
     LAN_WRITE_SUPPRESS_THRESHOLD,
+    LOCAL_STATE_TRANSPORTS,
     MAX_BUDGET_PACED_INTERVAL,
+    MAX_LOCAL_FRESH_SKIPS,
     MAX_MQTT_STATUS_INTERVAL,
     MAX_PROBE_POLL_INTERVAL,
     MAX_WATER_DETECTOR_POLL_INTERVAL,
@@ -109,7 +111,7 @@ from .const import (
     OPTIMISTIC_GRACE_CAP_SECONDS,
     resolve_fahrenheit_conversion,
 )
-from .request_budget import budget_paced_interval
+from .request_budget import budget_paced_interval, local_reading_is_fresh
 from .models import (
     GoveeDevice,
     GoveeDeviceState,
@@ -395,6 +397,11 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         self._daily_request_budget: int = int(
             config_entry.options.get(CONF_DAILY_REQUEST_BUDGET, DEFAULT_DAILY_REQUEST_BUDGET)
         )
+
+        # Consecutive cloud reads skipped per device because a local
+        # (LAN/MQTT/BLE) reading was fresher. Capped at MAX_LOCAL_FRESH_SKIPS
+        # so a device is always reconciled against the cloud eventually.
+        self._local_fresh_skips: dict[str, int] = {}
 
         # Developer-API thermometers whose live reading we also pull from the
         # BFF device list (e.g. H5110/H5075 via H5151, H5179). The BFF call
@@ -3535,6 +3542,17 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if skipped:
             _LOGGER.debug("Skipping %d device(s) with all entities disabled", skipped)
 
+        # Devices a local transport has already reported on more recently than
+        # one poll interval need no cloud read this cycle (see
+        # _locally_fresh_devices).
+        locally_fresh = self._locally_fresh_devices(pollable)
+        if locally_fresh:
+            _LOGGER.debug(
+                "Skipping %d cloud read(s) covered by a fresher local reading",
+                len(locally_fresh),
+            )
+            pollable = {device_id: device for device_id, device in pollable.items() if device_id not in locally_fresh}
+
         if not pollable:
             return self._states
 
@@ -3674,6 +3692,60 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
     def _entities_all_disabled(self, device_id: str) -> bool:
         """True when this one device has entities and all of them are disabled."""
         return device_id in self._devices_with_all_entities_disabled()
+
+    def _locally_fresh_devices(self, pollable: dict[str, GoveeDevice]) -> set[str]:
+        """Devices whose newest local reading makes this cycle's cloud read moot.
+
+        LAN, MQTT and BLE carry the same power/brightness/colour fields the
+        cloud poll returns, and they cost nothing against Govee's quota. The
+        integration used to overlay them *after* the cloud call was already
+        spent; checking first is where the bulk of the saving on a large
+        install comes from.
+
+        A device qualifies only when it already has state to serve (nothing is
+        ever skipped before its first successful read) and when
+        :func:`request_budget.local_reading_is_fresh` agrees the reading is
+        recent enough and the skip run is not yet capped. The skip counter is
+        reset for every device that is going to be polled, so a device cycles
+        between skipping and reconciling rather than drifting.
+        """
+        window = (self.update_interval or self._original_update_interval).total_seconds()
+        now = dt_util.utcnow()
+        fresh: set[str] = set()
+        for device_id in pollable:
+            if device_id not in self._states:
+                continue
+            latest = self._local_last_updated(device_id)
+            age = None if latest is None else (now - latest).total_seconds()
+            if local_reading_is_fresh(
+                seconds_since_local_reading=age,
+                freshness_window=window,
+                consecutive_skips=self._local_fresh_skips.get(device_id, 0),
+                max_consecutive_skips=MAX_LOCAL_FRESH_SKIPS,
+            ):
+                fresh.add(device_id)
+                self._local_fresh_skips[device_id] = self._local_fresh_skips.get(device_id, 0) + 1
+            else:
+                self._local_fresh_skips.pop(device_id, None)
+        return fresh
+
+    def _local_last_updated(self, device_id: str) -> datetime | None:
+        """Newest inbound reading across the local transports, or None.
+
+        Deliberately excludes ``cloud_api``: the question is whether a local
+        source has made the cloud read redundant, and the cloud's own last
+        success cannot answer that.
+        """
+        latest: datetime | None = None
+        for kind in TRANSPORT_KINDS:
+            if kind not in LOCAL_STATE_TRANSPORTS:
+                continue
+            health = self._transport.get(device_id, kind)
+            if health is None or health.last_success_ts is None:
+                continue
+            if latest is None or health.last_success_ts > latest:
+                latest = health.last_success_ts
+        return latest
 
     def _apply_budget_pacing(self, requests_per_cycle: int) -> None:
         """Stretch the poll interval so the day's spend lands on the budget.

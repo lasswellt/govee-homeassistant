@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import math
 
-__all__ = ["budget_paced_interval"]
+__all__ = ["budget_paced_interval", "local_reading_is_fresh"]
 
 
 def budget_paced_interval(
@@ -85,3 +85,46 @@ def budget_paced_interval(
 
     required = math.ceil(max(seconds_remaining_today, 0) / affordable_cycles)
     return max(base_interval, min(required, max_interval))
+
+
+def local_reading_is_fresh(
+    *,
+    seconds_since_local_reading: float | None,
+    freshness_window: float,
+    consecutive_skips: int,
+    max_consecutive_skips: int,
+) -> bool:
+    """Whether a local reading is recent enough to stand in for a cloud read.
+
+    LAN, MQTT and BLE all deliver the same power/brightness/colour fields the
+    /device/state poll returns, and they cost nothing against Govee's quota.
+    Until now they were applied as an overlay *after* the cloud call had
+    already been spent, so a device with a healthy local transport paid for a
+    cloud read it did not need — on a 19-device install that is the bulk of
+    the ~27,600 requests/day.
+
+    Two guards keep this from turning into silent staleness:
+
+    * the reading has to be newer than one poll interval, so a transport that
+      has gone quiet stops qualifying immediately; and
+    * a device is never skipped more than ``max_consecutive_skips`` times in
+      a row, so even a local transport that keeps reporting confidently
+      wrong values is reconciled against the cloud regularly.
+
+    Args:
+        seconds_since_local_reading: Age of the newest LAN/MQTT/BLE reading,
+            or None when no local transport has ever delivered one.
+        freshness_window: How old a local reading may be and still count,
+            normally the current poll interval.
+        consecutive_skips: Cloud reads already skipped in a row for this
+            device.
+        max_consecutive_skips: Cap on that run.
+
+    Returns:
+        True when the cloud read can be skipped this cycle.
+    """
+    if seconds_since_local_reading is None:
+        return False
+    if consecutive_skips >= max_consecutive_skips:
+        return False
+    return 0 <= seconds_since_local_reading < freshness_window
