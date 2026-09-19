@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import math
 
-__all__ = ["budget_paced_interval", "local_reading_is_fresh"]
+__all__ = ["budget_paced_interval", "cloud_poll_divisor", "local_reading_is_fresh"]
 
 
 def budget_paced_interval(
@@ -128,3 +128,47 @@ def local_reading_is_fresh(
     if consecutive_skips >= max_consecutive_skips:
         return False
     return 0 <= seconds_since_local_reading < freshness_window
+
+
+def cloud_poll_divisor(
+    *,
+    is_off: bool,
+    seconds_since_change: float | None,
+    seconds_since_command: float | None,
+    idle_after: float,
+    recent_command_window: float,
+    idle_divisor: int,
+) -> int:
+    """How many cycles a device may sit out, as a "poll one cycle in N".
+
+    Polling cadence should follow how likely a device is to have changed.
+    A bulb that has been off and unchanged all afternoon is the least likely
+    thing in the house to need asking about, and on a large install those
+    devices are most of the poll. One that was commanded a moment ago is the
+    most likely, because the cloud may not have caught up with the write yet.
+
+    Precedence is deliberate: a recent command always wins, even over a
+    device that still reads as off, because the poll right after a command is
+    the one that confirms it landed.
+
+    Args:
+        is_off: Whether the device's last known power state was off.
+        seconds_since_change: Age of the last observed state change, or None
+            when nothing has changed since startup.
+        seconds_since_command: Age of the last command sent to the device,
+            any transport, or None when none has been.
+        idle_after: How long off-and-unchanged before a device counts as idle.
+        recent_command_window: How long after a command a device stays on the
+            fast cadence.
+        idle_divisor: Poll one cycle in this many while idle.
+
+    Returns:
+        1 for the normal cadence, ``idle_divisor`` for an idle device.
+    """
+    if seconds_since_command is not None and 0 <= seconds_since_command < recent_command_window:
+        return 1
+    if not is_off:
+        return 1
+    if seconds_since_change is None or seconds_since_change < idle_after:
+        return 1
+    return max(1, idle_divisor)

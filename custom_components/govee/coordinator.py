@@ -86,6 +86,8 @@ from .const import (
     DEFAULT_WATER_DETECTOR_POLL_INTERVAL,
     DEVICE_REDISCOVERY_INTERVAL,
     DOMAIN,
+    IDLE_DEVICE_AFTER_SECONDS,
+    IDLE_DEVICE_POLL_DIVISOR,
     IOT_RELOGIN_MIN_INTERVAL,
     KEY_IOT_CREDENTIALS,
     KEY_IOT_LOGIN_FAILED,
@@ -109,9 +111,10 @@ from .const import (
     MQTT_STATUS_QUERY_QUARANTINE_STRIKES,
     MQTT_STATUS_QUERY_SPACING,
     OPTIMISTIC_GRACE_CAP_SECONDS,
+    RECENT_COMMAND_WINDOW_SECONDS,
     resolve_fahrenheit_conversion,
 )
-from .request_budget import budget_paced_interval, local_reading_is_fresh
+from .request_budget import budget_paced_interval, cloud_poll_divisor, local_reading_is_fresh
 from .models import (
     GoveeDevice,
     GoveeDeviceState,
@@ -402,6 +405,13 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # (LAN/MQTT/BLE) reading was fresher. Capped at MAX_LOCAL_FRESH_SKIPS
         # so a device is always reconciled against the cloud eventually.
         self._local_fresh_skips: dict[str, int] = {}
+
+        # Cycle counter per device, used to hold idle devices to one poll in
+        # IDLE_DEVICE_POLL_DIVISOR (see _idle_devices_to_skip).
+        self._poll_cycle_counts: dict[str, int] = {}
+        # When each device's cloud state was last observed to change. Drives
+        # the idle-cadence test; absent until a change is seen.
+        self._state_changed_at: dict[str, datetime] = {}
 
         # Developer-API thermometers whose live reading we also pull from the
         # BFF device list (e.g. H5110/H5075 via H5151, H5179). The BFF call
@@ -3553,6 +3563,13 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             )
             pollable = {device_id: device for device_id, device in pollable.items() if device_id not in locally_fresh}
 
+        # Devices that have been off and unchanged for a while are asked
+        # about less often (see _idle_devices_to_skip).
+        idle = self._idle_devices_to_skip(pollable)
+        if idle:
+            _LOGGER.debug("Holding back %d idle device(s) this cycle", len(idle))
+            pollable = {device_id: device for device_id, device in pollable.items() if device_id not in idle}
+
         if not pollable:
             return self._states
 
@@ -3569,6 +3586,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         outage_errors: list[Exception] = []
         for device_id, result in zip(pollable.keys(), results):
             if isinstance(result, GoveeDeviceState):
+                self._note_state_change(device_id, result)
                 self._states[device_id] = result
                 successful_updates += 1
             elif isinstance(result, GoveeAuthError):
@@ -3692,6 +3710,66 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
     def _entities_all_disabled(self, device_id: str) -> bool:
         """True when this one device has entities and all of them are disabled."""
         return device_id in self._devices_with_all_entities_disabled()
+
+    def _note_state_change(self, device_id: str, state: GoveeDeviceState) -> None:
+        """Stamp the time a freshly read state differs from the one held.
+
+        Only the user-visible control fields count. Anything that ticks on
+        its own — a temperature reading, an RSSI — would make every device
+        look permanently busy and defeat the idle cadence entirely.
+        """
+        previous = self._states.get(device_id)
+        if previous is None:
+            return
+        changed = (
+            previous.power_state,
+            previous.brightness,
+            previous.color,
+            previous.color_temp_kelvin,
+        ) != (
+            state.power_state,
+            state.brightness,
+            state.color,
+            state.color_temp_kelvin,
+        )
+        if changed:
+            self._state_changed_at[device_id] = dt_util.utcnow()
+
+    def _idle_devices_to_skip(self, pollable: dict[str, GoveeDevice]) -> set[str]:
+        """Devices sitting out this cycle because they have been idle.
+
+        A device that has been off with no observed change for
+        IDLE_DEVICE_AFTER_SECONDS is polled one cycle in
+        IDLE_DEVICE_POLL_DIVISOR; a device commanded inside
+        RECENT_COMMAND_WINDOW_SECONDS is always polled, because the poll
+        right after a write is the one that confirms it landed.
+
+        The counter advances for every candidate device each cycle, so the
+        cadence stays in step even while a device moves in and out of idle.
+        """
+        now = dt_util.utcnow()
+        skipped: set[str] = set()
+        for device_id in pollable:
+            count = self._poll_cycle_counts.get(device_id, 0)
+            self._poll_cycle_counts[device_id] = count + 1
+
+            state = self._states.get(device_id)
+            if state is None:
+                continue
+
+            changed_at = self._state_changed_at.get(device_id)
+            commanded_at = self.device_last_command_sent(device_id)
+            divisor = cloud_poll_divisor(
+                is_off=not state.power_state,
+                seconds_since_change=None if changed_at is None else (now - changed_at).total_seconds(),
+                seconds_since_command=None if commanded_at is None else (now - commanded_at).total_seconds(),
+                idle_after=IDLE_DEVICE_AFTER_SECONDS,
+                recent_command_window=RECENT_COMMAND_WINDOW_SECONDS,
+                idle_divisor=IDLE_DEVICE_POLL_DIVISOR,
+            )
+            if divisor > 1 and count % divisor != 0:
+                skipped.add(device_id)
+        return skipped
 
     def _locally_fresh_devices(self, pollable: dict[str, GoveeDevice]) -> set[str]:
         """Devices whose newest local reading makes this cycle's cloud read moot.

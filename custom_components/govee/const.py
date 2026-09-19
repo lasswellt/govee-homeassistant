@@ -244,6 +244,20 @@ LOCAL_STATE_TRANSPORTS: Final[frozenset[str]] = frozenset({"lan", "mqtt", "ble"}
 # cycle — cheap insurance against a local transport that reports confidently
 # wrong values, and against cloud-only fields the local frames never carry.
 MAX_LOCAL_FRESH_SKIPS: Final = 5
+
+# How long a device must have been off with no observed state change before
+# its poll cadence is stretched. Half an hour: long enough that a light
+# someone is actively using never qualifies, short enough that a house's
+# overnight devices drop off the fast cadence for most of the night.
+IDLE_DEVICE_AFTER_SECONDS: Final = 1800
+# Poll an idle device one cycle in this many. Four, so a device switched on
+# outside Home Assistant is still noticed within four intervals, while
+# costing a quarter of what it did.
+IDLE_DEVICE_POLL_DIVISOR: Final = 4
+# How long after a command a device stays on the fast cadence regardless of
+# what it reports. Covers slow cloud propagation, so the poll that confirms
+# a write actually landed is never the one that got skipped.
+RECENT_COMMAND_WINDOW_SECONDS: Final = 300
 # Bounds for the configurable MQTT status-poll interval (seconds). The lower
 # bound matches the fastest cadence observed from the Govee app itself, so
 # this integration can never out-poll what the app already does routinely.
