@@ -7,12 +7,14 @@ outage (and the recovery) once. Per-device failures keep the last state.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.govee.api.exceptions import GoveeApiError, GoveeConnectionError
+from custom_components.govee.const import DEFAULT_DAILY_REQUEST_BUDGET
 from custom_components.govee.coordinator import GoveeCoordinator
 from custom_components.govee.models import GoveeDevice, GoveeDeviceState
 from custom_components.govee.transport_health import TransportHealthTracker
@@ -48,12 +50,21 @@ def coordinator(light_capabilities):
     for did in coord._devices:
         coord._transport.ensure(did)
     coord._api_client = MagicMock()
+    coord._api_client.requests_today = 0
     coord._mqtt_client = None
     coord._ble_devices = {}
     coord._bff_thermometer_ids = set()
     coord._lan_client = None
     coord._lan_devices = {}
     coord._rate_limited = False
+    # Budget pacing runs on every poll and reads these three. __init__ sets
+    # them; this fixture builds the coordinator with object.__new__, so they
+    # have to be supplied by hand like the rest. Two devices against the
+    # default budget paces to the base interval, so the outage assertions
+    # below are unaffected.
+    coord.update_interval = timedelta(seconds=60)
+    coord._original_update_interval = timedelta(seconds=60)
+    coord._daily_request_budget = DEFAULT_DAILY_REQUEST_BUDGET
     coord._async_maybe_rediscover_devices = AsyncMock()
     coord._ble_handler = MagicMock()
     coord._devices_with_all_entities_disabled = MagicMock(return_value=set())
