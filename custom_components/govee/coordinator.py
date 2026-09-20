@@ -3733,8 +3733,13 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         ``update_interval`` to cover the reset. Isolated from bad readings:
         a header that does not parse as a number leaves the poll alone.
         """
-        remaining = self._api_client.rate_limit_remaining
-        reset_in = self._api_client.rate_limit_reset_in
+        # Annotated as unknown on purpose. These are parsed from response
+        # headers, so the guard below is a real runtime check rather than a
+        # formality — typing them as the int the client promises would make
+        # the check dead code to a type checker while it still fires in a
+        # test, which is worse than either alone.
+        remaining: object = self._api_client.rate_limit_remaining
+        reset_in: object = self._api_client.rate_limit_reset_in
         if not isinstance(remaining, int) or not isinstance(reset_in, int):
             # Headers that did not parse as numbers are no reason to stall a
             # poll. Tested explicitly, because silently deferring forever on
@@ -3897,8 +3902,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
         now = time.time()
         seconds_remaining_today = int(86400 - (now % 86400))
-        requests_today = self._api_client.requests_today
-        if not isinstance(requests_today, int) or not isinstance(self._daily_request_budget, int):
+        # Same reasoning as _defer_for_rate_limit_headers: checked, not trusted.
+        requests_today: object = self._api_client.requests_today
+        daily_budget: object = self._daily_request_budget
+        if not isinstance(requests_today, int) or not isinstance(daily_budget, int):
             # Pacing is an optimisation, never a reason to disturb a poll: if
             # a counter reads back as something non-numeric, leave the
             # interval where the user put it.
@@ -3910,7 +3917,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             requests_today=requests_today,
             requests_per_cycle=requests_per_cycle,
             seconds_remaining_today=seconds_remaining_today,
-            daily_budget=self._daily_request_budget,
+            daily_budget=daily_budget,
             max_interval=MAX_BUDGET_PACED_INTERVAL,
         )
         paced = timedelta(seconds=interval)
