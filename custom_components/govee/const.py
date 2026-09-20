@@ -256,7 +256,15 @@ MQTT_STATUS_QUERY_QUARANTINE_STRIKES: Final = 2
 #     per its FAHRENHEIT_REPORTING_SKUS entry above): confirmed via
 #     diagnostics showing the identical quarantine signature (issue #197
 #     follow-up).
-MQTT_STATUS_QUERY_EXCLUDED_SKUS: Final = frozenset({"H5110", "H5220", "H5111"})
+#   H5075 (thermo-hygrometer): same class again — BLE-advertising, no network
+#     stack of its own, listed on the account with a topic it never answers.
+#     Confirmed on v2026.9.11 with six units on one account, each taking the
+#     session down on its own reconnect cycle: the sweep at the 300s mark
+#     dropped the session, and the five reconnects that followed died ~1s
+#     after querying the next unit, so MQTT was effectively dead for 30
+#     minutes after every restart while the six burned through their strikes
+#     (issue #195 follow-up).
+MQTT_STATUS_QUERY_EXCLUDED_SKUS: Final = frozenset({"H5110", "H5220", "H5111", "H5075"})
 
 # Optimistic state handling
 # Grace window (seconds) during which API polls do NOT overwrite optimistic

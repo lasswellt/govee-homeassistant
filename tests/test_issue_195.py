@@ -228,7 +228,7 @@ class TestBlameAndQuarantine:
 
 
 class TestPermanentSkuExclusion:
-    """H5110, H5220, H5111 (issue #195 and #197 follow-ups): BLE/LoRa
+    """H5110, H5220, H5111, H5075 (issue #195 and #197 follow-ups): BLE/LoRa
     gateway-bridged sensors that AWS IoT always refuses a direct status
     query to. Left out of the sweep outright rather than burning through the
     quarantine on every unit — confirmed independently for each SKU via
@@ -256,6 +256,28 @@ class TestPermanentSkuExclusion:
         be queried, so none can ever drop the session or reach quarantine.
         """
         coord, client = _coord(devices=("A", "B", "C", "D"), skus={"B": "H5110", "C": "H5110", "D": "H5110"})
+
+        await coord._poll_mqtt_status()
+
+        assert client.async_publish_status_query.await_args_list == [call("GD/a")]
+        assert coord._status_query_strikes == {}
+        assert coord.mqtt_status_query_strikes == []
+
+    @pytest.mark.asyncio
+    async def test_six_h5075_units_cost_no_strikes(self, sleeps):
+        """The H5075 report: six units on one account, measured on v2026.9.11.
+
+        Each took the session down on its own reconnect cycle, two strikes
+        apiece, so MQTT stayed unusable for about half an hour after every
+        restart. Nothing on the account could be read over MQTT in that
+        window — including the devices whose only transport is ptReal over
+        that same session, such as an H5192 probe thermometer mid-cook.
+        """
+        units = ("B", "C", "D", "E", "F", "G")
+        coord, client = _coord(
+            devices=("A",) + units,
+            skus={device_id: "H5075" for device_id in units},
+        )
 
         await coord._poll_mqtt_status()
 
