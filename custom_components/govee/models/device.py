@@ -13,7 +13,12 @@ from typing import Any
 
 from homeassistant.helpers.device_registry import DeviceInfo
 
-from ..const import MAIN_LIGHT_TOGGLE_SKUS, MULTI_OUTLET_MQTT_SKUS, SKU_SEGMENT_OVERRIDES
+from ..const import (
+    MAIN_LIGHT_TOGGLE_SKUS,
+    MOVIE_MODE_DREAMVIEW_SKUS,
+    MULTI_OUTLET_MQTT_SKUS,
+    SKU_SEGMENT_OVERRIDES,
+)
 
 # Leak sensor SKUs
 LEAK_SENSOR_SKUS = frozenset({"H5058", "H5054", "H5055", "H5059"})
@@ -94,6 +99,7 @@ CAPABILITY_PROPERTY = "devices.capabilities.property"
 CAPABILITY_MODE = "devices.capabilities.mode"
 CAPABILITY_TEMPERATURE_SETTING = "devices.capabilities.temperature_setting"
 CAPABILITY_EVENT = "devices.capabilities.event"
+CAPABILITY_MOVIE_SETTING = "devices.capabilities.movie_setting"
 
 # Device type constants
 DEVICE_TYPE_LIGHT = "devices.types.light"
@@ -156,6 +162,7 @@ INSTANCE_WORK_MODE = "workMode"
 INSTANCE_HDMI_SOURCE = "hdmiSource"
 INSTANCE_MUSIC_MODE = "musicMode"
 INSTANCE_DREAMVIEW = "dreamViewToggle"
+INSTANCE_MOVIE_MODE = "movieMode"
 INSTANCE_TARGET_TEMPERATURE = "targetTemperature"
 # Ceiling-fan-with-light combo instances (e.g. H1310, reported as
 # devices.types.light with an integrated fan). Distinct from the standalone
@@ -835,8 +842,19 @@ class GoveeDevice:
 
     @property
     def supports_dreamview(self) -> bool:
-        """Check if device supports DreamView (Movie Mode) toggle."""
-        return any(cap.is_dreamview for cap in self.capabilities)
+        """Check if device supports DreamView (Movie Mode) toggle.
+
+        A few SKUs (``MOVIE_MODE_DREAMVIEW_SKUS``) advertise it as
+        ``movie_setting`` / ``movieMode`` instead of ``dreamViewToggle``.
+        """
+        if any(cap.is_dreamview for cap in self.capabilities):
+            return True
+        if self.sku.upper() in MOVIE_MODE_DREAMVIEW_SKUS:
+            return any(
+                cap.type == CAPABILITY_MOVIE_SETTING and cap.instance == INSTANCE_MOVIE_MODE
+                for cap in self.capabilities
+            )
+        return False
 
     @property
     def supports_thermostat_toggle(self) -> bool:

@@ -341,6 +341,13 @@ LAN_CORRELATION_TTL_SECONDS: Final = 600
 # plausibly the same fixture design.
 MAIN_LIGHT_TOGGLE_SKUS: Final = frozenset({"H1270"})
 
+# SKUs whose screen-sync (DreamView) is advertised as ``movie_setting`` /
+# ``movieMode`` instead of the usual ``dreamViewToggle`` capability. The
+# existing DreamView command path drives them unchanged, so the only gap was
+# detection: the H2A41 TV Backlight 3 got no DreamView switch (issue #199).
+# Deliberately narrow: only the H2A41 is verified against real hardware.
+MOVIE_MODE_DREAMVIEW_SKUS: Final = frozenset({"H2A41"})
+
 # BLE constants
 # Govee AWS/BLE advert manufacturer ID. Verified against
 # Bluetooth-Devices/govee-ble (used by H5127 and related). Additional IDs
