@@ -63,6 +63,9 @@ DEFAULT_WORK_MODE_AUTO = 3
 WORK_MODE_GEAR = DEFAULT_WORK_MODE_MANUAL
 WORK_MODE_AUTO = DEFAULT_WORK_MODE_AUTO
 MANUAL_MODE_NAMES = {"manual", "gearmode", "fanspeed"}
+# Devices with no manual/gear mode at all expose each speed as its own workMode
+# (H7121: High=3, Medium=2, Low=1, Sleep=16), ordered slowest to fastest here.
+TIERED_MODE_NAMES = ("low", "medium", "high")
 # Canonical preset keys are lowercase so preset_mode always matches
 # Home Assistant translation keys and icon state keys (strings.json/icons.json).
 PRESET_MODE_ALIASES = {
@@ -155,6 +158,10 @@ class GoveeFanEntity(GoveeEntity, FanEntity):
         self._speedless_work_modes: set[int] = set()
         self._work_mode_speed_values: dict[int, list[int]] = {}
         self._work_mode_speed_sets: dict[int, set[int]] = {}
+        # Slowest-to-fastest workMode values when each speed is its own work
+        # mode (issue #201); empty for manual/gear-mode devices.
+        self._tier_work_modes: list[int] = []
+        self._tier_mode_values: dict[int, int] = {}
 
         self._init_work_mode_mappings(device)
 
@@ -262,6 +269,10 @@ class GoveeFanEntity(GoveeEntity, FanEntity):
                 if speed_value > 0:
                     manual_speeds.append(speed_value)
         self._fan_speeds = sorted(set(manual_speeds)) if manual_speeds else [1, 2, 3]
+        self._detect_tiered_speeds(work_mode_options, mode_values_by_name, mode_value_speeds_by_name, manual_name)
+        if self._tier_work_modes:
+            self._fan_speeds = list(range(1, len(self._tier_work_modes) + 1))
+            self._speed_work_modes = set()
         self._work_mode_speed_values[self._manual_work_mode] = self._fan_speeds
         self._work_mode_speed_sets[self._manual_work_mode] = set(self._fan_speeds)
         middle_speed_index = (len(self._fan_speeds) - 1) // 2
@@ -270,13 +281,14 @@ class GoveeFanEntity(GoveeEntity, FanEntity):
 
         # Build ordered preset map from workMode options with de-duplication.
         seen: set[str] = set()
-        self._preset_work_modes[self._manual_preset_name] = self._manual_work_mode
-        # Default to a typical manual speed for safer transitions from non-manual modes.
-        self._preset_commands[self._manual_preset_name] = (
-            self._manual_work_mode,
-            default_manual_mode_value,
-        )
-        seen.add(self._manual_preset_name.lower())
+        if not self._tier_work_modes:
+            self._preset_work_modes[self._manual_preset_name] = self._manual_work_mode
+            # Default to a typical manual speed for safer transitions from non-manual modes.
+            self._preset_commands[self._manual_preset_name] = (
+                self._manual_work_mode,
+                default_manual_mode_value,
+            )
+            seen.add(self._manual_preset_name.lower())
 
         auto_preset_name = ""
         auto_mode_value_opt: dict[str, Any] = {}
@@ -335,7 +347,7 @@ class GoveeFanEntity(GoveeEntity, FanEntity):
             self._preset_commands[canonical_preset_name] = (work_mode, int(mode_value))
             seen.add(canonical_preset_name.lower())
 
-        if PRESET_MODE_AUTO.lower() not in seen:
+        if PRESET_MODE_AUTO.lower() not in seen and not self._tier_work_modes:
             self._preset_work_modes[PRESET_MODE_AUTO] = self._auto_work_mode
             self._preset_commands[PRESET_MODE_AUTO] = (
                 self._auto_work_mode,
@@ -346,6 +358,39 @@ class GoveeFanEntity(GoveeEntity, FanEntity):
         self._last_mode_values.clear()
         for work_mode, mode_value in self._preset_commands.values():
             self._last_mode_values.setdefault(work_mode, mode_value)
+
+    def _detect_tiered_speeds(
+        self,
+        work_mode_options: list[dict[str, Any]],
+        mode_values_by_name: dict[str, dict[str, Any]],
+        mode_value_speeds_by_name: dict[str, list[int]],
+        manual_name: str,
+    ) -> None:
+        """Detect devices whose speeds are separate workModes (issue #201).
+
+        The H7121 purifier lists ``High=3, Medium=2, Low=1, Sleep=16`` as
+        workModes and gives every one a ``modeValue`` default of 0 with no
+        nested speeds. Sending ``{workMode: 1, modeValue: 2}`` for "medium"
+        (the manual-mode shape) is rejected with "Parameter value out of
+        range", so speed is picked by workMode and modeValue stays the
+        device's own default.
+        """
+        if manual_name:
+            return
+        tiers: dict[str, int] = {}
+        for opt in work_mode_options:
+            name = self._normalize_mode_name(opt.get("name"))
+            if name in TIERED_MODE_NAMES and opt.get("value") is not None:
+                if mode_value_speeds_by_name.get(name):
+                    return  # nested speeds: a different structure, keep the manual-mode path
+                tiers[name] = int(opt["value"])
+        if len(tiers) < 2:
+            return
+        self._tier_work_modes = [tiers[name] for name in TIERED_MODE_NAMES if name in tiers]
+        self._tier_mode_values = {
+            work_mode: max(self._extract_mode_value(mode_values_by_name.get(name, {})), 0)
+            for name, work_mode in tiers.items()
+        }
 
     @staticmethod
     def _extract_mode_value(mode_value_opt: dict[str, Any]) -> int:
@@ -409,6 +454,11 @@ class GoveeFanEntity(GoveeEntity, FanEntity):
         """
         state = self.device_state
         if state is None:
+            return None
+
+        if self._tier_work_modes:
+            if state.work_mode in self._tier_work_modes:
+                return ordered_list_item_to_percentage(self._tier_work_modes, state.work_mode)
             return None
 
         # Return percentage for speed-bearing modes (manual + presets that expose speed).
@@ -484,6 +534,13 @@ class GoveeFanEntity(GoveeEntity, FanEntity):
         """
         if percentage == 0:
             await self.async_turn_off()
+            return
+
+        if self._tier_work_modes:
+            tier_work_mode = percentage_to_ordered_list_item(self._tier_work_modes, percentage)
+            await self._async_send_command(
+                WorkModeCommand(work_mode=tier_work_mode, mode_value=self._tier_mode_values.get(tier_work_mode, 0)),
+            )
             return
 
         work_mode = self._manual_work_mode

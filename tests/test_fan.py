@@ -1342,3 +1342,185 @@ class TestFanModeNameWhitespaceHandling:
         assert isinstance(cmd, WorkModeCommand)
         assert cmd.work_mode == entity._manual_work_mode
         assert "Unknown preset mode" in caplog.text
+
+
+def _h7121_device():
+    """H7121 purifier: every speed is its own workMode and every modeValue defaults to 0 (issue #201)."""
+    from custom_components.govee.models import GoveeDevice, GoveeCapability
+    from custom_components.govee.models.device import (
+        CAPABILITY_ON_OFF,
+        CAPABILITY_WORK_MODE,
+        INSTANCE_POWER,
+        INSTANCE_WORK_MODE,
+    )
+
+    workmode = {
+        "dataType": "STRUCT",
+        "fields": [
+            {
+                "fieldName": "workMode",
+                "dataType": "ENUM",
+                "options": [
+                    {"name": "High", "value": 3},
+                    {"name": "Medium", "value": 2},
+                    {"name": "Low", "value": 1},
+                    {"name": "Sleep", "value": 16},
+                ],
+                "required": True,
+            },
+            {
+                "fieldName": "modeValue",
+                "dataType": "ENUM",
+                "options": [
+                    {"defaultValue": 0, "name": "High"},
+                    {"defaultValue": 0, "name": "Medium"},
+                    {"defaultValue": 0, "name": "Low"},
+                    {"defaultValue": 0, "name": "Sleep"},
+                ],
+                "required": True,
+            },
+        ],
+    }
+    return GoveeDevice(
+        device_id="AA:BB:CC:DD:EE:FF:71:21",
+        sku="H7121",
+        name="Smart Air Purifier",
+        device_type="devices.types.air_purifier",
+        capabilities=(
+            GoveeCapability(type=CAPABILITY_ON_OFF, instance=INSTANCE_POWER, parameters={}),
+            GoveeCapability(type=CAPABILITY_WORK_MODE, instance=INSTANCE_WORK_MODE, parameters=workmode),
+        ),
+    )
+
+
+class TestTieredWorkModeSpeeds:
+    """Issue #201: Low/Medium/High are workModes 1/2/3, not modeValues of a manual mode."""
+
+    @pytest.fixture
+    def h7121_entity(self):
+        device = _h7121_device()
+        state = MagicMock()
+        state.work_mode = 1
+        state.mode_value = 0
+        coordinator = MagicMock()
+        coordinator.devices = {device.device_id: device}
+        coordinator.get_state = MagicMock(return_value=state)
+        coordinator.async_control_device = AsyncMock(return_value=True)
+        entity = GoveeFanEntity(coordinator, device)
+        entity._test_state = state
+        return entity
+
+    def test_three_speeds_and_no_invented_presets(self, h7121_entity):
+        assert h7121_entity.speed_count == 3
+        # No manual mode to call "normal" and no Auto workMode to send.
+        assert "normal" not in h7121_entity.preset_modes
+        assert "auto" not in h7121_entity.preset_modes
+        assert "sleep" in h7121_entity.preset_modes
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(("percentage", "work_mode"), [(1, 1), (34, 2), (67, 3), (100, 3)])
+    async def test_set_percentage_picks_the_work_mode_with_a_zero_mode_value(
+        self, h7121_entity, percentage, work_mode
+    ):
+        await h7121_entity.async_set_percentage(percentage)
+
+        cmd = h7121_entity.coordinator.async_control_device.call_args[0][1]
+        assert isinstance(cmd, WorkModeCommand)
+        assert cmd.work_mode == work_mode
+        assert cmd.mode_value == 0
+
+    @pytest.mark.asyncio
+    async def test_set_percentage_ignores_the_current_work_mode(self, h7121_entity):
+        h7121_entity._test_state.work_mode = 16  # Sleep
+
+        await h7121_entity.async_set_percentage(100)
+
+        cmd = h7121_entity.coordinator.async_control_device.call_args[0][1]
+        assert (cmd.work_mode, cmd.mode_value) == (3, 0)
+
+    @pytest.mark.parametrize(("work_mode", "expected"), [(1, 33), (2, 66), (3, 100)])
+    def test_percentage_follows_the_work_mode(self, h7121_entity, work_mode, expected):
+        h7121_entity._test_state.work_mode = work_mode
+
+        assert h7121_entity.percentage == expected
+
+    def test_sleep_has_no_percentage(self, h7121_entity):
+        h7121_entity._test_state.work_mode = 16
+
+        assert h7121_entity.percentage is None
+        assert h7121_entity.preset_mode == "sleep"
+
+    @pytest.mark.asyncio
+    async def test_sleep_preset_sends_its_own_work_mode(self, h7121_entity):
+        await h7121_entity.async_set_preset_mode("sleep")
+
+        cmd = h7121_entity.coordinator.async_control_device.call_args[0][1]
+        assert (cmd.work_mode, cmd.mode_value) == (16, 0)
+
+    def test_manual_mode_devices_are_not_treated_as_tiered(self):
+        device = _h7107_device()
+        entity = GoveeFanEntity(MagicMock(), device)
+
+        assert entity._tier_work_modes == []
+        assert PRESET_MODE_NORMAL in entity.preset_modes
+
+    def test_nested_speeds_under_low_medium_high_keep_the_manual_path(self):
+        """A workMode literally named Low that carries its own nested speeds is not tiered."""
+        from custom_components.govee.models import GoveeCapability, GoveeDevice
+
+        device = GoveeDevice(
+            device_id="AA:BB:CC:DD:EE:FF:71:22",
+            sku="H7999",
+            name="Odd Fan",
+            device_type="devices.types.fan",
+            capabilities=(
+                GoveeCapability(
+                    type="devices.capabilities.work_mode",
+                    instance="workMode",
+                    parameters={
+                        "fields": [
+                            {
+                                "fieldName": "workMode",
+                                "options": [{"name": "Low", "value": 1}, {"name": "High", "value": 3}],
+                            },
+                            {
+                                "fieldName": "modeValue",
+                                "options": [
+                                    {"name": "Low", "options": [{"value": 1}, {"value": 2}]},
+                                    {"name": "High", "options": [{"value": 5}, {"value": 6}]},
+                                ],
+                            },
+                        ]
+                    },
+                ),
+            ),
+        )
+
+        assert GoveeFanEntity(MagicMock(), device)._tier_work_modes == []
+
+    def test_a_single_speed_name_is_not_enough_to_be_tiered(self):
+        from custom_components.govee.models import GoveeCapability, GoveeDevice
+
+        device = GoveeDevice(
+            device_id="AA:BB:CC:DD:EE:FF:71:23",
+            sku="H7998",
+            name="One Speed Fan",
+            device_type="devices.types.fan",
+            capabilities=(
+                GoveeCapability(
+                    type="devices.capabilities.work_mode",
+                    instance="workMode",
+                    parameters={
+                        "fields": [
+                            {
+                                "fieldName": "workMode",
+                                "options": [{"name": "Low", "value": 1}, {"name": "Sleep", "value": 16}],
+                            },
+                            {"fieldName": "modeValue", "options": [{"defaultValue": 0, "name": "Low"}]},
+                        ]
+                    },
+                ),
+            ),
+        )
+
+        assert GoveeFanEntity(MagicMock(), device)._tier_work_modes == []
