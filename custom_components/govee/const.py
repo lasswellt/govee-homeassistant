@@ -159,6 +159,13 @@ SKU_SEGMENT_OVERRIDES: Final = {
     # light (0=top, 1=bottom, 2=part of the left side, 3=everything else);
     # 4-14 are accepted with HTTP 200 "success" and do nothing (issue #160).
     "H7076": 4,
+    # H7026 Outdoor String Lights: 30 bulbs in the app and elementRange 0-29, but
+    # the Platform API only addresses indices 0-15. 16-29 return HTTP 200 and
+    # recolour the *whole string* instead of one bulb, so a grouped write that
+    # reaches them overwrites the bulbs set before it. The device's AWS IoT status
+    # frames (aa a5 01..08, four bulbs each) carry all 30, so a native write
+    # path could lift this limit later (issue #208).
+    "H7026": 16,
 }
 
 

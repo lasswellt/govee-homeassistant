@@ -1432,6 +1432,12 @@ class TestSegmentCountOverride:
         device = _make_rgbic_device("H7076", cap)
         assert device.segment_count == 4
 
+    def test_h7026_returns_16_segments_where_the_api_cannot_address_the_rest(self):
+        """H7026 advertises 30 bulbs but indices 16-29 recolour the whole string (issue #208)."""
+        cap = _make_rgbic_segment_capability(element_range_max=29, size_max=30)
+        device = _make_rgbic_device("H7026", cap)
+        assert device.segment_count == 16
+
     def test_unknown_sku_returns_api_count(self):
         """SKUs not in the override table keep the parser's API count (REQ-002)."""
         cap = _make_rgbic_segment_capability(element_range_max=14, size_max=None)
