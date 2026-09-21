@@ -316,8 +316,11 @@ Update both files when changing option labels:
 
 ## Release Process
 
+**One release per day, cut at the end of the day.** Fixes and merged PRs land on `main` throughout the day (CI must be green), but the version is bumped and the release created once, at the end of the user's local calendar day, covering everything that landed. Never cut a second release the same day, and don't bump `manifest.json` before release time. Users get an update notification per release, and several a week was reported as too many (#202). Issue and PR replies that cite a version go out after that day's release, per the reply rule below.
+
 1. **Bump version** in `manifest.json` (CalVer: `YYYY.MM.patch`)
-2. **Commit**: `git add -A && git commit -m "message"`
+2. **Commit**: stage explicit paths (`git add custom_components tests ...`), never a bare `git add -A` (sandbox placeholder dotfiles sit in the repo root)
 3. **Push**: `git push origin main`
-4. **Wait for CI**: Check with `gh run list --limit 5`
+4. **Wait for CI**: `gh run list --commit "$(git rev-parse HEAD)"` (full SHA; all five workflows must pass)
 5. **Create release**: `gh release create vYYYY.MM.patch --title "vYYYY.MM.patch" --notes "..."`
+6. **Then reply** on the issues and PRs it fixed, citing the shipped version; leave issues open until the reporter validates
