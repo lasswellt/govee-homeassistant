@@ -3827,6 +3827,8 @@ class TestTryLanCommand:
         assert health.is_available is True
         assert health.last_send_ts is not None
         assert health.last_failure_reason is None
+        # The confirming readback was applied to state, so it is a real reading.
+        assert health.last_read_ts is not None
 
     @pytest.mark.asyncio
     async def test_confirmed_brightness_within_tolerance_returns_true(self):
@@ -3925,6 +3927,8 @@ class TestTryLanCommand:
         assert coord._lan_write_misses[self.DEVICE_ID] == 1
         # Optimistic power survives (grace window) despite the stale onOff=0 read.
         assert coord._states[self.DEVICE_ID].power_state is True
+        # The reply was discarded, so it is not a reading the cloud poll may lean on.
+        assert health.last_read_ts is None
 
     @pytest.mark.asyncio
     async def test_power_reply_on_none_is_mismatch(self):

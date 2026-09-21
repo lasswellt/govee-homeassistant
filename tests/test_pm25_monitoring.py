@@ -139,6 +139,8 @@ class TestCoordinatorAppliesPm25FromAnMqttPush:
         assert state.pm25 == 1
         assert state.sensor_temperature == pytest.approx(19.0)
         coordinator.async_set_updated_data.assert_called_once()
+        # An applied MQTT push is a reading the cloud poll may lean on.
+        assert coordinator._transport.get(DEVICE_ID, "mqtt").last_read_ts is not None
 
     def test_other_thermometer_is_left_untouched(self):
         """A plain thermometer must never reach the PM2.5 decoder, even if it

@@ -241,10 +241,18 @@ MAX_DAILY_REQUEST_BUDGET: Final = GOVEE_DAILY_REQUEST_LIMIT
 # that a device with no local transport is never more than that behind.
 MAX_BUDGET_PACED_INTERVAL: Final = 900
 
-# Transports that deliver the same state fields as the /device/state poll at
-# no cost against Govee's quota. A reading from one of these newer than the
-# poll interval makes that cycle's cloud read redundant.
-LOCAL_STATE_TRANSPORTS: Final[frozenset[str]] = frozenset({"lan", "mqtt", "ble"})
+# A LAN or MQTT reading that has been applied to a device's state carries the
+# same power/brightness/colour fields as the /device/state poll, at no cost
+# against Govee's quota, so a recent one makes that cycle's cloud read redundant.
+# Only readings actually applied count: an outbound command, a LAN write to a
+# device that never answers reads, or a readback that mismatched the command
+# and was discarded are not readings of the device's state.
+#
+# "Recent" is a multiple of the poll interval rather than the interval itself:
+# solicited LAN reads run at the tail of a poll cycle, so at the start of the
+# next one they are a full interval old plus however long the tail took, and a
+# window of exactly one interval would never admit them.
+LOCAL_READING_FRESHNESS_FACTOR: Final = 1.5
 # How many cloud reads in a row a device may skip on the strength of local
 # readings before one is forced anyway. Five, so a device with a healthy
 # local transport still reconciles against the cloud roughly every sixth

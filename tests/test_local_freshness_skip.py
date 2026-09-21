@@ -7,6 +7,8 @@ read when no local source has answered recently.
 
 from __future__ import annotations
 
+import zlib
+
 from datetime import timedelta
 from types import SimpleNamespace
 from typing import Any
@@ -76,7 +78,7 @@ def _coordinator(*, ages: dict[str, float | None], has_state: bool = True) -> An
         tracker.ensure(device_id)
         if age is not None:
             health: TransportHealth = tracker.health[device_id]["lan"]
-            health.last_success_ts = now - timedelta(seconds=age)
+            health.last_read_ts = now - timedelta(seconds=age)
         # A cloud read is always recent; it must not count as "local".
         tracker.health[device_id]["cloud_api"].last_success_ts = now
     return _FreshnessStub(
@@ -116,13 +118,73 @@ def test_device_without_state_yet_is_never_skipped() -> None:
 def test_consecutive_skips_are_counted_and_then_forced_to_reconcile() -> None:
     ages = {"fresh": 1.0}
     coordinator = _coordinator(ages=ages)
+    coordinator._local_fresh_skips["fresh"] = 0  # pin the stagger offset for this run
     for cycle in range(MAX_LOCAL_FRESH_SKIPS):
         assert GoveeCoordinator._locally_fresh_devices(coordinator, _pollable(ages)) == {"fresh"}
         assert coordinator._local_fresh_skips["fresh"] == cycle + 1
-    # The cap is reached: this cycle pays for a cloud read and the run resets.
+    # The cap is reached: this cycle pays for a cloud read and the run restarts.
     assert GoveeCoordinator._locally_fresh_devices(coordinator, _pollable(ages)) == set()
-    assert "fresh" not in coordinator._local_fresh_skips
+    assert coordinator._local_fresh_skips["fresh"] == 0
     assert GoveeCoordinator._locally_fresh_devices(coordinator, _pollable(ages)) == {"fresh"}
+
+
+def test_devices_start_at_different_points_in_their_run_of_skips() -> None:
+    """Otherwise every device reaches the cap together and the cloud reads arrive in one burst."""
+    ids = [f"AA:BB:CC:DD:EE:FF:00:{n:02X}" for n in range(24)]
+    ages = {device_id: 1.0 for device_id in ids}
+    coordinator = _coordinator(ages=ages)
+
+    GoveeCoordinator._locally_fresh_devices(coordinator, _pollable(ages))
+
+    starts = {count for count in coordinator._local_fresh_skips.values()}
+    assert len(starts) > 1
+
+
+def test_the_stagger_offset_is_stable_per_device() -> None:
+    ages = {"AA:BB:CC:DD:EE:FF:00:01": 1.0}
+    first = _coordinator(ages=ages)
+    second = _coordinator(ages=ages)
+
+    GoveeCoordinator._locally_fresh_devices(first, _pollable(ages))
+    GoveeCoordinator._locally_fresh_devices(second, _pollable(ages))
+
+    assert first._local_fresh_skips == second._local_fresh_skips
+
+
+def test_a_solicited_lan_read_from_the_previous_cycle_still_counts() -> None:
+    """LAN reads run at the tail of a cycle, so at the next cycle's start they are a full interval old.
+
+    A window of exactly one poll interval would never admit them.
+    """
+    ages = {"lan": 63.0}  # 60 s poll + a few seconds of tail
+    coordinator = _coordinator(ages=ages)
+
+    assert GoveeCoordinator._locally_fresh_devices(coordinator, _pollable(ages)) == {"lan"}
+
+
+def test_a_reading_older_than_the_widened_window_does_not_count() -> None:
+    ages = {"quiet": 100.0}  # 1.5 x 60 s = 90 s
+    coordinator = _coordinator(ages=ages)
+
+    assert GoveeCoordinator._locally_fresh_devices(coordinator, _pollable(ages)) == set()
+
+
+def test_a_send_or_a_discarded_reply_is_not_a_reading() -> None:
+    """last_success_ts also moves on writes and mismatched replies; only last_read_ts vouches for state."""
+    tracker = TransportHealthTracker()
+    tracker.record_success("dev", "lan")
+    tracker.record_send("dev", "lan")
+    tracker.record_success("dev", "ble")
+    coordinator = _FreshnessStub(
+        _transport=tracker,
+        _states={"dev": object()},
+        _local_fresh_skips={},
+        update_interval=timedelta(seconds=60),
+        _original_update_interval=timedelta(seconds=60),
+    )
+
+    assert GoveeCoordinator._local_last_updated(coordinator, "dev") is None
+    assert GoveeCoordinator._locally_fresh_devices(coordinator, {"dev": object()}) == set()
 
 
 class _FakeRegistryEntry:
@@ -201,6 +263,7 @@ class TestPollSuppressesRedundantCloudReads:
         # One device answered over LAN a moment ago; the other has no local
         # transport at all.
         coord._record_transport_success(self.LOCAL, "lan")
+        coord._transport.record_read(self.LOCAL, "lan")
 
         fetched: list[str] = []
 
@@ -221,5 +284,46 @@ class TestPollSuppressesRedundantCloudReads:
         # The skipped device keeps the state object it already had, rather
         # than being dropped or replaced by a cloud read.
         assert result[self.LOCAL] is before
-        assert coord._local_fresh_skips[self.LOCAL] == 1
-        assert self.CLOUD_ONLY not in coord._local_fresh_skips
+        assert coord._local_fresh_skips[self.LOCAL] == zlib.crc32(self.LOCAL.encode()) % MAX_LOCAL_FRESH_SKIPS + 1
+        assert coord._local_fresh_skips[self.CLOUD_ONLY] == 0
+
+    async def test_a_cycle_where_every_device_is_covered_still_runs_its_tail(self, monkeypatch: Any) -> None:
+        """Nothing to fetch is a normal cycle now, and must not skip transport health, LAN reads or pacing."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        coord, coord_mod = self._coord([self.LOCAL])
+
+        monkeypatch.setattr(coord, "_async_maybe_rediscover_devices", AsyncMock())
+        rescan = AsyncMock()
+        lan_reads = AsyncMock()
+        monkeypatch.setattr(coord, "_async_maybe_rescan_lan", rescan)
+        monkeypatch.setattr(coord, "_refresh_lan_reads", lan_reads)
+        monkeypatch.setattr(coord, "_refresh_lan_staleness", MagicMock())
+        monkeypatch.setattr(coord, "_refresh_mqtt_health", MagicMock())
+        monkeypatch.setattr(coord, "_refresh_ble_staleness", MagicMock())
+        monkeypatch.setattr(coord._ble_handler, "enroll_from_cache", lambda: None)
+        monkeypatch.setattr(coord_mod.er, "async_get", lambda hass: MagicMock())
+        monkeypatch.setattr(
+            coord_mod.er,
+            "async_entries_for_config_entry",
+            lambda registry, entry_id: [_FakeRegistryEntry(self.LOCAL, disabled_by=None)],
+        )
+        pacing = MagicMock()
+        monkeypatch.setattr(coord, "_apply_budget_pacing", pacing)
+        fetch = AsyncMock()
+        monkeypatch.setattr(coord, "_fetch_device_state", fetch)
+
+        coord._local_fresh_skips[self.LOCAL] = 0
+        coord._record_transport_success(self.LOCAL, "lan")
+        coord._transport.record_read(self.LOCAL, "lan")
+
+        result = await coord._async_update_data()
+
+        fetch.assert_not_awaited()
+        assert result is coord._states
+        rescan.assert_awaited_once()
+        lan_reads.assert_awaited_once()
+        coord._refresh_mqtt_health.assert_called_once()
+        coord._refresh_ble_staleness.assert_called_once()
+        # Sized on the whole pollable set, not the empty remainder.
+        pacing.assert_called_once_with(1)

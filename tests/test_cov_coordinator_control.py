@@ -383,6 +383,8 @@ class TestLanTierEdges:
         kwargs = coord._api_client.record_local_command.call_args.kwargs
         assert kwargs["delivered"] is True
         assert "write-only" in kwargs["detail"]
+        # A send is not a reading: it must not make the cloud poll skip this device.
+        assert health.last_read_ts is None
 
     def test_readback_without_brightness_cannot_confirm(self):
         coord = _coordinator()
@@ -418,6 +420,8 @@ class TestBleTier:
         ble.turn_on.assert_awaited_once()
         assert state.online is True
         assert state.power_state is True
+        # A BLE command is not a reading of the device's state.
+        assert coord._transport.get(DEV, "ble").last_read_ts is None
         assert coord._transport.get(DEV, "ble").is_available is True
         coord._api_client.control_device.assert_not_awaited()
 

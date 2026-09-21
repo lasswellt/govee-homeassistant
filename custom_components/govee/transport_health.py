@@ -58,6 +58,11 @@ class TransportHealthTracker:
         self.ensure(device_id)
         self._health[device_id][transport].mark_success(datetime.now(timezone.utc))
 
+    def record_read(self, device_id: str, transport: TransportKind) -> None:
+        """Stamp a reading from this transport that was applied to device state."""
+        self.ensure(device_id)
+        self._health[device_id][transport].mark_read(datetime.now(timezone.utc))
+
     def record_send(self, device_id: str, transport: TransportKind) -> None:
         """Stamp a successful outbound transport use (command sent)."""
         self.ensure(device_id)

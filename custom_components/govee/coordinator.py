@@ -10,6 +10,7 @@ import copy
 import dataclasses
 import logging
 import time
+import zlib
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime, timedelta
 from typing import Any, Final
@@ -95,7 +96,7 @@ from .const import (
     LAN_WRITE_CONFIRM_TIMEOUT,
     LAN_WRITE_SUPPRESS_SECONDS,
     LAN_WRITE_SUPPRESS_THRESHOLD,
-    LOCAL_STATE_TRANSPORTS,
+    LOCAL_READING_FRESHNESS_FACTOR,
     MAX_BUDGET_PACED_INTERVAL,
     MAX_LOCAL_FRESH_SKIPS,
     MAX_MQTT_STATUS_INTERVAL,
@@ -267,6 +268,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
     - Optimistic state updates
     - Group device handling
     """
+
+    # Set on first announcement; the class default keeps hand-built test
+    # coordinators that skip __init__ working.
+    _budget_pacing_announced = False
 
     def __init__(
         self,
@@ -1465,6 +1470,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # device LAN-available so the very next _refresh_lan_staleness pass
         # leaves it active instead of demoting it to stale_lan.
         self._record_transport_success(device_id, "lan")
+        self._transport.record_read(device_id, "lan")
         # NOTE: a confirmed inbound READ proves the transport is alive (recorded
         # above) but says nothing about whether WRITES land, so it must NOT reset
         # the write-miss streak — only a confirmed write
@@ -3386,6 +3392,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # grace window for this device (state.update_from_mqtt also calls
         # clear_optimistic_window, but recording MQTT health is our job).
         self._record_transport_success(device_id, "mqtt")
+        self._transport.record_read(device_id, "mqtt")
 
         # Update coordinator data and notify HA — only if something changed.
         if state != before:
@@ -3546,6 +3553,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # Devices a local transport has already reported on more recently than
         # one poll interval need no cloud read this cycle (see
         # _locally_fresh_devices).
+        # Pacing is sized on the full pollable set, not what is left after the
+        # skip: the skip changes from cycle to cycle as devices' runs come due,
+        # and sizing on it would swing the interval with them.
+        pacing_size = len(pollable)
         locally_fresh = self._locally_fresh_devices(pollable)
         if locally_fresh:
             _LOGGER.debug(
@@ -3554,13 +3565,12 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             )
             pollable = {device_id: device for device_id, device in pollable.items() if device_id not in locally_fresh}
 
-        if not pollable:
-            return self._states
-
         # Create tasks for parallel fetching. Each fetch carries its own
         # deadline: a single timeout around the whole gather discarded every
         # device's result as soon as one device was slow, so one unreachable
         # bulb held the entire house's state hostage for that cycle.
+        # When local readings covered every device there is nothing to fetch, but
+        # the rest of the cycle (transport health, LAN rescan, pacing) still runs.
         tasks = [self._fetch_device_state_bounded(device_id, device) for device_id, device in pollable.items()]
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -3588,7 +3598,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # entities unavailable and logs the outage once (and the recovery once)
         # instead of serving stale state in silence. A partial failure keeps
         # per-device isolation above.
-        if successful_updates == 0 and len(outage_errors) == len(results):
+        if results and successful_updates == 0 and len(outage_errors) == len(results):
             raise UpdateFailed(
                 f"Govee cloud API unreachable for all {len(results)} device(s): " f"{outage_errors[0]}"
             ) from outage_errors[0]
@@ -3604,7 +3614,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             async_delete_rate_limit_issue(self.hass, self._config_entry)
 
         # Pace the next tick against what today's polling has already cost.
-        self._apply_budget_pacing(len(pollable))
+        self._apply_budget_pacing(pacing_size)
 
         # Refresh transport-health snapshots tied to coordinator cadence.
         self._refresh_mqtt_health()
@@ -3711,6 +3721,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         between skipping and reconciling rather than drifting.
         """
         window = (self.update_interval or self._original_update_interval).total_seconds()
+        window *= LOCAL_READING_FRESHNESS_FACTOR
         now = dt_util.utcnow()
         fresh: set[str] = set()
         for device_id in pollable:
@@ -3718,34 +3729,40 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 continue
             latest = self._local_last_updated(device_id)
             age = None if latest is None else (now - latest).total_seconds()
+            if device_id not in self._local_fresh_skips:
+                # First sighting: start each device part-way through its run of
+                # skips, at a fixed per-device offset. Every device beginning at
+                # zero would reach the cap together and make one burst of cloud
+                # reads every sixth cycle; the offsets spread those reads out.
+                self._local_fresh_skips[device_id] = zlib.crc32(device_id.encode()) % MAX_LOCAL_FRESH_SKIPS
             if local_reading_is_fresh(
                 seconds_since_local_reading=age,
                 freshness_window=window,
-                consecutive_skips=self._local_fresh_skips.get(device_id, 0),
+                consecutive_skips=self._local_fresh_skips[device_id],
                 max_consecutive_skips=MAX_LOCAL_FRESH_SKIPS,
             ):
                 fresh.add(device_id)
-                self._local_fresh_skips[device_id] = self._local_fresh_skips.get(device_id, 0) + 1
+                self._local_fresh_skips[device_id] += 1
             else:
-                self._local_fresh_skips.pop(device_id, None)
+                self._local_fresh_skips[device_id] = 0
         return fresh
 
     def _local_last_updated(self, device_id: str) -> datetime | None:
-        """Newest inbound reading across the local transports, or None.
+        """When a LAN or MQTT reading was last applied to this device's state, or None.
 
-        Deliberately excludes ``cloud_api``: the question is whether a local
-        source has made the cloud read redundant, and the cloud's own last
-        success cannot answer that.
+        Reads ``last_read_ts``, not ``last_success_ts``: the latter also moves on
+        a write-only LAN send, a successful BLE command and a LAN readback that
+        was discarded as a mismatch, none of which tell us what the device's
+        state is. ``cloud_api`` is excluded too — the cloud's own last success
+        cannot say whether a local source made the cloud read redundant.
         """
         latest: datetime | None = None
-        for kind in TRANSPORT_KINDS:
-            if kind not in LOCAL_STATE_TRANSPORTS:
-                continue
+        for kind in ("lan", "mqtt"):
             health = self._transport.get(device_id, kind)
-            if health is None or health.last_success_ts is None:
+            if health is None or health.last_read_ts is None:
                 continue
-            if latest is None or health.last_success_ts > latest:
-                latest = health.last_success_ts
+            if latest is None or health.last_read_ts > latest:
+                latest = health.last_read_ts
         return latest
 
     def _apply_budget_pacing(self, requests_per_cycle: int) -> None:

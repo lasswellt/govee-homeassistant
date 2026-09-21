@@ -24,6 +24,10 @@ class TransportHealth:
     is_available: bool = False
     last_success_ts: datetime | None = None
     last_send_ts: datetime | None = None
+    # A reading from this transport that was actually applied to the device's
+    # state. Narrower than last_success_ts, which also moves on a write-only
+    # send, a BLE command or a readback that was discarded as a mismatch.
+    last_read_ts: datetime | None = None
     last_failure_ts: datetime | None = None
     last_failure_reason: str | None = None
 
@@ -37,6 +41,10 @@ class TransportHealth:
         self.is_available = True
         self.last_success_ts = now
         self.last_failure_reason = None
+
+    def mark_read(self, now: datetime) -> None:
+        """Record that a reading from this transport was applied to device state."""
+        self.last_read_ts = now
 
     def mark_send(self, now: datetime) -> None:
         """Record a successful outbound use (command sent) of this transport.
