@@ -12,6 +12,8 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
+import pytest
+
 from custom_components.govee.const import (
     DEFAULT_DAILY_REQUEST_BUDGET,
     GOVEE_DAILY_REQUEST_LIMIT,
@@ -132,6 +134,7 @@ def _pacing_coordinator(requests_today: int) -> Any:
         _rate_limited=False,
         _original_update_interval=timedelta(seconds=60),
         _daily_request_budget=DEFAULT_DAILY_REQUEST_BUDGET,
+        _budget_pacing_announced=False,
         _api_client=SimpleNamespace(requests_today=requests_today),
         update_interval=timedelta(seconds=60),
     )
@@ -165,3 +168,25 @@ def test_coordinator_pacing_defers_to_an_active_rate_limit_backoff() -> None:
     with patch("custom_components.govee.coordinator.time.time", return_value=0.0):
         GoveeCoordinator._apply_budget_pacing(coordinator, 19)
     assert coordinator.update_interval == timedelta(seconds=120)
+
+
+def test_stretching_the_poll_is_announced_once(caplog: pytest.LogCaptureFixture) -> None:
+    """A user whose polls got slower is told why, once, not on every tick."""
+    coordinator = _pacing_coordinator(requests_today=0)
+    with caplog.at_level("INFO", logger="custom_components.govee.coordinator"):
+        with patch("custom_components.govee.coordinator.time.time", return_value=0.0):
+            GoveeCoordinator._apply_budget_pacing(coordinator, 19)
+            GoveeCoordinator._apply_budget_pacing(coordinator, 19)
+
+    announcements = [r for r in caplog.records if "instead of the configured" in r.getMessage()]
+    assert len(announcements) == 1
+    assert "183s" in announcements[0].getMessage()
+
+
+def test_a_small_install_is_never_told_anything(caplog: pytest.LogCaptureFixture) -> None:
+    coordinator = _pacing_coordinator(requests_today=0)
+    with caplog.at_level("INFO", logger="custom_components.govee.coordinator"):
+        with patch("custom_components.govee.coordinator.time.time", return_value=0.0):
+            GoveeCoordinator._apply_budget_pacing(coordinator, 3)
+
+    assert not [r for r in caplog.records if "instead of the configured" in r.getMessage()]

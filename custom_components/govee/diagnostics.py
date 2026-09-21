@@ -316,6 +316,11 @@ def _runtime_diag(coordinator: GoveeCoordinator) -> dict[str, Any]:
             "rate_limit_remaining": coordinator.api_rate_limit_remaining,
             "rate_limit_total": coordinator.api_rate_limit_total,
             "rate_limit_reset": coordinator.api_rate_limit_reset,
+            # Effective cloud poll interval: the configured one, or the longer
+            # one budget pacing chose to keep the day's spend under budget.
+            "poll_interval_seconds": (
+                coordinator.update_interval.total_seconds() if coordinator.update_interval else None
+            ),
         },
         "scene_cache_count": coordinator.scene_cache_count,
         "diy_scene_cache_count": coordinator.diy_scene_cache_count,

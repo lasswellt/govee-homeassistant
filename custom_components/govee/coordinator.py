@@ -395,6 +395,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         self._daily_request_budget: int = int(
             config_entry.options.get(CONF_DAILY_REQUEST_BUDGET, DEFAULT_DAILY_REQUEST_BUDGET)
         )
+        self._budget_pacing_announced = False
 
         # Developer-API thermometers whose live reading we also pull from the
         # BFF device list (e.g. H5110/H5075 via H5151, H5179). The BFF call
@@ -3713,6 +3714,19 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             _LOGGER.debug("Budget pacing skipped, counters unusable: %s", err)
             return
         paced = timedelta(seconds=interval)
+        base_seconds = int(self._original_update_interval.total_seconds())
+        if interval > base_seconds and not self._budget_pacing_announced:
+            # The one thing here a user can act on: polls are slower than the
+            # interval they configured, and why. Said once per run, not per tick.
+            self._budget_pacing_announced = True
+            _LOGGER.info(
+                "Polling every %ds instead of the configured %ds to stay within the daily cloud "
+                "request budget of %d; raise the budget in the integration options or "
+                "rely on LAN/MQTT for live state",
+                interval,
+                base_seconds,
+                self._daily_request_budget,
+            )
         if paced != self.update_interval:
             _LOGGER.debug(
                 "Budget pacing: %d request(s)/cycle, %d spent today of %d budget " "-> poll interval %ds",
