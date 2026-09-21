@@ -65,6 +65,8 @@ def coordinator(light_capabilities):
     coord.update_interval = timedelta(seconds=60)
     coord._original_update_interval = timedelta(seconds=60)
     coord._daily_request_budget = DEFAULT_DAILY_REQUEST_BUDGET
+    # Local-freshness skipping keeps its own per-device counter.
+    coord._local_fresh_skips = {}
     coord._async_maybe_rediscover_devices = AsyncMock()
     coord._ble_handler = MagicMock()
     coord._devices_with_all_entities_disabled = MagicMock(return_value=set())
