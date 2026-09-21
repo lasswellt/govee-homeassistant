@@ -240,6 +240,14 @@ class TestPm25Sensor:
         sensor = GoveePm25Sensor(coord, coord._devices[DEVICE_ID])
         assert sensor.native_value is None
 
+    def test_unit_comes_from_the_shim_not_the_deprecated_constant(self):
+        """Issue #210: CONCENTRATION_* is removed in Core 2027.8; the sensor uses the shimmed name."""
+        from custom_components.govee.sensor import MICROGRAMS_PER_CUBIC_METER, GoveePm25Sensor
+
+        coord = self._coord()
+        sensor = GoveePm25Sensor(coord, coord._devices[DEVICE_ID])
+        assert sensor.native_unit_of_measurement == MICROGRAMS_PER_CUBIC_METER
+
 
 class TestSensorSetupRegistersPm25:
     """async_setup_entry must actually create the PM2.5 entity for an H5106

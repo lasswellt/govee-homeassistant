@@ -19,7 +19,6 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.const import (
-    CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
     PERCENTAGE,
     EntityCategory,
     UnitOfElectricCurrent,
@@ -56,6 +55,15 @@ except ImportError:  # hacs.json still declares 2024.11.0 as the minimum
     from homeassistant.const import CONCENTRATION_PARTS_PER_MILLION
 
     PARTS_PER_MILLION = CONCENTRATION_PARTS_PER_MILLION
+
+try:  # HA >= 2026.7 (CONCENTRATION_MICROGRAMS_PER_CUBIC_METER is removed in Core 2027.8)
+    from homeassistant.const import UnitOfDensity
+
+    MICROGRAMS_PER_CUBIC_METER: str = UnitOfDensity.MICROGRAMS_PER_CUBIC_METER
+except ImportError:  # hacs.json still declares 2024.11.0 as the minimum
+    from homeassistant.const import CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+
+    MICROGRAMS_PER_CUBIC_METER = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -704,7 +712,7 @@ class GoveePm25Sensor(GoveeEntity, SensorEntity):
     _attr_translation_key = "sensor_pm25"
     _attr_device_class = SensorDeviceClass.PM25
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_native_unit_of_measurement = CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
+    _attr_native_unit_of_measurement = MICROGRAMS_PER_CUBIC_METER
 
     def __init__(self, coordinator: GoveeCoordinator, device: GoveeDevice) -> None:
         super().__init__(coordinator, device)
