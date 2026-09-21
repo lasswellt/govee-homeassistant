@@ -297,7 +297,7 @@ class GoveeDeviceState:
     voltage: float | None = None  # Volts
     current: float | None = None  # Amps
     power_draw: float | None = None  # Watts
-    energy_total: float | None = None  # kWh, cumulative since the device last reset it
+    energy_total: float | None = None  # kWh used today; the device resets it at midnight
     power_factor: int | None = None  # Percent, 0-100
 
     # Standalone water-leak detector trip (H5054, issue #62). True when water
@@ -1066,8 +1066,8 @@ class GoveeDeviceState:
         and confirmed against the Govee app on two independent H5086 units
         across all five fields (issue #200)::
 
-            offset 2-4   uint24  seconds since the outlet was last powered on
-            offset 5-7   uint24  accumulated energy, tenths of a Wh
+            offset 2-4   uint24  seconds powered on today (resets at midnight)
+            offset 5-7   uint24  energy used today, tenths of a Wh (resets at midnight)
             offset 8-9   uint16  voltage, hundredths of a volt
             offset 10-11 uint16  current, hundredths of an amp
             offset 12-14 uint24  power, hundredths of a watt

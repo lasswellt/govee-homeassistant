@@ -124,6 +124,9 @@ def _coordinator_for_mqtt_push(device: GoveeDevice) -> GoveeCoordinator:
     coordinator._states = {device.device_id: GoveeDeviceState.create_empty(device.device_id)}
     coordinator._transport = TransportHealthTracker()
     coordinator.async_set_updated_data = MagicMock()
+    coordinator._config_entry = MagicMock(options={})
+    coordinator._bff_thermometer_ids = set()
+    coordinator._display_fahrenheit = {}
     return coordinator
 
 
@@ -137,10 +140,35 @@ class TestCoordinatorAppliesPm25FromAnMqttPush:
 
         state = coordinator._states[DEVICE_ID]
         assert state.pm25 == 1
-        assert state.sensor_temperature == pytest.approx(19.0)
+        # The H5106 is a Fahrenheit-reporting SKU, so the 19.0 degC frame is
+        # stored as the 66.2 degF the temperature sensor expects (issue #200).
+        assert state.sensor_temperature == pytest.approx(66.2)
         coordinator.async_set_updated_data.assert_called_once()
         # An applied MQTT push is a reading the cloud poll may lean on.
         assert coordinator._transport.get(DEVICE_ID, "mqtt").last_read_ts is not None
+
+    def test_celsius_option_stores_the_frame_temperature_unconverted(self):
+        coordinator = _coordinator_for_mqtt_push(_h5106())
+        coordinator._config_entry = MagicMock(options={"api_temperature_unit": "celsius"})
+
+        coordinator._on_mqtt_state_update(DEVICE_ID, {"onOff": 1, "_op_frames": [FRAME_UNIT_1.hex()]})
+
+        assert coordinator._states[DEVICE_ID].sensor_temperature == pytest.approx(19.0)
+
+    def test_the_temperature_sensor_shows_what_the_frame_said(self):
+        """Issue #200: after the update the temperature fell from the mid 60s to 19."""
+        from custom_components.govee.sensor import GoveeTemperatureSensor
+
+        coordinator = _coordinator_for_mqtt_push(_h5106())
+        coordinator._on_mqtt_state_update(DEVICE_ID, {"onOff": 1, "_op_frames": [FRAME_UNIT_1.hex()]})
+        coordinator.get_state = lambda device_id: coordinator._states.get(device_id)
+        coordinator.account_temperature_unit = lambda device_id: None
+        coordinator.config_entry = coordinator._config_entry
+        coordinator.is_bff_thermometer = lambda device_id: False
+
+        sensor = GoveeTemperatureSensor(coordinator, coordinator._devices[DEVICE_ID])
+
+        assert sensor.native_value == pytest.approx(19.0)
 
     def test_other_thermometer_is_left_untouched(self):
         """A plain thermometer must never reach the PM2.5 decoder, even if it

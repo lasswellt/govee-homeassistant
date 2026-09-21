@@ -183,7 +183,22 @@ class TestCoordinatorAppliesTemperatureFromAnMqttPush:
         }
         coordinator._transport = TransportHealthTracker()
         coordinator.async_set_updated_data = MagicMock()
+        coordinator._config_entry = MagicMock(options={})
+        coordinator._bff_thermometer_ids = set()
+        coordinator._display_fahrenheit = {}
         return coordinator
+
+    def test_account_reporting_fahrenheit_gets_the_frame_stored_in_fahrenheit(self):
+        """The temperature sensor converts F to C for such an account, so a raw C value would read as -5 C."""
+        coordinator = self._coordinator()
+        coordinator._display_fahrenheit = {DEVICE_ID: True}
+
+        coordinator._on_mqtt_state_update(
+            DEVICE_ID,
+            {"onOff": 1, "_op_frames": [FRAME_TEMP_72_3F.hex()]},
+        )
+
+        assert coordinator._states[DEVICE_ID].sensor_temperature == pytest.approx(72.3, abs=0.1)
 
     def test_temperature_and_humidity_applied_from_push(self):
         coordinator = self._coordinator()

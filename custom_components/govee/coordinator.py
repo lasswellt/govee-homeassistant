@@ -3309,6 +3309,20 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             return celsius * (9.0 / 5.0) + 32.0
         return celsius
 
+    def _store_frame_temperature_in_entity_unit(self, device_id: str, sku: str, state: GoveeDeviceState) -> None:
+        """Rewrite a just-decoded frame temperature from °C into the entity's unit.
+
+        The frame decoders store °C, but the temperature sensor converts °F→°C
+        for any device the account or the SKU allowlist marks as Fahrenheit
+        (the H5106 is on it), so an unconverted reading of 19.0 °C surfaces as
+        -7 °C, or 19 °F on a Fahrenheit display (issue #200). Same round-trip
+        :meth:`_thermo_frame_temperature` gives the pool-thermometer frames.
+        """
+        if state.sensor_temperature is not None:
+            state.sensor_temperature = round(
+                self._thermo_frame_temperature(device_id, sku, state.sensor_temperature), 1
+            )
+
     @callback
     def _handle_button_press(self, state_data: dict[str, Any]) -> None:
         """Handle a button press event from MQTT multiSync message."""
@@ -3387,7 +3401,8 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # only in these BLE-format status frames — no capability exists for
         # either (issue #114 follow-up).
         if device is not None and device.sku.upper() in PUMP_DEHUMIDIFIER_SKUS:
-            state.update_temperature_from_frames(self._op_frames_from(state_data))
+            if state.update_temperature_from_frames(self._op_frames_from(state_data)):
+                self._store_frame_temperature_in_entity_unit(device_id, device.sku, state)
         # Smart outlets (H5086) carry live voltage/current/power/energy the
         # same way — no capability exists for any of it (issue #200).
         if device is not None and device.supports_power_monitoring:
@@ -3396,7 +3411,8 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # pair the same way — no Developer API field for PM2.5 at all
         # (issue #200).
         if device is not None and device.supports_pm25_frame:
-            state.update_pm25_from_frames(self._op_frames_from(state_data))
+            if state.update_pm25_from_frames(self._op_frames_from(state_data)):
+                self._store_frame_temperature_in_entity_unit(device_id, device.sku, state)
         if device is not None and device.mqtt_outlet_count:
             self._apply_outlet_mask(device, state, state_data.get("onOff"))
 

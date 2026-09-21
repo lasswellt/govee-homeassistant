@@ -267,6 +267,16 @@ class TestPowerMonitoringSensors:
         assert GoveeEnergySensor(coord, device).native_value == 0.0033
         assert GoveePowerFactorSensor(coord, device).native_value == 49
 
+    def test_readings_keep_the_precision_the_device_reports(self):
+        """Issue #200: a small load showed as a whole number of watts."""
+        from custom_components.govee.sensor import GoveeCurrentSensor, GoveePowerSensor, GoveeVoltageSensor
+
+        coord = self._coord()
+        device = coord._devices[DEVICE_ID]
+
+        for cls in (GoveePowerSensor, GoveeVoltageSensor, GoveeCurrentSensor):
+            assert cls(coord, device).suggested_display_precision == 2
+
     def test_native_values_none_before_any_push(self):
         from custom_components.govee.sensor import GoveeVoltageSensor
 
