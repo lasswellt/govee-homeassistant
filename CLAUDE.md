@@ -318,6 +318,8 @@ Update both files when changing option labels:
 
 **One release per day, cut at the end of the day.** Fixes and merged PRs land on `main` throughout the day (CI must be green), but the version is bumped and the release created once, at the end of the user's local calendar day, covering everything that landed. Never cut a second release the same day, and don't bump `manifest.json` before release time. Users get an update notification per release, and several a week was reported as too many (#202). Issue and PR replies that cite a version go out after that day's release, per the reply rule below.
 
+**Exception: a broken release.** If a release that has already gone out breaks users (the integration fails to load or set up, or a regression stops previously working devices from working), cut a hotfix release immediately, even if one was already cut that day. Keep the hotfix to the regression alone, and say in its release notes which release it corrects. An ordinary bug, a wrong value or a missing feature is not a broken release and waits for the end-of-day release.
+
 1. **Bump version** in `manifest.json` (CalVer: `YYYY.MM.patch`)
 2. **Commit**: stage explicit paths (`git add custom_components tests ...`), never a bare `git add -A` (sandbox placeholder dotfiles sit in the repo root)
 3. **Push**: `git push origin main`
