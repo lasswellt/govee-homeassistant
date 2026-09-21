@@ -15,7 +15,7 @@ from typing import Any
 
 from homeassistant.util import dt as dt_util
 
-from custom_components.govee.const import MAX_LOCAL_FRESH_SKIPS
+from custom_components.govee.const import IDLE_DEVICE_POLL_DIVISOR, MAX_LOCAL_FRESH_SKIPS
 from custom_components.govee.coordinator import GoveeCoordinator
 from custom_components.govee.models.transport import TransportHealth
 from custom_components.govee.request_budget import local_reading_is_fresh
@@ -327,3 +327,83 @@ class TestPollSuppressesRedundantCloudReads:
         coord._refresh_ble_staleness.assert_called_once()
         # Sized on the whole pollable set, not the empty remainder.
         pacing.assert_called_once_with(1)
+
+
+class TestIdleCadenceAndDeferralThroughThePoll:
+    """End to end through _async_update_data, not the helpers alone."""
+
+    LOCAL = TestPollSuppressesRedundantCloudReads.LOCAL
+    _coord = TestPollSuppressesRedundantCloudReads._coord
+
+    def _ready(self, monkeypatch: Any, *, budget: int) -> Any:
+        from unittest.mock import AsyncMock, MagicMock
+
+        from custom_components.govee.models import GoveeDeviceState
+
+        coord, coord_mod = self._coord([self.LOCAL])
+        coord._daily_request_budget = budget
+        monkeypatch.setattr(coord, "_async_maybe_rediscover_devices", AsyncMock())
+        monkeypatch.setattr(coord, "_async_maybe_rescan_lan", AsyncMock())
+        monkeypatch.setattr(coord, "_refresh_lan_reads", AsyncMock())
+        monkeypatch.setattr(coord, "_refresh_lan_staleness", MagicMock())
+        monkeypatch.setattr(coord, "_refresh_mqtt_health", MagicMock())
+        monkeypatch.setattr(coord, "_refresh_ble_staleness", MagicMock())
+        monkeypatch.setattr(coord._ble_handler, "enroll_from_cache", lambda: None)
+        monkeypatch.setattr(coord_mod.er, "async_get", lambda hass: MagicMock())
+        monkeypatch.setattr(
+            coord_mod.er,
+            "async_entries_for_config_entry",
+            lambda registry, entry_id: [_FakeRegistryEntry(self.LOCAL, disabled_by=None)],
+        )
+        fetched: list[str] = []
+
+        async def _fetch(device_id: str, device: Any) -> Any:
+            fetched.append(device_id)
+            fresh = GoveeDeviceState.create_empty(device_id)
+            fresh.power_state = False
+            return fresh
+
+        monkeypatch.setattr(coord, "_fetch_device_state", _fetch)
+        # Off, and unchanged for two hours: as idle as a device gets.
+        coord._states[self.LOCAL].power_state = False
+        coord._state_changed_at[self.LOCAL] = dt_util.utcnow() - timedelta(hours=2)
+        return coord, fetched
+
+    async def test_an_install_under_budget_polls_an_idle_device_every_cycle(self, monkeypatch: Any) -> None:
+        coord, fetched = self._ready(monkeypatch, budget=9000)  # 1 device x 1,440 cycles fits easily
+
+        for _ in range(8):
+            await coord._async_update_data()
+
+        assert fetched == [self.LOCAL] * 8
+
+    async def test_an_install_over_budget_holds_an_idle_device_back(self, monkeypatch: Any) -> None:
+        coord, fetched = self._ready(monkeypatch, budget=500)  # 1 device x 1,440 cycles does not
+
+        for _ in range(8):
+            await coord._async_update_data()
+
+        assert len(fetched) == 8 // IDLE_DEVICE_POLL_DIVISOR
+
+    async def test_a_deferred_cycle_runs_the_tail_and_keeps_the_interval_it_chose(self, monkeypatch: Any) -> None:
+        from unittest.mock import MagicMock
+
+        coord, fetched = self._ready(monkeypatch, budget=9000)
+        coord._api_client = MagicMock()
+        coord._api_client.rate_limit_remaining = 0
+        coord._api_client.rate_limit_reset_in = 200
+        coord._api_client.requests_today = 0
+        pacing = MagicMock()
+        monkeypatch.setattr(coord, "_apply_budget_pacing", pacing)
+
+        await coord._async_update_data()
+
+        assert fetched == []
+        assert coord.update_interval == timedelta(seconds=200)
+        pacing.assert_not_called()
+        coord._refresh_mqtt_health.assert_called_once()
+        coord._async_maybe_rescan_lan.assert_awaited_once()
+
+        # The next cycle polls even though the headers cannot have refreshed.
+        await coord._async_update_data()
+        assert fetched == [self.LOCAL]
