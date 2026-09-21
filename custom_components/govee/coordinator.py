@@ -72,12 +72,14 @@ from .const import (
     CONF_API_TEMPERATURE_UNIT,
     CONF_EMAIL,
     CONF_ENABLE_MQTT_CONTROL,
+    CONF_DAILY_REQUEST_BUDGET,
     CONF_LAN_TARGETS,
     CONF_MQTT_STATUS_INTERVAL,
     CONF_PASSWORD,
     CONF_PROBE_POLL_INTERVAL,
     CONF_WATER_DETECTOR_POLL_INTERVAL,
     DEFAULT_API_TEMPERATURE_UNIT,
+    DEFAULT_DAILY_REQUEST_BUDGET,
     DEFAULT_ENABLE_MQTT_CONTROL,
     DEFAULT_MQTT_STATUS_INTERVAL,
     DEFAULT_PROBE_POLL_INTERVAL,
@@ -93,6 +95,7 @@ from .const import (
     LAN_WRITE_CONFIRM_TIMEOUT,
     LAN_WRITE_SUPPRESS_SECONDS,
     LAN_WRITE_SUPPRESS_THRESHOLD,
+    MAX_BUDGET_PACED_INTERVAL,
     MAX_MQTT_STATUS_INTERVAL,
     MAX_PROBE_POLL_INTERVAL,
     MAX_WATER_DETECTOR_POLL_INTERVAL,
@@ -106,6 +109,7 @@ from .const import (
     OPTIMISTIC_GRACE_CAP_SECONDS,
     resolve_fahrenheit_conversion,
 )
+from .request_budget import budget_paced_interval
 from .models import (
     GoveeDevice,
     GoveeDeviceState,
@@ -384,6 +388,13 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
         # Store original poll interval for restoring after rate limit backoff
         self._original_update_interval = timedelta(seconds=poll_interval)
+
+        # Requests/day this install is willing to spend on polling. The poll
+        # interval is paced against the client's running daily counter to land
+        # on it — see _apply_budget_pacing and request_budget.py.
+        self._daily_request_budget: int = int(
+            config_entry.options.get(CONF_DAILY_REQUEST_BUDGET, DEFAULT_DAILY_REQUEST_BUDGET)
+        )
 
         # Developer-API thermometers whose live reading we also pull from the
         # BFF device list (e.g. H5110/H5075 via H5151, H5179). The BFF call
@@ -3573,6 +3584,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             )
             async_delete_rate_limit_issue(self.hass, self._config_entry)
 
+        # Pace the next tick against what today's polling has already cost.
+        self._apply_budget_pacing(len(pollable))
+
         # Refresh transport-health snapshots tied to coordinator cadence.
         self._refresh_mqtt_health()
         self._refresh_ble_staleness()
@@ -3660,6 +3674,54 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
     def _entities_all_disabled(self, device_id: str) -> bool:
         """True when this one device has entities and all of them are disabled."""
         return device_id in self._devices_with_all_entities_disabled()
+
+    def _apply_budget_pacing(self, requests_per_cycle: int) -> None:
+        """Stretch the poll interval so the day's spend lands on the budget.
+
+        Reads the API client's running daily counter (the same figure the
+        "API rate limit remaining" sensor exposes as ``requests_today``) and
+        asks :func:`request_budget.budget_paced_interval` what spacing the
+        rest of today can afford. Only ever slows the poll down, never speeds
+        it past the user's configured interval.
+
+        Skipped entirely while a 429 back-off is in force: that back-off is
+        the stronger constraint and owns ``update_interval`` until it clears.
+
+        The counter is a floor — requests that die below the HTTP layer are
+        never counted — so the true spend can exceed what this sees. That is
+        why the default budget is 9,000 against a 10,000 cap: the gap absorbs
+        the undercount along with commands, scene fetches and rediscovery.
+        """
+        if self._rate_limited:
+            return
+
+        now = time.time()
+        seconds_remaining_today = int(86400 - (now % 86400))
+        try:
+            interval = budget_paced_interval(
+                base_interval=int(self._original_update_interval.total_seconds()),
+                requests_today=int(self._api_client.requests_today),
+                requests_per_cycle=requests_per_cycle,
+                seconds_remaining_today=seconds_remaining_today,
+                daily_budget=int(self._daily_request_budget),
+                max_interval=MAX_BUDGET_PACED_INTERVAL,
+            )
+        except (TypeError, ValueError) as err:
+            # Pacing is an optimisation, never a reason to fail a poll: if a
+            # counter reads back as something non-numeric, leave the interval
+            # where the user put it.
+            _LOGGER.debug("Budget pacing skipped, counters unusable: %s", err)
+            return
+        paced = timedelta(seconds=interval)
+        if paced != self.update_interval:
+            _LOGGER.debug(
+                "Budget pacing: %d request(s)/cycle, %d spent today of %d budget " "-> poll interval %ds",
+                requests_per_cycle,
+                self._api_client.requests_today,
+                self._daily_request_budget,
+                interval,
+            )
+            self.update_interval = paced
 
     async def _fetch_device_state_bounded(
         self,
