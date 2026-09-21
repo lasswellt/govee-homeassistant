@@ -578,13 +578,13 @@ class GoveeAuthClient:
                 # IoT key response wraps data in a "data" field
                 return data.get("data", {}) if isinstance(data, dict) else {}
 
-        except aiohttp.ClientError as err:
+        except (aiohttp.ClientError, TimeoutError) as err:
             _LOGGER.warning(
                 "Connection error fetching IoT key: %s (%s)",
                 type(err).__name__,
                 str(err),
             )
-            raise GoveeApiError(f"Connection error getting IoT key: {err}") from err
+            raise GoveeApiError(f"Connection error getting IoT key: {str(err) or type(err).__name__}") from err
 
     @staticmethod
     def _extract_topics_from_devices(devices: list[Any]) -> dict[str, str]:
@@ -782,8 +782,8 @@ class GoveeAuthClient:
                 )
                 return device_topics
 
-        except aiohttp.ClientError as err:
-            raise GoveeApiError(f"Connection error fetching device topics: {err}") from err
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise GoveeApiError(f"Connection error fetching device topics: {str(err) or type(err).__name__}") from err
 
     async def fetch_bff_thermo_hygrometers(
         self,
@@ -941,8 +941,10 @@ class GoveeAuthClient:
                 _LOGGER.debug("Discovered %d thermo-hygrometers from BFF API", len(sensors))
                 return sensors
 
-        except aiohttp.ClientError as err:
-            raise GoveeApiError(f"Connection error fetching BFF device list: {err}") from err
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise GoveeApiError(
+                f"Connection error fetching BFF device list: {str(err) or type(err).__name__}"
+            ) from err
 
     async def fetch_bff_leak_sensors(
         self,
@@ -1173,8 +1175,10 @@ class GoveeAuthClient:
                 )
                 return sensors, hubs, thermo_readings
 
-        except aiohttp.ClientError as err:
-            raise GoveeApiError(f"Connection error fetching BFF device list: {err}") from err
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise GoveeApiError(
+                f"Connection error fetching BFF device list: {str(err) or type(err).__name__}"
+            ) from err
 
     async def fetch_water_detector_states(
         self,
@@ -1262,8 +1266,10 @@ class GoveeAuthClient:
                     }
                 return result
 
-        except aiohttp.ClientError as err:
-            raise GoveeApiError(f"Connection error fetching water-detector states: {err}") from err
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise GoveeApiError(
+                f"Connection error fetching water-detector states: {str(err) or type(err).__name__}"
+            ) from err
 
     async def fetch_leak_warning(
         self,
@@ -1331,8 +1337,8 @@ class GoveeAuthClient:
                     for m in messages
                 )
 
-        except aiohttp.ClientError as err:
-            raise GoveeApiError(f"Connection error fetching leak warning: {err}") from err
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise GoveeApiError(f"Connection error fetching leak warning: {str(err) or type(err).__name__}") from err
 
     def gateway_routes(self) -> dict[str, dict[str, str]]:
         """Gateway command routes discovered by the last topic fetch (#135).
@@ -1468,8 +1474,10 @@ class GoveeAuthClient:
                 if response.status != 200:
                     raise GoveeApiError(f"Failed to request verification code: HTTP {response.status}")
                 _LOGGER.debug("Verification code requested")
-        except aiohttp.ClientError as err:
-            raise GoveeApiError(f"Connection error requesting verification code: {err}") from err
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise GoveeApiError(
+                f"Connection error requesting verification code: {str(err) or type(err).__name__}"
+            ) from err
 
     async def login(
         self,
@@ -1610,13 +1618,13 @@ class GoveeAuthClient:
                 _LOGGER.debug("Successfully authenticated with Govee")
                 return credentials
 
-        except aiohttp.ClientError as err:
+        except (aiohttp.ClientError, TimeoutError) as err:
             _LOGGER.warning(
                 "Connection error during Govee login: %s (%s)",
                 type(err).__name__,
                 str(err),
             )
-            raise GoveeApiError(f"Connection error during login: {err}") from err
+            raise GoveeApiError(f"Connection error during login: {str(err) or type(err).__name__}") from err
 
 
 async def validate_govee_credentials(

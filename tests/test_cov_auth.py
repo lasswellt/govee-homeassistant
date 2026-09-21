@@ -848,6 +848,12 @@ class TestFetchLeakWarning:
         with pytest.raises(GoveeApiError, match="Connection error fetching leak warning"):
             await client.fetch_leak_warning("tok", "AABB", "H5054")
 
+    async def test_a_bare_timeout_is_wrapped_too(self):
+        client = GoveeAuthClient(session=_session(post=[TimeoutError()]))
+
+        with pytest.raises(GoveeApiError, match="Connection error fetching leak warning: TimeoutError"):
+            await client.fetch_leak_warning("tok", "AABB", "H5054")
+
     @pytest.mark.parametrize("body", [{"data": {"unexpected": True}}, {"data": None}, {}])
     async def test_a_history_that_is_not_a_list_reads_as_dry(self, body):
         client = GoveeAuthClient(session=_session(post=[_response(200, body)]))

@@ -384,8 +384,8 @@ class GoveeApiClient:
                 _LOGGER.debug("Fetched %d devices from Govee API", len(devices))
                 return devices
 
-        except aiohttp.ClientError as err:
-            raise GoveeConnectionError(f"Connection error: {err}") from err
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise GoveeConnectionError(f"Connection error: {str(err) or type(err).__name__}") from err
 
     async def get_device_state(
         self,
@@ -445,8 +445,8 @@ class GoveeApiClient:
                 self._last_raw_state[device_id] = payload_data
                 return state
 
-        except aiohttp.ClientError as err:
-            raise GoveeConnectionError(f"Connection error: {err}") from err
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise GoveeConnectionError(f"Connection error: {str(err) or type(err).__name__}") from err
 
     @property
     def last_raw_devices(self) -> list[dict[str, Any]] | None:
@@ -588,9 +588,9 @@ class GoveeApiClient:
                 await self._handle_response(response)
                 return True
 
-        except aiohttp.ClientError as err:
+        except (aiohttp.ClientError, TimeoutError) as err:
             record["error"] = f"connection: {err}"
-            raise GoveeConnectionError(f"Connection error: {err}") from err
+            raise GoveeConnectionError(f"Connection error: {str(err) or type(err).__name__}") from err
         except GoveeApiError as err:
             record["error"] = str(err)
             _LOGGER.warning(
@@ -658,8 +658,8 @@ class GoveeApiClient:
         except GoveeDeviceNotFoundError:
             _LOGGER.debug("No scenes available for device %s", device_id)
             return []
-        except aiohttp.ClientError as err:
-            raise GoveeConnectionError(f"Connection error: {err}") from err
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise GoveeConnectionError(f"Connection error: {str(err) or type(err).__name__}") from err
 
     async def get_diy_scenes(
         self,
@@ -713,8 +713,8 @@ class GoveeApiClient:
         except GoveeDeviceNotFoundError:
             _LOGGER.debug("No DIY scenes available for device %s", device_id)
             return []
-        except aiohttp.ClientError as err:
-            raise GoveeConnectionError(f"Connection error: {err}") from err
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise GoveeConnectionError(f"Connection error: {str(err) or type(err).__name__}") from err
 
 
 async def validate_api_key(api_key: str, hass: HomeAssistant | None = None) -> bool:

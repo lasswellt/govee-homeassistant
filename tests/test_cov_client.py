@@ -352,6 +352,15 @@ class TestGetDevices:
         assert "dns" in str(exc_info.value)
         assert isinstance(exc_info.value.__cause__, aiohttp.ClientError)
 
+    async def test_a_bare_timeout_is_wrapped_as_a_connection_error(self):
+        """Issue #207: aiohttp's total timeout raises a bare ``TimeoutError``, not a ``ClientError``."""
+        client = _client(TimeoutError())
+
+        with pytest.raises(GoveeConnectionError, match="TimeoutError") as exc_info:
+            await client.get_devices()
+
+        assert isinstance(exc_info.value.__cause__, TimeoutError)
+
     async def test_auth_error_propagates_without_touching_the_raw_payload(self):
         client = _client(_response(401, {"message": "Unauthorized"}))
 
