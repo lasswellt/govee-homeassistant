@@ -22,12 +22,21 @@ from __future__ import annotations
 import math
 
 __all__ = [
+    "DAILY_RESET_MARGIN",
     "budget_paced_interval",
     "cloud_poll_divisor",
     "header_backoff_interval",
     "local_reading_is_fresh",
     "poll_exceeds_budget",
 ]
+
+# Seconds past the 00:00 UTC reset that a poll waiting for it is aimed at.
+# The time left today reaches budget_paced_interval rounded down to the whole
+# second, and Home Assistant arms the timer at int(loop.time()) plus a
+# 0.05-0.50 s stagger plus the interval, so a poll can fire up to 1.95 s
+# sooner than the interval alone says. Five seconds keeps it at least three
+# seconds into the new day.
+DAILY_RESET_MARGIN = 5
 
 
 def budget_paced_interval(
@@ -78,16 +87,26 @@ def budget_paced_interval(
     if requests_per_cycle <= 0 or base_interval <= 0:
         return base_interval
 
+    # Budget spent, or too little left for one more cycle. Back off rather
+    # than stopping, since a poll that never runs again would leave state
+    # frozen if the reading were ever wrong; but only until the counter resets
+    # at UTC midnight. The last cycle of a paced day nearly always lands here,
+    # because pacing aims to spend the budget by the end of the day, and
+    # backing off the full ceiling then put the first poll of a fresh day up
+    # to that long after the reset (found while tracing issue #214, though not
+    # what froze the devices there). DAILY_RESET_MARGIN past the reset so the
+    # poll counts against the new day. The ceiling still wins, so with the
+    # reset less than DAILY_RESET_MARGIN short of it the poll can land a few
+    # seconds early; the one after it then follows at the configured
+    # interval, on the new day.
+    until_reset = max(base_interval, max(seconds_remaining_today, 0) + DAILY_RESET_MARGIN)
     remaining = daily_budget - requests_today
     if remaining <= 0:
-        # Budget already spent. Back all the way off rather than stopping:
-        # the counter resets at UTC midnight, and a poll that never runs
-        # again would leave state frozen if the reading were ever wrong.
-        return max_interval
+        return min(until_reset, max_interval)
 
     affordable_cycles = remaining / requests_per_cycle
     if affordable_cycles < 1:
-        return max_interval
+        return min(until_reset, max_interval)
 
     required = math.ceil(max(seconds_remaining_today, 0) / affordable_cycles)
     return max(base_interval, min(required, max_interval))
