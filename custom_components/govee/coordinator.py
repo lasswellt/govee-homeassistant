@@ -3557,6 +3557,39 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
         self._config_entry.async_create_background_task(self.hass, _surface(), name="govee_mqtt_give_up_issue")
 
+    @callback
+    def async_set_updated_data(self, data: dict[str, GoveeDeviceState]) -> None:
+        """Publish pushed or locally applied state without moving the cloud poll.
+
+        Home Assistant's version also cancels the pending poll and re-arms it a
+        full ``update_interval`` later. That suits a coordinator whose pushes
+        replace its poll; here the poll is the only source for devices with no
+        push channel, and every MQTT frame, gateway thermometer frame, LAN read
+        and OpenAPI event goes through this method. Once budget pacing or a
+        rate-limit back-off stretched the interval past the gap between pushes
+        (the MQTT status sweep alone answers every few minutes), the poll was
+        re-armed before it could ever fire, and the pacing that would shorten
+        the interval again only runs inside the poll: cloud-polled devices
+        froze until the entry reloaded (issue #214).
+
+        So a push never moves a poll that is already pending. It still arms
+        one when none is, on Home Assistant's own conditions (someone is
+        listening; ``_schedule_refresh`` checks the interval and
+        ``pref_disable_polling``), because a refresh that ends in
+        ConfigEntryAuthFailed leaves no poll armed, and until now the next
+        push was what brought it back.
+
+        The rest of the contract is unchanged: the data is published, a push
+        still counts as a successful update, and listeners are told. A
+        requested refresh waiting in its debouncer is left to run: a push
+        covers one device, the refresh all of them.
+        """
+        self.data = data
+        self.last_update_success = True
+        if self._listeners and self._unsub_refresh is None:
+            self._schedule_refresh()
+        self.async_update_listeners()
+
     async def _async_update_data(self) -> dict[str, GoveeDeviceState]:
         """Fetch state for all devices (parallel).
 
