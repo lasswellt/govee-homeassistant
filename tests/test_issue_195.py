@@ -284,3 +284,16 @@ class TestPermanentSkuExclusion:
         assert client.async_publish_status_query.await_args_list == [call("GD/a")]
         assert coord._status_query_strikes == {}
         assert coord.mqtt_status_query_strikes == []
+
+    @pytest.mark.asyncio
+    async def test_the_h5074_is_never_queried(self, sleeps):
+        """The H5075's BLE-only sibling: a topic on the account it never
+        answers, so it is left out of the sweep and can never cost a strike.
+        """
+        coord, client = _coord(devices=("A", "B", "C"), skus={"B": "H5074"})
+
+        await coord._poll_mqtt_status()
+
+        assert client.async_publish_status_query.await_args_list == [call("GD/a"), call("GD/c")]
+        assert coord._status_query_strikes == {}
+        assert coord.mqtt_status_query_strikes == []

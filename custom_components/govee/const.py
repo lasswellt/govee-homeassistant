@@ -316,7 +316,12 @@ MQTT_STATUS_QUERY_QUARANTINE_STRIKES: Final = 2
 #     after querying the next unit, so MQTT was effectively dead for 30
 #     minutes after every restart while the six burned through their strikes
 #     (issue #195 follow-up).
-MQTT_STATUS_QUERY_EXCLUDED_SKUS: Final = frozenset({"H5110", "H5220", "H5111", "H5075"})
+#   H5074 (thermo-hygrometer, the H5075's smaller sibling): the same class,
+#     BLE-only with a topic on the account it never answers, so a status
+#     query to it drops the session just as the H5075's did (issue #195).
+#     Not in FAHRENHEIT_REPORTING_SKUS: that list needs a reading showing
+#     which unit the model reports in.
+MQTT_STATUS_QUERY_EXCLUDED_SKUS: Final = frozenset({"H5110", "H5220", "H5111", "H5075", "H5074"})
 
 # Optimistic state handling
 # Grace window (seconds) during which API polls do NOT overwrite optimistic
