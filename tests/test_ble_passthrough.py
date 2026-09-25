@@ -122,3 +122,24 @@ class TestSendFanOscillation:
 
         assert result is False
         client.async_publish_command.assert_not_awaited()
+
+
+class TestSendMusicModeV3:
+    """async_send_music_mode_v3 publishes the app's 33 05 13 selector (#215)."""
+
+    @pytest.mark.asyncio
+    async def test_publishes_the_selector_frame(self):
+        client = _make_client()
+        manager = _make_manager(client)
+
+        assert await manager.async_send_music_mode_v3(DEVICE_ID, "H612F", 0x31, 25) is True
+
+        device_id, sku, encoded, topic = client.async_publish_ptreal.call_args[0]
+        assert (device_id, sku, topic) == (DEVICE_ID, "H612F", TOPIC)
+        assert base64.b64decode(encoded)[:5] == bytes([0x33, 0x05, 0x13, 0x31, 0x19])
+
+    @pytest.mark.asyncio
+    async def test_no_client_sends_nothing(self):
+        manager = _make_manager(None)
+
+        assert await manager.async_send_music_mode_v3(DEVICE_ID, "H612F", 0x31, 25) is False

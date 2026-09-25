@@ -23,9 +23,11 @@ from custom_components.govee.api.ble_packet import (
     build_dreamview_packet,
     build_fan_oscillation_packet,
     build_music_mode_packet,
+    build_music_mode_v3_packet,
     build_packet,
     calculate_checksum,
     encode_packet_base64,
+    music_v3_effect_code,
 )
 
 # ==============================================================================
@@ -632,3 +634,43 @@ class TestBuildFanOscillationPacket:
         assert packet[1] == FAN_OSC_COMMAND
         assert packet[2] == 0x00
         assert packet[19] == _xor(packet[:19])
+
+
+class TestMusicModeV3Packet:
+    """The app's 33 05 13 selector (#215/#186)."""
+
+    def test_new_effect_carries_effect_and_sensitivity_only(self):
+        packet = build_music_mode_v3_packet(0x31, 25)
+
+        # Same shape as the H612F's own status report: aa 05 13 31 19 (Shiny, 25).
+        assert packet[:5] == bytes([0x33, 0x05, 0x13, 0x31, 0x19])
+        assert packet[5:19] == bytes(14)
+        assert packet[19] == calculate_checksum(list(packet[:19]))
+
+    def test_legacy_effect_adds_dynamic_style_and_auto_colour(self):
+        packet = build_music_mode_v3_packet(0x04, 100)
+
+        assert packet[:7] == bytes([0x33, 0x05, 0x13, 0x04, 0x64, 0x00, 0x00])
+        assert len(packet) == 20
+
+    @pytest.mark.parametrize(("given", "sent"), [(-5, 0), (150, 100)])
+    def test_sensitivity_is_clamped(self, given, sent):
+        assert build_music_mode_v3_packet(0x31, given)[4] == sent
+
+    @pytest.mark.parametrize(
+        ("name", "code"),
+        [
+            ("Rhythm", 0x03),
+            ("Spectrum", 0x04),
+            ("Energic", 0x05),
+            ("Rolling", 0x06),
+            ("Shiny", 0x31),
+            ("PianoKeys", 0x34),
+            ("Day And Night", 0x37),
+        ],
+    )
+    def test_effect_names_map_to_app_codes(self, name, code):
+        assert music_v3_effect_code(name) == code
+
+    def test_unknown_effect_has_no_code(self):
+        assert music_v3_effect_code("Sprouting") is None

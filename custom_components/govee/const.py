@@ -127,6 +127,14 @@ FAHRENHEIT_REPORTING_SKUS: Final = frozenset(
 # every other fan SKU. Compared case-insensitively against GoveeDevice.sku.
 MQTT_OSCILLATION_SKUS: Final = frozenset({"H7105", "H7107"})
 
+# Lights whose Platform-API musicMode is accepted (HTTP 200) but reaches the
+# device as an empty frame: Govee relays it over AWS IoT as `33 05 01 00 ...`,
+# with the effect and sensitivity zeroed, whatever was sent, so the light goes
+# dark or does nothing (H612F #215, H6022 #186). For these the integration writes
+# the app's own `33 05 13` frame over ptReal instead, falling back to REST when
+# AWS IoT is not connected. Compared case-insensitively against GoveeDevice.sku.
+MQTT_MUSIC_MODE_SKUS: Final = frozenset({"H6022", "H612F"})
+
 
 # Multi-outlet plugs whose Developer API capability list carries only the
 # master powerSwitch (no socketToggle{N}) but whose outlets homebridge-govee

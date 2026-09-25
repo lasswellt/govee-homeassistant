@@ -17,6 +17,7 @@ from .api.ble_packet import (
     build_dreamview_packet,
     build_fan_oscillation_packet,
     build_music_mode_packet,
+    build_music_mode_v3_packet,
     encode_packet_base64,
 )
 
@@ -104,6 +105,27 @@ class BlePassthroughManager:
         packet = build_music_mode_packet(enabled, sensitivity)
         encoded = encode_packet_base64(packet)
         return await self.async_send_ble_packet(device_id, sku, encoded)
+
+    async def async_send_music_mode_v3(
+        self,
+        device_id: str,
+        sku: str,
+        effect_code: int,
+        sensitivity: int,
+    ) -> bool:
+        """Select a music effect with the app's ``33 05 13`` frame.
+
+        Args:
+            device_id: Device identifier.
+            sku: Device SKU.
+            effect_code: App effect code.
+            sensitivity: Microphone sensitivity 0-100.
+
+        Returns:
+            True if the frame was published.
+        """
+        packet = build_music_mode_v3_packet(effect_code, sensitivity)
+        return await self.async_send_ble_packet(device_id, sku, encode_packet_base64(packet))
 
     async def async_send_dreamview(
         self,

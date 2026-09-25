@@ -110,6 +110,65 @@ def build_music_mode_packet(enabled: bool, sensitivity: int = 50) -> bytes:
     return build_packet(data)
 
 
+# Music mode as the Govee app writes it (sub-mode 0x13, the app's
+# SubModeMusicV3). Layout per teh-hippo/ha-govee-led-ble, decompiled from the
+# Android app 7.6.01 and captured on the H617A/H6099/H6199/H6102:
+#   33 05 13 <effect> <sensitivity 0-100> [<style> <fixed colour> <R G B>]
+# The bracketed tail exists only for the four legacy effects. An H612F status
+# frame confirms the shape: aa 05 13 31 19 = Shiny at sensitivity 25 (#215).
+MUSIC_V3_INDICATOR = 0x13
+MUSIC_V3_LEGACY_EFFECTS = frozenset({0x03, 0x04, 0x05, 0x06})
+# The Developer API's musicMode values are per-model list positions (the
+# H612F lists Rhythm=0, Shiny=2), so the effect is matched by name. Keys are
+# lowercased with non-letters removed; "energic" is the API's own spelling.
+MUSIC_V3_EFFECT_CODES: dict[str, int] = {
+    "rhythm": 0x03,
+    "spectrum": 0x04,
+    "energic": 0x05,
+    "energetic": 0x05,
+    "rolling": 0x06,
+    "bloom": 0x30,
+    "shiny": 0x31,
+    "separation": 0x32,
+    "hopping": 0x33,
+    "pianokeys": 0x34,
+    "fountain": 0x35,
+    "dayandnight": 0x37,
+}
+
+
+def music_v3_effect_code(name: str) -> int | None:
+    """App effect code for a Developer-API music mode name, or None if unknown."""
+    key = "".join(ch for ch in name.lower() if ch.isalpha())
+    return MUSIC_V3_EFFECT_CODES.get(key)
+
+
+def build_music_mode_v3_packet(effect_code: int, sensitivity: int) -> bytes:
+    """Build the app's music-mode selector frame.
+
+    Legacy effects get the dynamic style and automatic colour; newer effects
+    carry only the effect and sensitivity and play the palette the device
+    already holds.
+
+    Args:
+        effect_code: App effect code (see ``MUSIC_V3_EFFECT_CODES``).
+        sensitivity: Microphone sensitivity 0-100.
+
+    Returns:
+        20-byte BLE packet.
+    """
+    data = [
+        MUSIC_PACKET_PREFIX,
+        MUSIC_MODE_COMMAND,
+        MUSIC_V3_INDICATOR,
+        effect_code & 0xFF,
+        max(0, min(100, sensitivity)),
+    ]
+    if effect_code in MUSIC_V3_LEGACY_EFFECTS:
+        data.extend([0x00, 0x00])  # dynamic style, no fixed colour
+    return build_packet(data)
+
+
 def build_dreamview_packet() -> bytes:
     """Build the DreamView (video/camera sync) activation packet.
 

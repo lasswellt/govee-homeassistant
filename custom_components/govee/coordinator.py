@@ -107,6 +107,7 @@ from .const import (
     MIN_MQTT_STATUS_INTERVAL,
     MIN_PROBE_POLL_INTERVAL,
     MIN_WATER_DETECTOR_POLL_INTERVAL,
+    MQTT_MUSIC_MODE_SKUS,
     MQTT_STATUS_POLL_OFF,
     MQTT_STATUS_QUERY_EXCLUDED_SKUS,
     MQTT_STATUS_QUERY_QUARANTINE_STRIKES,
@@ -150,6 +151,7 @@ from .models.commands import (
     WorkModeCommand,
     create_dreamview_command,
 )
+from .api.ble_packet import music_v3_effect_code
 from .api.probe_thermometer import (
     ProbeLimits,
     build_limits_read_packet,
@@ -4432,6 +4434,45 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         self.async_set_updated_data(self._states)
         return True
 
+    async def _try_mqtt_music_mode(self, device_id: str, device: GoveeDevice, command: MusicModeCommand) -> bool:
+        """Select a music effect with the app's own frame, for SKUs whose REST path is empty.
+
+        Govee relays a Platform-API musicMode to the SKUs in
+        ``MQTT_MUSIC_MODE_SKUS`` as a zeroed ``33 05 01`` frame, so the light
+        goes dark (#186, #215). Returns False, leaving REST to carry the command,
+        when the SKU is not affected, AWS IoT is down, or the effect name has
+        no known app code.
+        """
+        if device.sku.upper() not in MQTT_MUSIC_MODE_SKUS or not self._ble_manager.available:
+            return False
+        name = next(
+            (
+                str(opt.get("name", ""))
+                for opt in device.get_music_mode_options()
+                if opt.get("value") == command.music_mode
+            ),
+            "",
+        )
+        effect_code = music_v3_effect_code(name)
+        if effect_code is None:
+            _LOGGER.debug("No app code for music mode %r on %s, sending over REST", name, device.name)
+            return False
+        ok = await self._ble_manager.async_send_music_mode_v3(device_id, device.sku, effect_code, command.sensitivity)
+        self._record_local_command(
+            device_id,
+            device.sku,
+            "mqtt",
+            command,
+            delivered=ok,
+            detail=f"ptReal 33 05 13 {effect_code:02x} sensitivity={command.sensitivity}",
+        )
+        if not ok:
+            return False
+        self._record_transport_send(device_id, "mqtt")
+        self._apply_optimistic_update(device_id, command)
+        self.async_set_updated_data(self._states)
+        return True
+
     async def async_control_device(
         self,
         device_id: str,
@@ -4488,6 +4529,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             if await self._try_lan_command(device_id, device, command):
                 return True
             # LAN unavailable / unconfirmed — fall through to MQTT/REST.
+
+            if isinstance(command, MusicModeCommand) and await self._try_mqtt_music_mode(device_id, device, command):
+                return True
 
             # MQTT-native control tier: when enabled and connected, push
             # power/brightness/color over the AWS IoT channel (~50ms) instead

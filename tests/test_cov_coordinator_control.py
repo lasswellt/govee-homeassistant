@@ -180,6 +180,7 @@ def _ble_manager(*, available: bool = True, result: bool = True) -> MagicMock:
     manager = MagicMock()
     manager.available = available
     manager.async_send_music_mode = AsyncMock(return_value=result)
+    manager.async_send_music_mode_v3 = AsyncMock(return_value=result)
     manager.async_send_dreamview = AsyncMock(return_value=result)
     manager.async_send_diy_scene = AsyncMock(return_value=result)
     return manager
@@ -484,7 +485,7 @@ class TestEnsureDeviceTopic:
 
 class TestMusicMode:
     def _struct_device(self) -> GoveeDevice:
-        return _device(sku="H6022", caps=(_POWER, _MUSIC_STRUCT))
+        return _device(sku="H6072", caps=(_POWER, _MUSIC_STRUCT))
 
     @pytest.mark.asyncio
     async def test_unknown_device_is_refused(self):
@@ -541,7 +542,7 @@ class TestMusicMode:
 
         assert await coord.async_send_music_mode(DEV, True, sensitivity=70) is True
 
-        coord._ble_manager.async_send_music_mode.assert_awaited_once_with(DEV, "H6022", True, 70)
+        coord._ble_manager.async_send_music_mode.assert_awaited_once_with(DEV, "H6072", True, 70)
         assert state.music_mode_enabled is True
 
     @pytest.mark.asyncio
@@ -578,7 +579,7 @@ class TestMusicMode:
 
         assert await coord.async_send_music_mode(DEV, False) is True
 
-        coord._ble_manager.async_send_music_mode.assert_awaited_once_with(DEV, "H6022", False, 50)
+        coord._ble_manager.async_send_music_mode.assert_awaited_once_with(DEV, "H6072", False, 50)
         assert state.music_mode_enabled is False
 
     @pytest.mark.asyncio
@@ -604,6 +605,100 @@ class TestMusicMode:
         assert await coord.async_send_music_mode(DEV, True) is False
 
         assert state.music_mode_enabled is None
+
+
+_MUSIC_H612F = GoveeCapability(
+    type=CAPABILITY_MUSIC_MODE,
+    instance=INSTANCE_MUSIC_MODE,
+    parameters={
+        "dataType": "STRUCT",
+        "fields": [
+            {
+                "fieldName": "musicMode",
+                "dataType": "ENUM",
+                "options": [
+                    {"name": "Rhythm", "value": 0},
+                    {"name": "Sprouting", "value": 1},
+                    {"name": "Shiny", "value": 2},
+                ],
+            },
+            {"fieldName": "sensitivity", "dataType": "INTEGER"},
+        ],
+    },
+)
+
+
+class TestMusicModePtReal:
+    """#215/#186: affected SKUs get the app's 33 05 13 frame instead of the empty REST relay."""
+
+    def _setup(self, *, sku: str = "H612F", available: bool = True, result: bool = True):
+        coord = _coordinator()
+        state = _add(coord, _device(sku=sku, caps=(_POWER, _MUSIC_H612F)))
+        coord._ble_manager = _ble_manager(available=available, result=result)
+        return coord, state
+
+    @pytest.mark.asyncio
+    async def test_affected_sku_sends_the_app_frame_not_rest(self):
+        coord, state = self._setup()
+
+        assert await coord.async_control_device(DEV, MusicModeCommand(music_mode=2, sensitivity=40)) is True
+
+        coord._ble_manager.async_send_music_mode_v3.assert_awaited_once_with(DEV, "H612F", 0x31, 40)
+        assert _sent(coord) == []
+        assert state.music_mode_enabled is True
+        assert state.music_mode_value == 2
+        assert coord._transport.get(DEV, "mqtt").last_send_ts is not None
+        _, kwargs = coord._api_client.record_local_command.call_args
+        assert kwargs["delivered"] is True
+        assert "33 05 13 31" in kwargs["detail"]
+        coord.async_set_updated_data.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_sku_match_ignores_case(self):
+        coord, _ = self._setup(sku="h612f")
+
+        assert await coord.async_control_device(DEV, MusicModeCommand(music_mode=0, sensitivity=50)) is True
+
+        coord._ble_manager.async_send_music_mode_v3.assert_awaited_once_with(DEV, "h612f", 0x03, 50)
+
+    @pytest.mark.asyncio
+    async def test_unaffected_sku_stays_on_rest(self):
+        coord, _ = self._setup(sku="H6072")
+
+        assert await coord.async_control_device(DEV, MusicModeCommand(music_mode=2, sensitivity=40)) is True
+
+        coord._ble_manager.async_send_music_mode_v3.assert_not_awaited()
+        assert _sent(coord) == [MusicModeCommand(music_mode=2, sensitivity=40)]
+
+    @pytest.mark.asyncio
+    async def test_no_aws_iot_falls_back_to_rest(self):
+        coord, _ = self._setup(available=False)
+
+        assert await coord.async_control_device(DEV, MusicModeCommand(music_mode=2, sensitivity=40)) is True
+
+        coord._ble_manager.async_send_music_mode_v3.assert_not_awaited()
+        assert len(_sent(coord)) == 1
+
+    @pytest.mark.asyncio
+    async def test_effect_without_an_app_code_falls_back_to_rest(self):
+        coord, _ = self._setup()
+
+        # Sprouting has no confirmed app code.
+        assert await coord.async_control_device(DEV, MusicModeCommand(music_mode=1, sensitivity=40)) is True
+
+        coord._ble_manager.async_send_music_mode_v3.assert_not_awaited()
+        assert len(_sent(coord)) == 1
+
+    @pytest.mark.asyncio
+    async def test_failed_publish_falls_back_to_rest(self):
+        coord, _ = self._setup(result=False)
+
+        assert await coord.async_control_device(DEV, MusicModeCommand(music_mode=2, sensitivity=40)) is True
+
+        coord._ble_manager.async_send_music_mode_v3.assert_awaited_once()
+        _, kwargs = coord._api_client.record_local_command.call_args
+        assert kwargs["delivered"] is False
+        assert len(_sent(coord)) == 1
 
 
 class TestRestDisableMusicMode:
