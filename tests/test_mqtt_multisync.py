@@ -260,7 +260,7 @@ class TestThermoFrameDecode:
     leak sub-device, 0x08 for a thermometer.
 
     The temperature encoding is
-    ``T[°C] = (byte13 + 256 * (byte14 & 1) + 112) / 10``, established
+    ``T[°C] = (byte13 + 256 * (byte14 & 0x03)) / 10 - 40``, established
     in #151 against 30 on-the-hour frames paired with the cloud reading each
     produced. All frames below are verbatim from that capture, with the label
     the reporter's own cloud history recorded for them.
@@ -284,6 +284,14 @@ class TestThermoFrameDecode:
         ("ee34000800642915b86a9374dfff82ccff20000e", 36.7),
         ("ee34000800642915b76a9374070083ccff200027", 36.8),
         ("ee34000800642915bb6a9340271683ccff200029", 39.0),
+    ]
+
+    # Same H5310 out of the water, crossing 11.2 °C downwards (#151, 2026-09-24).
+    # Byte 13 wraps 04 -> FE and byte 14 borrows BA -> B9; read as a lone carry
+    # bit, the second frame decoded as 62.2 °C.
+    LOWER_ROLLOVER = [
+        ("ee34000800642915bd6ab58fb404baccff8000de", 11.6),
+        ("ee34000800642915bd6ab5900efeb9ccff800082", 11.0),
     ]
 
     def _decode_one(self, packet: bytes) -> dict:
@@ -325,6 +333,12 @@ class TestThermoFrameDecode:
         for hex_frame, label in self.ROLLOVER:
             event = self._decode_one(bytes.fromhex(hex_frame))
             assert abs(event["temperature_c"] - label) <= 0.1, hex_frame
+
+    def test_temperature_borrows_from_byte_14_below_11_2(self):
+        """Below 11.2 °C the borrow reaches bit 1 of byte 14, not a 62 °C jump."""
+        for hex_frame, label in self.LOWER_ROLLOVER:
+            event = self._decode_one(bytes.fromhex(hex_frame))
+            assert event["temperature_c"] == label, hex_frame
 
     def test_battery_and_slot_decoded(self):
         event = self._decode_one(bytes.fromhex(self.LABELLED[0][0]))

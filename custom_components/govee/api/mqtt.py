@@ -94,7 +94,7 @@ MULTISYNC_SUBTYPE_THERMO = 0x08
 
 # Thermo frame temperature encoding (issue #151).
 #
-#   T[°C] = (byte13 + 256 * (byte14 & 0x01) + THERMO_TEMP_OFFSET) / 10
+#   T[°C] = (byte13 + 256 * (byte14 & 0x03)) / 10 - 40
 #
 # Established by @Araknus13 against 30 on-the-hour frames paired with the
 # cloud reading they produced, spanning 24.4-29.5 °C over 31 hours: least
@@ -104,12 +104,16 @@ MULTISYNC_SUBTYPE_THERMO = 0x08
 # been indistinguishable only because they intersect at 31.25 °C, right where
 # that lone reading sat.
 #
-# A later H5310 capture spanning the rollover showed byte 13 changing from
-# 0xFF to 0x00 while byte 14 changed from 0x82 to 0x83. The low bit of byte 14
-# is therefore the ninth (carry) bit of the temperature value; the other seven
-# bits are device-specific and must be ignored. This also proves 0x00 and 0xFF
-# are valid temperature bytes, not no-data sentinels.
-THERMO_TEMP_OFFSET = 112
+# Bytes 13 and 14 are one counter, of which the value takes the low two bits
+# of byte 14; the other bits are device-specific and must be ignored. At the
+# upper rollover byte 13 went 0xFF -> 0x00 while byte 14 went 0x82 -> 0x83
+# (36.7 -> 36.8 °C). At the lower one, below 11.2 °C, byte 13 went 0x04 -> 0xFE
+# while byte 14 borrowed from 0xBA to 0xB9 (11.6 -> 11.0 °C). Reading only
+# bit 0 as a carry had turned that borrow into a 51.2 K jump, to ~62 °C. The
+# -40 °C offset is the common convention for these sensors, and it makes the
+# earlier fitted +11.2 exact: 512 (the 0b10 in byte 14) - 400. This also proves
+# 0x00 and 0xFF are valid temperature bytes, not no-data sentinels.
+THERMO_TEMP_OFFSET_C = -40.0
 THERMO_TEMP_SCALE = 10.0
 
 # Amazon Root CA 1 - Required for AWS IoT server certificate verification
@@ -231,15 +235,14 @@ def _decode_thermo_frame(raw: bytes) -> dict[str, Any] | None:
     if len(raw) < 15:
         return None
 
-    temp_byte = raw[13]
-    temp_carry = raw[14] & 0x01
+    temp_raw = raw[13] + ((raw[14] & 0x03) << 8)
 
     battery = raw[5] if raw[5] <= 100 else None
     frame_ts = int.from_bytes(raw[9:13], "big") if len(raw) >= 13 else None
 
     return {
         "sensor_slot": raw[2],
-        "temperature_c": (temp_byte + (temp_carry << 8) + THERMO_TEMP_OFFSET) / THERMO_TEMP_SCALE,
+        "temperature_c": round(temp_raw / THERMO_TEMP_SCALE + THERMO_TEMP_OFFSET_C, 1),
         "battery": battery,
         "frame_ts": frame_ts,
     }
