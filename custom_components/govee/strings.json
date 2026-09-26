@@ -454,6 +454,9 @@
       },
       "clear_water_full": {
         "name": "Clear water alert"
+      },
+      "clear_leak_alert": {
+        "name": "Clear leak alert"
       }
     },
     "event": {

@@ -41,6 +41,9 @@
       },
       "clear_water_full": {
         "default": "mdi:water-check"
+      },
+      "clear_leak_alert": {
+        "default": "mdi:water-check"
       }
     },
     "fan": {

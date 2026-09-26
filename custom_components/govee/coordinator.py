@@ -2894,6 +2894,46 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if changed:
             self.async_update_listeners()
 
+    async def async_clear_water_leak(self, device_id: str) -> bool:
+        """Mark a standalone water detector's leak alerts read (user action).
+
+        A detector's trip latches until its ``LeakageAlert`` is read (issue
+        #62). This sends the same ``warnLifted`` request as the Govee app's
+        "Read" button, so the alert can be acknowledged from Home Assistant,
+        then drops the latched state at once rather than on the next poll. A
+        detector that is still wet raises a new alert and latches again.
+
+        Args:
+            device_id: Device identifier.
+
+        Returns:
+            True once Govee has accepted the request; False when the device is
+            not a standalone detector, account login is not configured, or
+            Govee rejected or could not be reached.
+        """
+        device = next((d for d in self._water_detectors if d.device_id == device_id), None)
+        if device is None or not self._iot_credentials:
+            return False
+        sku = device.sku
+
+        async def _op(auth_client: GoveeAuthClient, token: str) -> bool:
+            return await auth_client.lift_leak_warning(token, device_id, sku)
+
+        try:
+            lifted = await self._async_bff_call(_op, "leak warning lift")
+        except GoveeApiError as err:
+            _LOGGER.debug("Clearing the leak alert for %s failed: %s", device_id, err)
+            return False
+        if not lifted:
+            return False
+
+        state = self._states.get(device_id)
+        if state is not None and state.water_leak:
+            state.water_leak = False
+            self.async_update_listeners()
+        _LOGGER.debug("Leak alert cleared for %s (user action, warnLifted)", device_id)
+        return True
+
     @callback
     def _handle_leak_event(self, state_data: dict[str, Any]) -> None:
         """Handle a decoded leak event from MQTT multiSync message."""
