@@ -91,7 +91,7 @@ Govee in Home Assistant has several integrations, and it's easy to pick one that
 | **Probe (cooking) thermometers** | H5192 | Core and ambient temperature per probe, plus the four alarm limits as editable numbers. These are **pull** devices — they answer a read and otherwise stay silent — so a **Live polling** switch (off by default, to spare the battery) controls whether readings update |
 | **Air‑quality & CO₂ monitors** | H5106, H5140 | CO₂ (ppm), air‑quality (AQI), temperature & humidity sensors |
 | **Presence sensors** | H5127 | Occupancy binary sensor, updated in real time over MQTT |
-| **Leak sensors** | H5054, H5055, H5058, H5059 (via an H5040/H5043/H5044 hub) | Moisture binary sensor, battery, sensor/gateway connectivity, last‑wet timestamp, button‑press event |
+| **Leak sensors** | H5054, H5055, H5058, H5059 (via an H5040/H5043/H5044 hub) | Moisture binary sensor, battery, sensor/gateway connectivity, last‑wet timestamp, button‑press event; standalone detectors (H5054) also get a **Clear leak alert** button (account login) |
 
 Don't see your device, or a capability is missing? [Open an issue](https://github.com/lasswellt/govee-homeassistant/issues) with a diagnostics download (see [Diagnostics](#diagnostics--debug-logging)).
 
@@ -361,6 +361,7 @@ Removing the entry deletes its devices and entities. Your Govee API key and acco
 | Thermometer value looks "frozen" | Expected — Govee's cloud refreshes on its own cadence. See [Thermometers & sensors](#thermometers--sensors). |
 | Sensor shows **Unknown** and never updates | Gateway‑bridged sensors depend on data Govee may not be publishing for your account. Grab a diagnostics download and open an issue — the `bff_device_values` section shows whether the reading exists at all. |
 | Leak alert arrives late | Standalone RF detectors (H5054) have no push channel and are polled; lower the **Leak sensor polling interval**. Hub‑attached sensors (H5058/H5059) push in real time and aren't affected. |
+| Leak sensor stays wet after it dried | A standalone detector (H5054) reads wet until its leak alert is marked read. Press the sensor's **Clear leak alert** button (the same request as the Govee app's **Read** button). If it is still wet, a new alert latches it again. |
 | Battery missing on a sensor | Battery comes from your Govee **account** data, so account login is required — an API key alone can't see it. It's fetched every 5 minutes, so allow a few minutes after a restart. |
 | A **"Govee real‑time updates unavailable"** repair appears | Real‑time push is down; polling keeps everything working. The integration retries with backoff and clears the repair itself when the connection returns (this can take a few minutes after an outage). If it stays, open the repair and select **Submit**: that retries the account sign‑in and reconnects. If a second repair then asks you to reconfigure, the account needs a verification code or a new password. Two Home Assistant installs on one Govee account will kick each other off AWS IoT in turn — use separate accounts. |
 | A **"Govee API rate limited for …"** repair appears | Polling is spending the API budget faster than Govee allows. Open the repair and select **Submit** to double the polling interval (up to 300 s), or raise it yourself under **Configure**. |

@@ -29,6 +29,7 @@ import custom_components.govee.api.auth as auth_mod
 from custom_components.govee.api.auth import (
     _BFF_HUMIDITY_KEYS,
     _BFF_TEMP_KEYS,
+    GOVEE_LEAK_WARN_LIFTED_URL,
     GOVEE_LEAK_WARN_URL,
     GoveeAuthClient,
     _bff_reading,
@@ -870,6 +871,67 @@ class TestFetchLeakWarning:
         client = GoveeAuthClient(session=_session(post=[_response(200, {"data": messages})]))
 
         assert await client.fetch_leak_warning("tok", "AABB", "H5054") is True
+
+
+class TestLiftLeakWarning:
+    """Marking a standalone detector's leak alerts read (the app's Read button)."""
+
+    async def test_request_targets_the_colon_stripped_device(self):
+        session = _session(post=[_response(200, {"status": 200, "message": "success"})])
+        client = GoveeAuthClient(session=session)
+
+        assert await client.lift_leak_warning("tok", "AA:BB:CC:DD", "H5054") is True
+
+        call = session.post.call_args
+        assert call.args[0] == GOVEE_LEAK_WARN_LIFTED_URL
+        assert call.kwargs["json"] == {"device": "AABBCCDD", "sku": "H5054"}
+        assert call.kwargs["headers"]["Authorization"] == "Bearer tok"
+        assert "clientId" not in call.kwargs["headers"]
+
+    async def test_a_body_without_status_is_accepted(self):
+        client = GoveeAuthClient(session=_session(post=[_response(200, {})]))
+
+        assert await client.lift_leak_warning("tok", "AABB", "H5054") is True
+
+    async def test_http_401_is_an_auth_error(self):
+        client = GoveeAuthClient(session=_session(post=[_response(401, {})]))
+
+        with pytest.raises(GoveeAuthError, match="warnLifted auth failed"):
+            await client.lift_leak_warning("tok", "AABB", "H5054")
+
+    async def test_an_in_body_401_is_an_auth_error(self):
+        client = GoveeAuthClient(session=_session(post=[_response(200, {"status": 401, "message": "expired"})]))
+
+        with pytest.raises(GoveeAuthError, match="rejected the token: expired"):
+            await client.lift_leak_warning("tok", "AABB", "H5054")
+
+    async def test_an_in_body_failure_carries_the_status(self):
+        client = GoveeAuthClient(session=_session(post=[_response(200, {"status": 400, "message": "bad device"})]))
+
+        with pytest.raises(GoveeApiError, match="leak warning lift failed: bad device") as exc_info:
+            await client.lift_leak_warning("tok", "AABB", "H5054")
+
+        assert exc_info.value.code == 400
+
+    async def test_other_http_failures_carry_the_status(self):
+        client = GoveeAuthClient(session=_session(post=[_response(500, {"message": "meh"})]))
+
+        with pytest.raises(GoveeApiError, match="warnLifted failed: meh") as exc_info:
+            await client.lift_leak_warning("tok", "AABB", "H5054")
+
+        assert exc_info.value.code == 500
+
+    async def test_connection_error_is_wrapped(self):
+        client = GoveeAuthClient(session=_session(post=[aiohttp.ClientConnectionError("reset")]))
+
+        with pytest.raises(GoveeApiError, match="Connection error lifting leak warning"):
+            await client.lift_leak_warning("tok", "AABB", "H5054")
+
+    async def test_a_bare_timeout_is_wrapped_too(self):
+        client = GoveeAuthClient(session=_session(post=[TimeoutError()]))
+
+        with pytest.raises(GoveeApiError, match="Connection error lifting leak warning: TimeoutError"):
+            await client.lift_leak_warning("tok", "AABB", "H5054")
 
 
 # ==============================================================================

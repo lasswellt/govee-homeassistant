@@ -218,6 +218,11 @@ GOVEE_BFF_DEVICE_LIST_URL = "https://app2.govee.com/bff-app/v1/device/list"
 # only retrievable from the account "warning message" history, matching the
 # homebridge-govee `http` path.
 GOVEE_LEAK_WARN_URL = "https://app2.govee.com/leak/rest/device/v1/warnMessage"
+# Marks every leak alert of a standalone detector read — the call behind the
+# Govee app's "Read" button on the H5054 detail screen (Govee Home 7.6.21:
+# INet.leakWarnLifted, GateWayLeakWarnLiftedRequest). Once read, warnMessage
+# has no unread LeakageAlert left, so the detector polls dry again.
+GOVEE_LEAK_WARN_LIFTED_URL = "https://app2.govee.com/leak/rest/device/v1/warnLifted"
 GOVEE_CLIENT_TYPE = "1"
 GOVEE_APP_VERSION = "7.4.10"
 GOVEE_IOT_VERSION = "0"
@@ -1339,6 +1344,64 @@ class GoveeAuthClient:
 
         except (aiohttp.ClientError, TimeoutError) as err:
             raise GoveeApiError(f"Connection error fetching leak warning: {str(err) or type(err).__name__}") from err
+
+    async def lift_leak_warning(
+        self,
+        token: str,
+        device_id: str,
+        sku: str,
+    ) -> bool:
+        """Mark all of a standalone water detector's leak alerts read.
+
+        The counterpart of :meth:`fetch_leak_warning`: the same request the
+        Govee app's "Read" button sends from the H5054 detail screen. With no
+        unread ``LeakageAlert`` left, the next ``warnMessage`` poll reads dry.
+        It clears every alert of the device, as the app's button does. A
+        detector that is still wet raises a new alert, which latches again.
+
+        Args:
+            token: Account token (from app2 login).
+            device_id: Device ID (developer-API or colon form; stripped here).
+            sku: Device SKU (e.g. ``H5054``).
+
+        Returns:
+            True once Govee has accepted the request.
+
+        Raises:
+            GoveeAuthError: The token was rejected (HTTP or in-body 401).
+            GoveeApiError: Any other failure.
+        """
+        session = self._require_session()
+
+        # Minimal proven header set, no clientId — see fetch_water_detector_states.
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "appVersion": GOVEE_APP_VERSION,
+            "clientType": GOVEE_CLIENT_TYPE,
+            "iotVersion": GOVEE_IOT_VERSION,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        body = {"device": device_id.replace(":", ""), "sku": sku}
+
+        try:
+            async with session.post(
+                GOVEE_LEAK_WARN_LIFTED_URL,
+                headers=headers,
+                json=body,
+            ) as response:
+                data = await response.json()
+                if response.status == 401:
+                    raise GoveeAuthError("warnLifted auth failed (401)")
+                if response.status != 200:
+                    message = data.get("message", f"HTTP {response.status}")
+                    raise GoveeApiError(f"warnLifted failed: {message}", code=response.status)
+                _raise_for_bff_status(data, "leak warning lift")
+                _LOGGER.debug("warnLifted accepted for %s (%s)", device_id, sku)
+                return True
+
+        except (aiohttp.ClientError, TimeoutError) as err:
+            raise GoveeApiError(f"Connection error lifting leak warning: {str(err) or type(err).__name__}") from err
 
     def gateway_routes(self) -> dict[str, dict[str, str]]:
         """Gateway command routes discovered by the last topic fetch (#135).
