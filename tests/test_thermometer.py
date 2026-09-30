@@ -358,6 +358,18 @@ class TestTemperatureSensorFahrenheitConversion:
     def test_h5171_account_celsius_hint_beats_allowlist(self):
         assert self._make_sensor_stub(21.7, "auto", sku="H5171", account_unit="celsius") == 21.7
 
+    def test_h5103_wifi_hygrometer_auto_converts_fahrenheit(self):
+        # Same class as #173: the Developer API returned 71.2 (already °F) for
+        # an H5103 whose Govee app shows 21.8°C. Auto mode stores it as ~21.8°C.
+        result = self._make_sensor_stub(71.2, "auto", sku="H5103")
+        assert abs(result - 21.777778) < 1e-4
+
+    def test_h5103_celsius_override_passthrough(self):
+        assert self._make_sensor_stub(21.8, "celsius", sku="H5103") == 21.8
+
+    def test_h5103_account_celsius_hint_beats_allowlist(self):
+        assert self._make_sensor_stub(21.8, "auto", sku="H5103", account_unit="celsius") == 21.8
+
     def test_h5310_pool_thermometer_auto_converts_fahrenheit(self):
         # Issue #157: an 88°F pool surfaced as ~191°F because the Developer API
         # had already returned °F. With no fahOpen flag to go on, the SKU

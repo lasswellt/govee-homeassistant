@@ -95,6 +95,11 @@ CONF_API_TEMPERATURE_UNIT: Final = "api_temperature_unit"
 #     158.6°F, i.e. the °F reading converted a second time. Same path, same
 #     gap: not in the BFF thermo sets, so the model list is its only signal
 #     (issue #173 follow-up).
+#   H5103 (WiFi thermo-hygrometer): same shape again — Auto showed 71.2 under
+#     the °C unit while the Govee app (set to °C) showed 21.8°C, i.e. the raw
+#     °F reading. The login-enabled BFF harvest returned no thermo-hygrometers
+#     for the account, so no fahOpen hint exists and the model list is the only
+#     signal. Also reported as #85, where the option was the workaround.
 FAHRENHEIT_REPORTING_SKUS: Final = frozenset(
     {
         "H5179",
@@ -104,6 +109,7 @@ FAHRENHEIT_REPORTING_SKUS: Final = frozenset(
         "H5111",
         "H5053",
         "H5171",
+        "H5103",
         "HS5108",
         "HS5106",
         "H717A",
