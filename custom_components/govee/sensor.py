@@ -44,6 +44,7 @@ from .const import (
 )
 from .coordinator import GoveeConfigEntry, GoveeCoordinator
 from .entity import GoveeEntity
+from .kettle.entities import kettle_sensors
 from .models import GoveeDevice, TransportHealth, TransportKind
 from .models.device import GoveeLeakSensor, leak_sensor_device_info
 
@@ -208,6 +209,8 @@ async def async_setup_entry(
         state = coordinator.get_state(device.device_id)
         if state is not None and state.battery is not None and not coordinator.is_bff_leak_sensor(device.device_id):
             entities.append(GoveeThermoBatterySensor(coordinator, device))
+
+    entities.extend(kettle_sensors(coordinator))
 
     # Register gateway hubs (leak + thermo) before async_add_entities so the
     # entities' `via_device` links resolve (must run after orphan-cleanup in

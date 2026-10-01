@@ -139,3 +139,39 @@ H7175_MQTT: dict[str, Any] = {
 def mqtt_frames() -> list[bytes]:
     """The sample push's op.command frames as bytes."""
     return [bytes.fromhex(frame) for frame in H7175_MQTT["_op_frames"]]
+
+
+# Custom-slot page 0 with slot 1 as the app's DIY slot (verbatim): slot 1
+# (0x445c) has the flag bit clear, slot 2 (0xaaf8) set. In the sample push
+# above, slot 4 (0x44c0) is the clear one.
+SLOT_PAGE0_DIY_1 = "aa050100445c0100aaf8020000000000000000e7"
+
+# Selected-mode frame after the target was set directly (verbatim): workMode
+# 6 ("manual"), target 0x44c0 = 176.00 °F.
+MODE_MANUAL_176 = "aa05000644c0000000000000000000000000002d"
+
+# /device/state after the same change: the poll reported workMode 6.
+H7175_STATE_MANUAL: dict[str, Any] = {
+    **H7175_STATE,
+    "capabilities": [
+        *H7175_STATE["capabilities"][:-1],
+        {"type": "devices.capabilities.work_mode", "instance": "workMode", "state": {"value": {"workMode": 6}}},
+    ],
+}
+
+# Keep warm (verbatim): status frames, then command echoes seen on the
+# device topic after changing keep warm in the app.
+KEEP_WARM_STATUS_OFF_2H = "aa22000078780000000000000000000000000088"
+KEEP_WARM_STATUS_ON_2H = "aa22010078780000000000000000000000000089"
+KEEP_WARM_ECHO_ON_30M = "3a2201001e1e0000000000000000000000000019"
+KEEP_WARM_ECHO_ON_1H = "3a2201003c3c0000000000000000000000000019"
+KEEP_WARM_ECHO_ON_90M = "3a2201005a5a0000000000000000000000000019"
+KEEP_WARM_ECHO_ON_2H = "3a22010078780000000000000000000000000019"
+
+# Keep warm counting down (verbatim, diagnostics): 120 min set, 116 left,
+# pushed with "reached target"; the next push showed 120 left again.
+KEEP_WARM_STATUS_ON_2H_116_LEFT = "aa22010078740000000000000000000000000085"
+HEATING_REACHED_TARGET = "aa190400000000000000000000000000000000b7"
+HEATING_KEEPING_WARM = "aa190200000000000000000000000000000000b1"
+
+HEATING_IDLE = "aa190000000000000000000000000000000000b3"

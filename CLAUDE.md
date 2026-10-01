@@ -52,6 +52,7 @@ custom_components/govee/
 ├── switch.py            # Plugs, toggles, music mode, DreamView, probe polling
 ├── fan.py               # Tower fans and ceiling fans
 ├── humidifier.py        # Humidifiers and dehumidifiers
+├── water_heater.py      # H7175 kettle
 ├── number.py            # Music sensitivity, heater target, probe limits
 ├── sensor.py            # Readings and diagnostic sensors
 ├── binary_sensor.py     # Connectivity, leak, occupancy, water-tank sensors
@@ -64,7 +65,8 @@ custom_components/govee/
 ├── transport_health.py  # Per-device, per-transport health tracker
 ├── ble_advertisement.py # BLE advertisement correlation and enrolment
 ├── ble_passthrough.py   # BLE frames tunnelled over AWS IoT
-├── kettle/              # H7175 kettle (frames.py decoder, manager.py coordinator helper)
+├── kettle/              # H7175 kettle: frames.py decoder, manager.py coordinator helper,
+│                        #   modes.py brew modes, entities.py status sensors
 ├── const.py             # Constants
 ├── icons.json           # Entity icons by translation key
 ├── strings.json         # UI strings (mirrored in translations/en.json)

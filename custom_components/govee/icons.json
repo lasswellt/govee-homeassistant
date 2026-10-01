@@ -45,6 +45,9 @@
         "state": {
           "on": "mdi:water-alert"
         }
+      },
+      "kettle_keep_warm": {
+        "default": "mdi:thermometer-chevron-up"
       }
     },
     "button": {
@@ -160,6 +163,18 @@
       },
       "ieee_address": {
         "default": "mdi:identifier"
+      },
+      "kettle_heating_status": {
+        "default": "mdi:kettle-steam"
+      },
+      "kettle_keep_warm_minutes": {
+        "default": "mdi:timer-outline"
+      },
+      "kettle_diy_slot": {
+        "default": "mdi:star-outline"
+      },
+      "kettle_keep_warm_remaining": {
+        "default": "mdi:timer-sand"
       }
     },
     "switch": {
@@ -189,6 +204,11 @@
       },
       "govee_bottom_light": {
         "default": "mdi:floor-lamp"
+      }
+    },
+    "water_heater": {
+      "kettle": {
+        "default": "mdi:kettle"
       }
     }
   }

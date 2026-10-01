@@ -19,6 +19,7 @@ from ..const import (
     MULTI_OUTLET_MQTT_SKUS,
     SKU_SEGMENT_OVERRIDES,
 )
+from .state import _coerce_int
 
 # Leak sensor SKUs
 LEAK_SENSOR_SKUS = frozenset({"H5058", "H5054", "H5055", "H5059"})
@@ -1015,6 +1016,69 @@ class GoveeDevice:
                             int(range_data.get("max", 35)),
                         )
         return (16, 35)
+
+    @property
+    def supports_kettle_temperature(self) -> bool:
+        """Check if device exposes the kettle ``sliderTemperature`` setpoint."""
+        return self.get_capability(CAPABILITY_TEMPERATURE_SETTING, INSTANCE_SLIDER_TEMPERATURE) is not None
+
+    def get_kettle_temperature_range(self) -> tuple[int, int]:
+        """The ``sliderTemperature`` range, in °C (40-100 on the H7175)."""
+        cap = self.get_capability(CAPABILITY_TEMPERATURE_SETTING, INSTANCE_SLIDER_TEMPERATURE)
+        for f in cap.parameters.get("fields", []) if cap is not None else []:
+            if f.get("fieldName") == "temperature":
+                range_data = f.get("range") or {}
+                return (int(range_data.get("min", 40)), int(range_data.get("max", 100)))
+        return (40, 100)
+
+    def get_kettle_mode_options(self) -> list[dict[str, Any]]:
+        """The kettle's ``workMode`` STRUCT as selectable modes.
+
+        Each workMode option becomes one mode, its modeValue the option's
+        ``defaultValue`` (0 when absent). A workMode whose modeValue entry has
+        nested options (the H7175's "Custom" with slots 1-4) becomes one mode
+        per nested value. Every mode gets a stable snake_case ``key`` from
+        its name ("Green Tea" -> ``green_tea``, "Custom" slot 2 ->
+        ``custom_2``), the entity state; a name with no usable characters
+        gets ``mode_<workMode>_<modeValue>``. A later duplicate key is dropped.
+
+        Returns:
+            ``[{"key", "name", "work_mode", "mode_value", "slotted"}, ...]`` in
+            capability order; ``slotted`` marks the modes from nested values.
+        """
+        cap = self.get_capability(CAPABILITY_WORK_MODE, INSTANCE_WORK_MODE)
+        fields = {f.get("fieldName"): f for f in (cap.parameters.get("fields", []) if cap is not None else [])}
+        mode_values = {
+            str(opt["name"]): opt for opt in (fields.get("modeValue") or {}).get("options", []) if opt.get("name")
+        }
+        result: list[dict[str, Any]] = []
+        for wm_opt in (fields.get("workMode") or {}).get("options", []):
+            name = str(wm_opt.get("name") or "").strip()
+            work_mode = _coerce_int(wm_opt.get("value"))
+            if not name or work_mode is None:
+                continue
+            entry = mode_values.get(name, {})
+            nested = [_coerce_int(o.get("value")) for o in entry.get("options") or [] if isinstance(o, dict)]
+            slots = [value for value in nested if value is not None]
+            base = re.sub(r"[^a-z0-9]+", "_", name.casefold()).strip("_")
+            choices = (
+                [(f"{base}_{v}" if base else "", f"{name} {v}", v, True) for v in slots]
+                if slots
+                else [(base, name, _coerce_int(entry.get("defaultValue")) or 0, False)]
+            )
+            for key, label, mode_value, slotted in choices:
+                key = key or f"mode_{work_mode}_{mode_value}"
+                if all(mode["key"] != key for mode in result):
+                    result.append(
+                        {
+                            "key": key,
+                            "name": label,
+                            "work_mode": work_mode,
+                            "mode_value": mode_value,
+                            "slotted": slotted,
+                        }
+                    )
+        return result
 
     def get_fan_speed_options(self) -> list[dict[str, Any]]:
         """Extract fan speed options from work_mode capability.

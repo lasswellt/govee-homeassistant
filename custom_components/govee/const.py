@@ -299,6 +299,9 @@ LOCAL_READING_FRESHNESS_FACTOR: Final = 1.5
 # wrong values, and against cloud-only fields the local frames never carry.
 MAX_LOCAL_FRESH_SKIPS: Final = 5
 
+# Diagnostics: how many distinct pushed frames are kept per H7175 kettle.
+KETTLE_FRAME_HISTORY: Final = 50
+
 # How long a device must have been off with no observed state change before
 # its poll cadence is stretched. Half an hour: long enough that a light
 # someone is actively using never qualifies, short enough that a house's
@@ -532,3 +535,11 @@ SUFFIX_HEATER_AUTO_STOP: Final = "_heater_auto_stop"
 SUFFIX_PURIFIER_MODE_SELECT: Final = "_purifier_mode_select"
 SUFFIX_PRESET_SCENE_SELECT: Final = "_preset_scene_select"
 SUFFIX_NIGHTLIGHT_SCENE_SELECT: Final = "_nightlight_scene_select"
+# H7175 kettle. The water heater is suffixed so the kettle's existing power
+# switch keeps its bare-device-id unique_id.
+SUFFIX_KETTLE: Final = "_kettle"
+SUFFIX_KETTLE_HEATING_STATUS: Final = "_kettle_heating_status"
+SUFFIX_KETTLE_KEEP_WARM_STATUS: Final = "_kettle_keep_warm_status"
+SUFFIX_KETTLE_KEEP_WARM_MINUTES: Final = "_kettle_keep_warm_minutes"
+SUFFIX_KETTLE_KEEP_WARM_REMAINING: Final = "_kettle_keep_warm_remaining"
+SUFFIX_KETTLE_DIY_SLOT: Final = "_kettle_diy_slot"

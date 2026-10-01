@@ -258,6 +258,18 @@ class GoveeDeviceState:
     # Kettle target temperature (``sliderTemperature``), in the unit the
     # kettle reports, not normalised to °C.
     kettle_target_temperature: float | None = None
+    # H7175 kettle, from its AWS IoT frames (kettle/frames.py). The poll
+    # reports ``{"workMode": 1}`` alone for a custom slot, so the slot is
+    # remembered in ``kettle_mode_value``. Preset temperatures are
+    # ``{workMode: {modeValue: temperature}}`` in the kettle's unit; the DIY
+    # slot is the custom slot the Govee app marks "DIY", not the selection.
+    kettle_mode_value: int | None = None
+    kettle_preset_temperatures: dict[int, dict[int, float]] = field(default_factory=dict)
+    kettle_diy_slot: int | None = None
+    kettle_heating_status: str | None = None
+    kettle_keep_warm_enabled: bool | None = None
+    kettle_keep_warm_minutes: int | None = None
+    kettle_keep_warm_remaining: int | None = None
 
     # Purifier state
     purifier_mode: int | None = None  # Purifier mode value (1=Sleep, 2=Low, 3=High, etc.)

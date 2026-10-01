@@ -248,7 +248,11 @@ Some gateway‑bridged sensors are listed by Govee with no reading attached. Whe
 
 All kettles get a power switch and a water‑temperature sensor whose unit follows what the kettle declares, even when the API‑unit option is set.
 
-**H7175.** With account login the kettle's real‑time push updates the water temperature as it heats. The push carries no unit, so its readings are used only once a cloud poll has told the integration the kettle's unit; that poll is never skipped. The H717A and H7170 work from the cloud poll only.
+**H7175.** A **water heater** entity carries the target temperature, the brew modes and power; the existing power switch keeps its entity and is named "Power". Mode states are fixed keys, shown translated: `off`, `custom_1`–`custom_4`, `green_tea`, `oolong_tea`, `coffee`, `black_tea_boil` and `manual` (a target set directly, with no preset). Choosing a mode while the kettle is off switches it on in that mode; setting the target selects `manual`.
+
+With account login the kettle's real‑time push updates the water temperature and adds a **Heating status** sensor, a **Keep warm** binary sensor and diagnostic **Keep warm duration**, **Keep warm remaining** and **DIY slot** sensors (the custom slot the Govee app marks "DIY"). The push carries no unit, so its temperatures are used only once a cloud poll has told the integration the kettle's unit; that poll is never skipped.
+
+The H717A and H7170 keep their power switch and temperature sensor; their frames are unknown.
 
 ---
 

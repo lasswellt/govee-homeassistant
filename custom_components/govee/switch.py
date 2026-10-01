@@ -877,8 +877,11 @@ class GoveeAppliancePowerSwitchEntity(GoveeEntity, SwitchEntity):
     ) -> None:
         """Initialize the appliance power switch entity."""
         super().__init__(coordinator, device)
-        # Use the device's own name as the switch name.
-        self._attr_name = None
+        # Use the device's own name as the switch name, except on an H7175
+        # kettle: its water heater takes the device name and this switch is
+        # "Power" (its translation). Other kettles are unchanged.
+        if not device.decodes_kettle_frames:
+            self._attr_name = None
 
     @property
     def is_on(self) -> bool | None:
