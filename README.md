@@ -254,6 +254,8 @@ A kettle starts heating on command but does not report until asked, so after a c
 
 With account login the kettle's real‑time push updates the water temperature and adds a **Heating status** sensor, a **Keep warm** binary sensor and diagnostic **Keep warm duration**, **Keep warm remaining** and **DIY slot** sensors (the custom slot the Govee app marks "DIY"). The push carries no unit, so its temperatures are used only once a cloud poll has told the integration the kettle's unit; that poll is never skipped.
 
+**Custom slot labels.** Govee's API only calls the custom slots Custom 1–4. In ⚙️ Configure → *Kettle slot labels* you can give them labels (for example the names from the Govee app). Labels are display text only: the mode stays `custom_1`–`custom_4`, so automations keep working when a label changes, and the labels appear in the water heater's and Brew mode selector's `labels` attribute for dashboards.
+
 The H717A and H7170 keep their power switch and temperature sensor; their frames are unknown.
 
 ---

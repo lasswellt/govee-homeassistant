@@ -66,7 +66,7 @@ custom_components/govee/
 ├── ble_advertisement.py # BLE advertisement correlation and enrolment
 ├── ble_passthrough.py   # BLE frames tunnelled over AWS IoT
 ├── kettle/              # H7175 kettle: frames.py decoder, manager.py coordinator helper,
-│                        #   modes.py brew modes, entities.py status sensors
+│                        #   modes.py brew modes, entities.py kettle entities, labels.py slot labels
 ├── const.py             # Constants
 ├── icons.json           # Entity icons by translation key
 ├── strings.json         # UI strings (mirrored in translations/en.json)

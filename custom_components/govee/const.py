@@ -17,6 +17,9 @@ CONF_ENABLE_SCENES: Final = "enable_scenes"
 CONF_ENABLE_DIY_SCENES: Final = "enable_diy_scenes"
 CONF_EXPOSE_TRANSPORT_ENTITIES: Final = "expose_transport_entities"
 CONF_ENABLE_MQTT_CONTROL: Final = "enable_mqtt_control"
+# Display labels for H7175 custom slots, set in the options flow:
+# {device_id: {"custom_1": "Herbal tea", ...}}. The mode state stays custom_N.
+CONF_KETTLE_SLOT_LABELS: Final = "kettle_slot_labels"
 
 # Standalone water-detector (H5054) leak-poll interval (seconds). These RF-only
 # sensors deliver their trip only via the account warnMessage history (issue

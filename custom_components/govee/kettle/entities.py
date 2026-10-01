@@ -29,6 +29,7 @@ from ..const import (
 from ..entity import GoveeEntity
 from .frames import HEATING_STATUS, KETTLE_CUSTOM_WORK_MODE
 from ..models import WorkModeCommand
+from .labels import slot_labels
 from .modes import (
     KETTLE_MANUAL_MODE,
     kettle_modes,
@@ -42,6 +43,8 @@ from .modes import (
 if TYPE_CHECKING:
     from ..coordinator import GoveeCoordinator
     from ..models import GoveeDevice
+
+ATTR_LABELS = "labels"
 
 
 class _KettleEntity(GoveeEntity):
@@ -144,12 +147,14 @@ class GoveeKettleKeepWarmBinarySensor(_KettleEntity, BinarySensorEntity):
         return state.kettle_keep_warm_enabled if state else None
 
 
-class KettleSlotRestoreMixin(GoveeEntity, RestoreEntity):
-    """Restore the selected custom slot, which the poll does not report.
+class KettleModeMixin(GoveeEntity, RestoreEntity):
+    """Shared by the entities that show the brew mode.
 
-    After a restart a kettle in a custom slot is reported as ``{"workMode":
-    1}`` until it pushes. The slot is stored by value; a restore that arrives
-    before the kettle's first state is kept until that state is in.
+    Restores the selected custom slot, which the poll does not report: after
+    a restart a kettle in a custom slot is reported as ``{"workMode": 1}``
+    until it pushes. The slot is stored by value; a restore that arrives
+    before the kettle's first state is kept until that state is in. Also
+    exposes the user's slot labels (see :mod:`.labels`).
     """
 
     _modes: dict[str, tuple[int, int]]
@@ -180,8 +185,18 @@ class KettleSlotRestoreMixin(GoveeEntity, RestoreEntity):
         data = slot_restore_data(self._modes, self.device_state)
         return RestoredExtraData(data) if data is not None else None
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """The custom-slot labels set in the options, ``{"custom_1": label}``."""
+        attrs = dict(super().extra_state_attributes)
+        entry = self.coordinator.config_entry
+        labels = slot_labels(entry.options, self._device) if entry is not None else {}
+        if labels:
+            attrs[ATTR_LABELS] = labels
+        return attrs
 
-class GoveeKettleBrewModeSelect(KettleSlotRestoreMixin, SelectEntity):
+
+class GoveeKettleBrewModeSelect(KettleModeMixin, SelectEntity):
     """The kettle's brew mode, selected without switching it on (as the Govee app does)."""
 
     _attr_translation_key = "kettle_brew_mode"

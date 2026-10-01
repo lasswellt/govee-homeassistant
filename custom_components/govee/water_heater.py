@@ -33,7 +33,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN, SUFFIX_KETTLE
 from .coordinator import GoveeConfigEntry, GoveeCoordinator
-from .kettle.entities import KettleSlotRestoreMixin
+from .kettle.entities import KettleModeMixin
 from .kettle.modes import KETTLE_MANUAL_MODE, kettle_modes, manual_command, selected_mode, to_kettle_unit
 from .models import GoveeDevice, PowerCommand, WorkModeCommand
 
@@ -56,7 +56,7 @@ async def async_setup_entry(
     )
 
 
-class GoveeKettleWaterHeater(KettleSlotRestoreMixin, WaterHeaterEntity):
+class GoveeKettleWaterHeater(KettleModeMixin, WaterHeaterEntity):
     """H7175 kettle as a water heater: target, brew modes, power."""
 
     _attr_translation_key = "kettle"
