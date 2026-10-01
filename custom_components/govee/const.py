@@ -20,6 +20,10 @@ CONF_ENABLE_MQTT_CONTROL: Final = "enable_mqtt_control"
 # Display labels for H7175 custom slots, set in the options flow:
 # {device_id: {"custom_1": "Herbal tea", ...}}. The mode state stays custom_N.
 CONF_KETTLE_SLOT_LABELS: Final = "kettle_slot_labels"
+# Experimental: H7175 keep-warm switch and duration select, written as the
+# kettle's own 3a 22 frame over the AWS IoT passthrough (kettle/control.py).
+# Off by default; its entities exist only while it is on.
+CONF_KETTLE_FRAME_CONTROL: Final = "kettle_frame_control"
 
 # Standalone water-detector (H5054) leak-poll interval (seconds). These RF-only
 # sensors deliver their trip only via the account warnMessage history (issue
@@ -246,6 +250,7 @@ DEFAULT_ENABLE_DIY_SCENES: Final = True
 DEFAULT_SEGMENT_MODE: Final = "individual"  # "disabled", "grouped", or "individual"
 DEFAULT_EXPOSE_TRANSPORT_ENTITIES: Final = False
 DEFAULT_ENABLE_MQTT_CONTROL: Final = False
+DEFAULT_KETTLE_FRAME_CONTROL: Final = False
 DEFAULT_API_TEMPERATURE_UNIT: Final = "auto"
 DEFAULT_LAN_TARGETS: Final = ""
 DEFAULT_WATER_DETECTOR_POLL_INTERVAL: Final = 120  # seconds (2 minutes)
@@ -315,6 +320,11 @@ KETTLE_HEATING_TOLERANCE: Final = 2
 # How long a value an H7175 pushed, or a command set, is kept over cloud
 # reads that disagree (the cloud lags the kettle by several seconds).
 KETTLE_PROTECT_SECONDS: Final = 45
+# A keep-warm write is shown at once; the kettle then has this long to report
+# it before its on/off becomes unknown, and is asked for its status this
+# often meanwhile. The Govee app took 5-15 s to show writes sent from HA.
+KETTLE_FRAME_CONFIRM_TIMEOUT: Final = 30.0
+KETTLE_FRAME_REQUERY_INTERVAL: Final = 10.0
 # Diagnostics: per kind of H7175 status frame, how many of the latest
 # distinct ones are kept.
 KETTLE_FRAME_HISTORY_PER_KIND: Final = 10
@@ -561,5 +571,7 @@ SUFFIX_KETTLE_KEEP_WARM_MINUTES: Final = "_kettle_keep_warm_minutes"
 SUFFIX_KETTLE_KEEP_WARM_REMAINING: Final = "_kettle_keep_warm_remaining"
 SUFFIX_KETTLE_DIY_SLOT: Final = "_kettle_diy_slot"
 SUFFIX_KETTLE_BREW_MODE: Final = "_kettle_brew_mode"
+SUFFIX_KEEP_WARM: Final = "_keep_warm"
+SUFFIX_KEEP_WARM_DURATION: Final = "_keep_warm_duration"
 SUFFIX_KETTLE_ON_BASE: Final = "_kettle_on_base"
 SUFFIX_KETTLE_BUTTON: Final = "_kettle_button"

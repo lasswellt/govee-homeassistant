@@ -33,6 +33,7 @@ from .const import (
 )
 from .coordinator import GoveeConfigEntry, GoveeCoordinator
 from .entity import GoveeEntity
+from .kettle.entities import keep_warm_switches
 from .models import (
     GoveeDevice,
     MusicModeCommand,
@@ -194,6 +195,9 @@ async def async_setup_entry(
                 translation_key, suffix = spec
                 entities.append(GoveeNamedLightSwitchEntity(coordinator, device, instance, translation_key, suffix))
                 _LOGGER.debug("Created named light switch %s for %s", instance, device.name)
+
+    # H7175 kettles: experimental keep warm (CONF_KETTLE_FRAME_CONTROL).
+    entities.extend(keep_warm_switches(coordinator))
 
     async_add_entities(entities)
     _LOGGER.debug("Set up %d Govee switch entities", len(entities))

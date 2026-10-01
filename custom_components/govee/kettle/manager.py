@@ -46,6 +46,7 @@ from ..const import (
     resolve_fahrenheit_conversion,
 )
 from ..models import GoveeDeviceState, PowerCommand, TemperatureSettingCommand, WorkModeCommand
+from .control import KeepWarmControl
 from .frames import COMMAND_PREFIX, KETTLE_MANUAL_WORK_MODE, KettleFrameReport, decode_kettle_frames
 from .modes import kettle_modes, to_kettle_unit
 
@@ -117,6 +118,8 @@ class KettleManager:
         # Per kettle: the pending follow-up read and its generation.
         self._followups: dict[str, Callable[[], None]] = {}
         self._followup_generation: dict[str, int] = {}
+        # Experimental keep-warm writes (CONF_KETTLE_FRAME_CONTROL).
+        self.keep_warm = KeepWarmControl(coordinator)
 
     # ------------------------------------------------------------------ #
     # Units
@@ -214,6 +217,7 @@ class KettleManager:
             state.kettle_keep_warm_remaining = report.keep_warm_remaining
         if report.slot_flags:
             state.kettle_diy_slot = _diy_slot(state.kettle_diy_slot, report.slot_flags)
+        self.keep_warm.on_push(device_id, state, report)
         if report.on_base is not None:
             state.kettle_on_base = report.on_base
         if report.base_frame is not None:
@@ -261,6 +265,7 @@ class KettleManager:
             if getattr(polled, name) is None:
                 setattr(polled, name, getattr(existing, name))
         self._keep_protected(device_id, polled)
+        self.keep_warm.reapply(device_id, polled)
         if polled.work_mode is not None:
             self._check_work_mode(device_id, polled.work_mode)
 
@@ -358,7 +363,8 @@ class KettleManager:
         await coordinator.async_request_status(device_id)
 
     def async_shutdown(self) -> None:
-        """Cancel pending follow-ups (entry unload)."""
+        """Cancel pending follow-ups and keep-warm checks (entry unload)."""
+        self.keep_warm.async_shutdown()
         for device_id in list(self._followups):
             self._followup_generation[device_id] = -1
             self._cancel_followup(device_id)

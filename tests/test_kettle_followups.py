@@ -140,7 +140,7 @@ class TestBrewModeSelect:
             }
         )
         devices = [_device(), no_modes, GoveeDevice.from_api_response({**H7175_DEVICE, "sku": "H717A", "device": "y"})]
-        coordinator = MagicMock(devices={d.device_id: d for d in devices})
+        coordinator = MagicMock(devices={d.device_id: d for d in devices}, config_entry=None)
         assert [e._device.device_id for e in kettle_selects(coordinator)] == [DEVICE_ID]
 
 

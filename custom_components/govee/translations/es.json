@@ -99,14 +99,16 @@
           "enable_diy_scenes": "Activar selector de escenas DIY",
           "expose_transport_entities": "Exponer sensores de conectividad de transporte por dispositivo",
           "enable_mqtt_control": "Enviar encendido, brillo y color por MQTT (más rápido, experimental)",
-          "lan_targets": "Direcciones IP o subredes LAN de dispositivos (avanzado)"
+          "lan_targets": "Direcciones IP o subredes LAN de dispositivos (avanzado)",
+          "kettle_frame_control": "Experimental: control de mantener caliente del hervidor mediante tramas del dispositivo"
         },
         "data_description": {
           "api_temperature_unit": "Auto (predeterminado) usa primero la unidad de temperatura que tu cuenta de Govee indica para el dispositivo, después convierte los termómetros que se sabe que informan en Fahrenheit (por ejemplo H5179, H5109, H5110, H5111, H5053, H5075, H5100) y confía en el resto. Elige Fahrenheit si una lectura sigue pareciendo aproximadamente 1,8 veces demasiado alta (por ejemplo 74 en lugar de 23), o Celsius para no convertir nunca. La API de Govee omite la unidad, así que no siempre se puede detectar automáticamente.",
           "water_detector_poll_interval": "Cada cuánto se consultan los detectores de agua o fugas autónomos de Govee (p. ej. H5054) para ver si hay una fuga. Estos sensores solo RF no tienen canal de envío, por lo que una fuga puede tardar hasta ese intervalo en aparecer. Un valor menor reacciona antes, pero hace más llamadas a la API de la cuenta; súbelo si tienes muchos detectores. Rango: 60–3600 segundos, valor predeterminado: 120. Requiere inicio de sesión con correo y contraseña; se ignora si no tienes detectores de este tipo.",
           "enable_groups": "Muestra los grupos de dispositivos que creaste en la app de Govee como entidades de luz únicas. Un comando al grupo se envía una sola vez y la nube de Govee lo sincroniza con todos los miembros, así que se sincroniza mejor que agrupar las luces con helpers de Home Assistant. El estado es aproximado (los grupos no se pueden sondear) y las luces en grupo solo admiten encendido, brillo y color.",
           "enable_mqtt_control": "Envía los comandos de encendido, brillo y color por el canal MQTT de Govee en lugar de la API REST en la nube, lo que reduce la latencia y evita los límites de velocidad de REST. Requiere inicio de sesión con correo y contraseña (credenciales MQTT). Si MQTT no está disponible, vuelve automáticamente a REST. Experimental: usa un canal no documentado; desactívalo si los comandos se comportan de forma inesperada.",
-          "lan_targets": "Solo es necesario cuando los dispositivos Govee compatibles con LAN están en una subred o VLAN distinta a la de Home Assistant, de modo que el escaneo de descubrimiento local no llega a ellos. Introduce una lista separada por comas con IPs de dispositivos (10.20.0.51), direcciones de difusión (10.20.0.255) o subredes en CIDR (10.20.0.0/24, /24 o más específico). Las subredes se escanean dispositivo por dispositivo, ya que la mayoría de los routers descartan los broadcasts entre VLAN. Déjalo en blanco si todos los dispositivos comparten la red de Home Assistant. Avanzado: si un dispositivo sigue sin encontrarse porque su respuesta de escaneo no puede cruzar la VLAN, fíjalo con device_id=ip (AA:BB:CC:DD:EE:FF:00:11=10.20.0.51) para omitir el descubrimiento para ese dispositivo. Añade un ! final (=10.20.0.51!) solo para firmware que acepta comandos LAN pero nunca responde a una lectura de estado — esto desactiva todas las comprobaciones de estado LAN del dispositivo, de modo que una IP incorrecta parecerá que funciona mientras el dispositivo nunca responde. Introduce off para desactivar por completo la detección LAN y el control local."
+          "lan_targets": "Solo es necesario cuando los dispositivos Govee compatibles con LAN están en una subred o VLAN distinta a la de Home Assistant, de modo que el escaneo de descubrimiento local no llega a ellos. Introduce una lista separada por comas con IPs de dispositivos (10.20.0.51), direcciones de difusión (10.20.0.255) o subredes en CIDR (10.20.0.0/24, /24 o más específico). Las subredes se escanean dispositivo por dispositivo, ya que la mayoría de los routers descartan los broadcasts entre VLAN. Déjalo en blanco si todos los dispositivos comparten la red de Home Assistant. Avanzado: si un dispositivo sigue sin encontrarse porque su respuesta de escaneo no puede cruzar la VLAN, fíjalo con device_id=ip (AA:BB:CC:DD:EE:FF:00:11=10.20.0.51) para omitir el descubrimiento para ese dispositivo. Añade un ! final (=10.20.0.51!) solo para firmware que acepta comandos LAN pero nunca responde a una lectura de estado — esto desactiva todas las comprobaciones de estado LAN del dispositivo, de modo que una IP incorrecta parecerá que funciona mientras el dispositivo nunca responde. Introduce off para desactivar por completo la detección LAN y el control local.",
+          "kettle_frame_control": "Añade a los hervidores Govee H7175 un interruptor Mantener caliente y un selector de su duración. Envían la propia trama de comando del hervidor por la conexión en tiempo real, así que requieren iniciar sesión con correo y contraseña. Un cambio se muestra al instante; si el hervidor no lo confirma en 30 segundos, mantener caliente aparece como desconocido hasta que el hervidor vuelva a informar. Desactivado por defecto; al desactivarlo se eliminan estas entidades."
         }
       },
       "kettle_slots": {
@@ -200,6 +202,15 @@
           "black_tea_boil": "Té negro / hervir",
           "manual": "Manual"
         }
+      },
+      "kettle_keep_warm_duration": {
+        "name": "Duración de mantener caliente",
+        "state": {
+          "30_min": "30 min",
+          "60_min": "1 h",
+          "90_min": "1,5 h",
+          "120_min": "2 h"
+        }
       }
     },
     "switch": {
@@ -244,6 +255,9 @@
       },
       "govee_bottom_light": {
         "name": "Luz inferior"
+      },
+      "kettle_keep_warm": {
+        "name": "Mantener caliente"
       }
     },
     "sensor": {

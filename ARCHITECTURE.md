@@ -49,7 +49,8 @@ custom_components/govee/
 ├── ble_passthrough.py       # BLE frames tunnelled over AWS IoT
 ├── status_burst.py          # Repeated AWS IoT status queries for one device (govee.request_status)
 ├── kettle/                  # H7175 kettle: frame decoder, coordinator-owned push and poll rules,
-│                            #   brew modes, kettle entities, custom-slot labels
+│                            #   brew modes, kettle entities, custom-slot labels,
+│                            #   experimental keep-warm writes
 ├── const.py                 # Constants, SKU lists, option keys and ranges
 ├── manifest.json            # Metadata, requirements, Bluetooth matchers
 ├── strings.json             # UI strings (mirrored in translations/en.json; ca and es partial)

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import asdict, is_dataclass
+from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -51,6 +52,7 @@ from .const import (
     CONF_ENABLE_GROUPS,
     CONF_ENABLE_MQTT_CONTROL,
     CONF_ENABLE_SCENES,
+    CONF_KETTLE_FRAME_CONTROL,
     CONF_KETTLE_SLOT_LABELS,
     CONF_EXPOSE_TRANSPORT_ENTITIES,
     CONF_LAN_TARGETS,
@@ -67,6 +69,7 @@ from .const import (
     DEFAULT_ENABLE_DIY_SCENES,
     DEFAULT_ENABLE_GROUPS,
     DEFAULT_ENABLE_MQTT_CONTROL,
+    DEFAULT_KETTLE_FRAME_CONTROL,
     DEFAULT_ENABLE_SCENES,
     DEFAULT_EXPOSE_TRANSPORT_ENTITIES,
     DEFAULT_LAN_TARGETS,
@@ -931,9 +934,17 @@ class GoveeOptionsFlow(OptionsFlow):
                         default=source.get(CONF_LAN_TARGETS, DEFAULT_LAN_TARGETS),
                     ): str,
                 }
+                | self._kettle_option_schema(source)
             ),
             errors=errors,
         )
+
+    def _kettle_option_schema(self, source: Mapping[str, Any]) -> dict[Any, Any]:
+        """The experimental keep-warm option, shown only while an H7175 is loaded."""
+        if not any(device.decodes_kettle_frames for device in self._coordinator_devices()):
+            return {}
+        default = source.get(CONF_KETTLE_FRAME_CONTROL, DEFAULT_KETTLE_FRAME_CONTROL)
+        return {vol.Optional(CONF_KETTLE_FRAME_CONTROL, default=default): bool}
 
     def _kettles_with_slots(self) -> list[GoveeDevice]:
         """Loaded H7175 kettles with custom slots to label."""
@@ -962,6 +973,9 @@ class GoveeOptionsFlow(OptionsFlow):
     def _async_finish(self, data: dict[str, Any], labels: dict[str, dict[str, str]] | None = None) -> ConfigFlowResult:
         """Save the options. Saving replaces them all, so the slot labels are carried over."""
         result = {key: value for key, value in data.items() if key != CONF_KETTLE_SLOT_LABELS}
+        # The keep-warm option is only on the form while an H7175 is loaded.
+        if CONF_KETTLE_FRAME_CONTROL not in result and CONF_KETTLE_FRAME_CONTROL in self.config_entry.options:
+            result[CONF_KETTLE_FRAME_CONTROL] = self.config_entry.options[CONF_KETTLE_FRAME_CONTROL]
         labels = self._saved_slot_labels() if labels is None else labels
         if labels:
             result[CONF_KETTLE_SLOT_LABELS] = labels

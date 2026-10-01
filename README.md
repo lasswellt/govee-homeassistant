@@ -256,6 +256,8 @@ With account login the kettle's real‑time push updates the water temperature a
 
 **Custom slot labels.** Govee's API only calls the custom slots Custom 1–4. In ⚙️ Configure → *Kettle slot labels* you can give them labels (for example the names from the Govee app). Labels are display text only: the mode stays `custom_1`–`custom_4`, so automations keep working when a label changes, and the labels appear in the water heater's and Brew mode selector's `labels` attribute for dashboards.
 
+**Experimental keep‑warm control.** Keep warm is not in Govee's API. With the option *Experimental: kettle keep‑warm control via device frames* (off by default, shown only while an H7175 is loaded, account login required) the H7175 gets a **Keep warm** switch and a **Keep warm duration** selector (30 min to 2 h). They send the kettle's own command frame, as the Govee app does; see [Known limitations](#known-limitations).
+
 The H717A and H7170 keep their power switch and temperature sensor; their frames are unknown.
 
 ---
@@ -268,6 +270,7 @@ The H717A and H7170 keep their power switch and temperature sensor; their frames
 - Thermometer readings refresh on Govee's schedule, typically every 10 minutes for Wi-Fi sensors and up to an hour for Bluetooth sensors behind a gateway; see [Thermometers & sensors](#thermometers--sensors).
 - Account login, real-time MQTT, LAN control, and Bluetooth passthrough use undocumented interfaces that can stop working when Govee changes them. The developer API path is the stable one.
 - Bluetooth-only devices are not supported here; use Home Assistant's built-in `govee_ble` integration for those.
+- The H7175 keep-warm control is experimental: it writes the kettle's own command frame over the undocumented real-time connection and was verified on one kettle with a Fahrenheit account. A change shows at once; if the kettle does not confirm it within 30 seconds, keep warm shows as unknown until the kettle reports again.
 - One Govee account carries one real-time session: two Home Assistant installs signed in to the same account evict each other from AWS IoT in turn. Use separate accounts.
 
 ---

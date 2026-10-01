@@ -99,14 +99,16 @@
           "enable_diy_scenes": "Activa el selector d'escenes DIY",
           "expose_transport_entities": "Exposa sensors de connectivitat de transport per dispositiu",
           "enable_mqtt_control": "Envia l'encesa, la brillantor i el color per MQTT (més ràpid, experimental)",
-          "lan_targets": "Adreces IP o subxarxes LAN dels dispositius (avançat)"
+          "lan_targets": "Adreces IP o subxarxes LAN dels dispositius (avançat)",
+          "kettle_frame_control": "Experimental: control de mantenir calent del bullidor mitjançant trames del dispositiu"
         },
         "data_description": {
           "api_temperature_unit": "Auto (per defecte) utilitza primer la unitat de temperatura que el teu compte de Govee indica per al dispositiu, després converteix els termòmetres coneguts per informar en Fahrenheit (per exemple H5179, H5109, H5110, H5111, H5053, H5075, H5100) i confia en la resta. Tria Fahrenheit si una lectura encara sembla aproximadament 1,8 vegades massa alta (per exemple 74 en lloc de 23), o Celsius per no convertir mai. L'API de Govee no inclou la unitat, així que no sempre es pot detectar automàticament.",
           "water_detector_poll_interval": "Cada quan es consulten els detectors d'aigua o fuites autònoms de Govee (p. ex. H5054) per comprovar si hi ha una fuita. Aquests sensors, que només utilitzen RF, no tenen canal d'enviament, de manera que una fuita pot trigar fins a aquest interval a aparèixer. Un valor més baix reacciona més ràpid, però fa més crides a l'API del compte; apuja'l si tens molts detectors. Rang: 60–3600 segons, valor predeterminat: 120. Requereix inici de sessió amb correu i contrasenya; s'ignora si no tens detectors d'aquest tipus.",
           "enable_groups": "Mostra els grups de dispositius que has creat a l'aplicació de Govee com a entitats de llum úniques. Una ordre a un grup s'envia una sola vegada i el núvol de Govee la sincronitza amb tots els membres, de manera que es sincronitza millor que agrupar les llums amb helpers de Home Assistant. L'estat és aproximat (els grups no es poden sondejar) i les llums en grup només admeten encesa, brillantor i color.",
           "enable_mqtt_control": "Envia les ordres d'encesa, brillantor i color pel canal MQTT de Govee en lloc de l'API REST al núvol, cosa que redueix la latència i evita els límits de freqüència de REST. Requereix inici de sessió amb correu i contrasenya (credencials MQTT). Si MQTT no està disponible, torna automàticament a REST. Experimental: utilitza un canal no documentat; desactiva'l si les ordres es comporten de manera inesperada.",
-          "lan_targets": "Només cal quan els dispositius Govee compatibles amb LAN estan en una subxarxa o VLAN diferent de la de Home Assistant, de manera que l'escaneig de descoberta local no hi arriba. Introdueix una llista separada per comes amb adreces IP de dispositius (10.20.0.51), adreces de difusió (10.20.0.255) o subxarxes en CIDR (10.20.0.0/24, /24 o més específic). Les subxarxes s'escanegen dispositiu per dispositiu, ja que la majoria dels encaminadors descarten els broadcasts entre VLAN. Deixa-ho en blanc si tots els dispositius comparteixen la xarxa de Home Assistant. Avançat: si un dispositiu segueix sense trobar-se perquè la seva resposta d'escaneig no pot creuar la VLAN, fixa'l amb device_id=ip (AA:BB:CC:DD:EE:FF:00:11=10.20.0.51) per ometre el descobriment per a aquest dispositiu. Afegeix un ! al final (=10.20.0.51!) només per a firmware que accepta ordres LAN però mai respon a una lectura d'estat — això desactiva totes les comprovacions d'estat LAN del dispositiu, de manera que una IP incorrecta semblarà que funciona mentre el dispositiu mai respon. Introdueix off per desactivar completament la descoberta LAN i el control local."
+          "lan_targets": "Només cal quan els dispositius Govee compatibles amb LAN estan en una subxarxa o VLAN diferent de la de Home Assistant, de manera que l'escaneig de descoberta local no hi arriba. Introdueix una llista separada per comes amb adreces IP de dispositius (10.20.0.51), adreces de difusió (10.20.0.255) o subxarxes en CIDR (10.20.0.0/24, /24 o més específic). Les subxarxes s'escanegen dispositiu per dispositiu, ja que la majoria dels encaminadors descarten els broadcasts entre VLAN. Deixa-ho en blanc si tots els dispositius comparteixen la xarxa de Home Assistant. Avançat: si un dispositiu segueix sense trobar-se perquè la seva resposta d'escaneig no pot creuar la VLAN, fixa'l amb device_id=ip (AA:BB:CC:DD:EE:FF:00:11=10.20.0.51) per ometre el descobriment per a aquest dispositiu. Afegeix un ! al final (=10.20.0.51!) només per a firmware que accepta ordres LAN però mai respon a una lectura d'estat — això desactiva totes les comprovacions d'estat LAN del dispositiu, de manera que una IP incorrecta semblarà que funciona mentre el dispositiu mai respon. Introdueix off per desactivar completament la descoberta LAN i el control local.",
+          "kettle_frame_control": "Afegeix als bullidors Govee H7175 un interruptor Mantenir calent i un selector de la seva durada. Envien la pròpia trama d'ordre del bullidor per la connexió en temps real, de manera que cal iniciar sessió amb correu i contrasenya. Un canvi es mostra a l'instant; si el bullidor no el confirma en 30 segons, mantenir calent apareix com a desconegut fins que el bullidor torni a informar. Desactivat per defecte; en desactivar-lo s'eliminen aquestes entitats."
         }
       },
       "kettle_slots": {
@@ -200,6 +202,15 @@
           "black_tea_boil": "Te negre / bullir",
           "manual": "Manual"
         }
+      },
+      "kettle_keep_warm_duration": {
+        "name": "Durada de mantenir calent",
+        "state": {
+          "30_min": "30 min",
+          "60_min": "1 h",
+          "90_min": "1,5 h",
+          "120_min": "2 h"
+        }
       }
     },
     "switch": {
@@ -244,6 +255,9 @@
       },
       "govee_bottom_light": {
         "name": "Llum inferior"
+      },
+      "kettle_keep_warm": {
+        "name": "Mantenir calent"
       }
     },
     "sensor": {
