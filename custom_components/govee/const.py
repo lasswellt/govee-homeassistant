@@ -301,6 +301,17 @@ MAX_LOCAL_FRESH_SKIPS: Final = 5
 
 # Diagnostics: how many distinct pushed frames are kept per H7175 kettle.
 KETTLE_FRAME_HISTORY: Final = 50
+# H7175 follow-up reads: seconds after an accepted command at which the kettle
+# is re-read (one cloud read, then a status query), skipped while fewer than
+# KETTLE_FOLLOWUP_MIN_REMAINING requests are left in Govee's window.
+KETTLE_FOLLOWUP_DELAYS: Final = (5, 20)
+KETTLE_FOLLOWUP_MIN_REMAINING: Final = 10
+# Without a heating status, an H7175 counts as heating (polled every cycle)
+# while more than this many degrees (its own unit) below its target.
+KETTLE_HEATING_TOLERANCE: Final = 2
+# How long a value an H7175 pushed, or a command set, is kept over cloud
+# reads that disagree (the cloud lags the kettle by several seconds).
+KETTLE_PROTECT_SECONDS: Final = 45
 
 # How long a device must have been off with no observed state change before
 # its poll cadence is stretched. Half an hour: long enough that a light
@@ -543,3 +554,4 @@ SUFFIX_KETTLE_KEEP_WARM_STATUS: Final = "_kettle_keep_warm_status"
 SUFFIX_KETTLE_KEEP_WARM_MINUTES: Final = "_kettle_keep_warm_minutes"
 SUFFIX_KETTLE_KEEP_WARM_REMAINING: Final = "_kettle_keep_warm_remaining"
 SUFFIX_KETTLE_DIY_SLOT: Final = "_kettle_diy_slot"
+SUFFIX_KETTLE_BREW_MODE: Final = "_kettle_brew_mode"

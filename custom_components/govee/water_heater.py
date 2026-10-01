@@ -30,20 +30,11 @@ from homeassistant.const import ATTR_TEMPERATURE, PRECISION_WHOLE, STATE_OFF, Un
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.restore_state import RestoredExtraData, RestoreEntity
 
 from .const import DOMAIN, SUFFIX_KETTLE
 from .coordinator import GoveeConfigEntry, GoveeCoordinator
-from .entity import GoveeEntity
-from .kettle.modes import (
-    KETTLE_MANUAL_MODE,
-    kettle_modes,
-    manual_command,
-    restore_slot,
-    selected_mode,
-    slot_restore_data,
-    to_kettle_unit,
-)
+from .kettle.entities import KettleSlotRestoreMixin
+from .kettle.modes import KETTLE_MANUAL_MODE, kettle_modes, manual_command, selected_mode, to_kettle_unit
 from .models import GoveeDevice, PowerCommand, WorkModeCommand
 
 _LOGGER = logging.getLogger(__name__)
@@ -65,7 +56,7 @@ async def async_setup_entry(
     )
 
 
-class GoveeKettleWaterHeater(GoveeEntity, WaterHeaterEntity, RestoreEntity):
+class GoveeKettleWaterHeater(KettleSlotRestoreMixin, WaterHeaterEntity):
     """H7175 kettle as a water heater: target, brew modes, power."""
 
     _attr_translation_key = "kettle"
@@ -80,8 +71,6 @@ class GoveeKettleWaterHeater(GoveeEntity, WaterHeaterEntity, RestoreEntity):
         self._range_celsius = device.get_kettle_temperature_range()
         self._has_power = device.supports_power
         self._modes = kettle_modes(device)
-        # A custom slot restored before the first state arrived.
-        self._pending_restore: dict[str, Any] | None = None
         features = WaterHeaterEntityFeature(0)
         if device.supports_kettle_temperature:
             features |= WaterHeaterEntityFeature.TARGET_TEMPERATURE
@@ -91,31 +80,6 @@ class GoveeKettleWaterHeater(GoveeEntity, WaterHeaterEntity, RestoreEntity):
         if self._has_power:
             features |= WaterHeaterEntityFeature.ON_OFF
         self._attr_supported_features = features
-
-    async def async_added_to_hass(self) -> None:
-        """Restore the selected custom slot, which the poll does not report."""
-        await super().async_added_to_hass()
-        extra = await self.async_get_last_extra_data()
-        if extra is not None:
-            self._pending_restore = extra.as_dict()
-            self._apply_pending_restore()
-
-    def _apply_pending_restore(self) -> None:
-        state = self.device_state
-        if self._pending_restore is not None and state is not None:
-            restore_slot(self._modes, state, self._pending_restore)
-            self._pending_restore = None
-
-    def _handle_coordinator_update(self) -> None:
-        """Apply a pending restore once the kettle's first state is in."""
-        self._apply_pending_restore()
-        super()._handle_coordinator_update()
-
-    @property
-    def extra_restore_state_data(self) -> RestoredExtraData | None:
-        """Keep the selected custom slot by value."""
-        data = slot_restore_data(self._modes, self.device_state)
-        return RestoredExtraData(data) if data is not None else None
 
     # ------------------------------------------------------------------ #
     # Units and range

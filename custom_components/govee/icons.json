@@ -121,6 +121,9 @@
       },
       "govee_nightlight_scene_select": {
         "default": "mdi:weather-night"
+      },
+      "kettle_brew_mode": {
+        "default": "mdi:kettle-steam"
       }
     },
     "sensor": {

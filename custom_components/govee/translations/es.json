@@ -163,6 +163,20 @@
       },
       "govee_nightlight_scene_select": {
         "name": "Escena de luz nocturna"
+      },
+      "kettle_brew_mode": {
+        "name": "Modo de preparación",
+        "state": {
+          "custom_1": "Personalizado 1",
+          "custom_2": "Personalizado 2",
+          "custom_3": "Personalizado 3",
+          "custom_4": "Personalizado 4",
+          "green_tea": "Té verde",
+          "oolong_tea": "Té oolong",
+          "coffee": "Café",
+          "black_tea_boil": "Té negro / hervir",
+          "manual": "Manual"
+        }
       }
     },
     "switch": {

@@ -163,6 +163,20 @@
       },
       "govee_nightlight_scene_select": {
         "name": "Escena de llum nocturna"
+      },
+      "kettle_brew_mode": {
+        "name": "Mode de preparació",
+        "state": {
+          "custom_1": "Personalitzat 1",
+          "custom_2": "Personalitzat 2",
+          "custom_3": "Personalitzat 3",
+          "custom_4": "Personalitzat 4",
+          "green_tea": "Te verd",
+          "oolong_tea": "Te oolong",
+          "coffee": "Cafè",
+          "black_tea_boil": "Te negre / bullir",
+          "manual": "Manual"
+        }
       }
     },
     "switch": {

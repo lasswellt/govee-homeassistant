@@ -10,33 +10,46 @@ The push carries no unit. Until a poll has told us the kettle's unit, pushed
 temperatures are withheld (a °F reading stored as °C showed 187 and 349 on a
 real kettle), and that poll is never skipped as locally fresh.
 
+Freshness. A kettle starts heating on command but does not push until
+asked, so after a command it is re-read (KETTLE_FOLLOWUP_DELAYS: one cloud
+read, then a status query), and a heating kettle is polled every cycle. Both
+yield to the request budget. The cloud can answer with values older than a
+push or a command: a field a push or command set keeps that value through
+cloud reads until the cloud agrees or KETTLE_PROTECT_SECONDS pass.
+
 Only kettles in ``KETTLE_FRAME_SKUS`` are handled here; any other kettle's
-push is handled exactly as before.
+push, poll and commands are handled exactly as before.
 """
 
 from __future__ import annotations
 
 import logging
+import time
 from collections import deque
+from collections.abc import Callable
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.const import UnitOfTemperature
+from homeassistant.helpers.event import async_call_later
 from homeassistant.util import dt as dt_util
 
 from ..const import (
     CONF_API_TEMPERATURE_UNIT,
     DEFAULT_API_TEMPERATURE_UNIT,
     FAHRENHEIT_REPORTING_SKUS,
+    KETTLE_FOLLOWUP_DELAYS,
     KETTLE_FRAME_HISTORY,
+    KETTLE_HEATING_TOLERANCE,
+    KETTLE_PROTECT_SECONDS,
     resolve_fahrenheit_conversion,
 )
-from ..models import TemperatureSettingCommand, WorkModeCommand
+from ..models import GoveeDeviceState, PowerCommand, TemperatureSettingCommand, WorkModeCommand
 from .frames import COMMAND_PREFIX, KETTLE_MANUAL_WORK_MODE, KettleFrameReport, decode_kettle_frames
 from .modes import kettle_modes, to_kettle_unit
 
 if TYPE_CHECKING:
     from ..coordinator import GoveeCoordinator
-    from ..models import GoveeDeviceState
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -86,6 +99,12 @@ class KettleManager:
         self._last_frame: dict[str, dict[bytes, bytes]] = {}
         # workModes outside a kettle's modes, logged once each.
         self._unlisted_logged: set[tuple[str, int]] = set()
+        # Per kettle: fields a push or command set, with the value and when
+        # (monotonic), kept through cloud reads that disagree.
+        self._protected: dict[str, dict[str, tuple[Any, float]]] = {}
+        # Per kettle: the pending follow-up read and its generation.
+        self._followups: dict[str, Callable[[], None]] = {}
+        self._followup_generation: dict[str, int] = {}
 
     # ------------------------------------------------------------------ #
     # Units
@@ -128,8 +147,35 @@ class KettleManager:
         return device is not None and device.sku.upper() in FAHRENHEIT_REPORTING_SKUS
 
     def must_poll(self, device_id: str) -> bool:
-        """Whether this cycle's cloud read must not be skipped as locally fresh."""
-        return not self.unit_known(device_id)
+        """Whether this cycle's cloud read must not be skipped as locally fresh.
+
+        The poll that brings the unit, and while the kettle heats (its pushes
+        are not guaranteed) every poll the request budget can afford.
+        """
+        if not self.unit_known(device_id):
+            return True
+        return self.heating(device_id) and not self._coordinator.cloud_budget_tight()
+
+    def heating(self, device_id: str) -> bool:
+        """Whether the kettle is heating.
+
+        Its own heating status decides when known, so a kettle keeping warm is
+        not polled every cycle for hours, except while keeping warm far below
+        its target: put back on the base, a kettle resumes keeping warm and
+        reheats (seen 111 to 176 °F) while still reporting "keeping warm".
+        Otherwise: on and more than KETTLE_HEATING_TOLERANCE below its target,
+        or either unknown.
+        """
+        state = self._coordinator.get_state(device_id)
+        if state is None or not state.power_state:
+            return False
+        current, target = state.sensor_temperature, state.kettle_target_temperature
+        below = current is None or target is None or current < target - KETTLE_HEATING_TOLERANCE
+        if state.kettle_heating_status is not None:
+            return state.kettle_heating_status == "heating" or (
+                state.kettle_heating_status == "keeping_warm" and below
+            )
+        return below
 
     # ------------------------------------------------------------------ #
     # Pushes and polls
@@ -141,10 +187,12 @@ class KettleManager:
         """Apply a push: mode, heating, keep warm and DIY slot, then temperatures."""
         report = decode_kettle_frames(frames)
         self._record_frames(device_id, frames)
+        pushed = ["power_state"] if "onOff" in data else []
         if report.work_mode is not None:
             state.work_mode = report.work_mode
             state.mode_value = report.mode_value
             state.kettle_mode_value = report.mode_value
+            pushed += ["work_mode", "mode_value", "kettle_mode_value"]
             self._check_work_mode(device_id, report.work_mode)
         if report.heating_seen:
             state.kettle_heating_status = report.heating_status
@@ -156,6 +204,7 @@ class KettleManager:
             state.kettle_diy_slot = _diy_slot(state.kettle_diy_slot, report.slot_flags)
         if not self.unit_known(device_id):
             _LOGGER.debug("Withholding pushed temperatures for %s until its unit is known", device_id)
+            self._protect(device_id, state, pushed)
             return report
         fahrenheit = self.reports_fahrenheit(device_id)
         if report.preset_temperatures:
@@ -171,11 +220,14 @@ class KettleManager:
             current = report.current_temperature
         if current is not None:
             state.sensor_temperature = current
+            pushed.append("sensor_temperature")
         target = _sta_value(sta, "setTem")
         if target is None:
             target = report.manual_target
         if target is not None:
             state.kettle_target_temperature = target
+            pushed.append("kettle_target_temperature")
+        self._protect(device_id, state, pushed)
         return report
 
     def merge_poll(self, device_id: str, existing: GoveeDeviceState, polled: GoveeDeviceState) -> None:
@@ -190,16 +242,49 @@ class KettleManager:
         for name in _PUSH_ONLY_FIELDS:
             if getattr(polled, name) is None:
                 setattr(polled, name, getattr(existing, name))
+        self._keep_protected(device_id, polled)
         if polled.work_mode is not None:
             self._check_work_mode(device_id, polled.work_mode)
 
+    def _protect(self, device_id: str, state: GoveeDeviceState, fields: list[str]) -> None:
+        """Keep ``fields`` at their current values through disagreeing cloud reads."""
+        now = time.monotonic()
+        protected = self._protected.setdefault(device_id, {})
+        for name in fields:
+            protected[name] = (getattr(state, name), now)
+
+    def _keep_protected(self, device_id: str, polled: GoveeDeviceState) -> None:
+        """Put protected values back over a cloud read, until it agrees or they expire."""
+        protected = self._protected.get(device_id, {})
+        now = time.monotonic()
+        for name, (value, at) in list(protected.items()):
+            if now - at > KETTLE_PROTECT_SECONDS or getattr(polled, name) == value:
+                del protected[name]
+            else:
+                _LOGGER.debug("Keeping %s=%s for %s over an older cloud read", name, value, device_id)
+                setattr(polled, name, value)
+
     def apply_command(
-        self, device_id: str, state: GoveeDeviceState, command: TemperatureSettingCommand | WorkModeCommand
+        self,
+        device_id: str,
+        state: GoveeDeviceState,
+        command: PowerCommand | TemperatureSettingCommand | WorkModeCommand,
     ) -> None:
-        """Apply a target or mode command optimistically."""
+        """Apply a kettle command optimistically and protect the fields it set."""
+        if isinstance(command, PowerCommand):
+            state.apply_optimistic_power(command.power_on)
+            self._protect(device_id, state, ["power_state"])
+            return
         if isinstance(command, WorkModeCommand):
             state.apply_optimistic_work_mode(command.work_mode, command.mode_value)
             state.kettle_mode_value = command.mode_value
+            fields = ["work_mode", "mode_value", "kettle_mode_value"]
+            # The kettle heats to the mode's preset: show it, when known.
+            preset = state.kettle_preset_temperatures.get(command.work_mode, {}).get(command.mode_value)
+            if preset is not None:
+                state.kettle_target_temperature = preset
+                fields.append("kettle_target_temperature")
+            self._protect(device_id, state, fields)
             return
         unit = UnitOfTemperature.FAHRENHEIT if command.unit.lower() == "fahrenheit" else UnitOfTemperature.CELSIUS
         target = to_kettle_unit(command.temperature, unit, self.reports_fahrenheit(device_id))
@@ -207,6 +292,58 @@ class KettleManager:
         state.apply_optimistic_work_mode(KETTLE_MANUAL_WORK_MODE, 0)
         state.kettle_target_temperature = target
         state.kettle_mode_value = None
+        self._protect(device_id, state, ["work_mode", "mode_value", "kettle_mode_value", "kettle_target_temperature"])
+
+    # ------------------------------------------------------------------ #
+    # Follow-up reads after a command
+    # ------------------------------------------------------------------ #
+
+    def schedule_followup(self, device_id: str) -> None:
+        """Re-read the kettle at each of KETTLE_FOLLOWUP_DELAYS; a newer command restarts it."""
+        self._cancel_followup(device_id)
+        generation = self._followup_generation.get(device_id, 0) + 1
+        self._followup_generation[device_id] = generation
+        self._arm_followup(device_id, generation, 0)
+
+    def _arm_followup(self, device_id: str, generation: int, index: int) -> None:
+        if index >= len(KETTLE_FOLLOWUP_DELAYS):
+            self._followups.pop(device_id, None)
+            return
+        delay = KETTLE_FOLLOWUP_DELAYS[index] - (KETTLE_FOLLOWUP_DELAYS[index - 1] if index else 0)
+
+        async def _run(_now: datetime) -> None:
+            await self._async_followup_read(device_id)
+            # A newer command, or the entry unloading, ends this chain.
+            if self._followup_generation.get(device_id) == generation:
+                self._arm_followup(device_id, generation, index + 1)
+
+        self._followups[device_id] = async_call_later(self._coordinator.hass, delay, _run)
+
+    def _cancel_followup(self, device_id: str) -> None:
+        unsub = self._followups.pop(device_id, None)
+        if unsub is not None:
+            unsub()
+
+    async def _async_followup_read(self, device_id: str) -> None:
+        """One cloud read, when affordable and no poll runs, then a status query.
+
+        The status query goes out after the read, so the push it prompts
+        arrives after the cloud's answer rather than racing it.
+        """
+        coordinator = self._coordinator
+        if coordinator.poll_in_progress:
+            _LOGGER.debug("Skipping kettle follow-up read for %s: a poll is running", device_id)
+        elif not coordinator.extra_cloud_read_allowed():
+            _LOGGER.debug("Skipping kettle follow-up read for %s: request budget", device_id)
+        else:
+            await coordinator.async_read_device(device_id)
+        await coordinator.async_request_status(device_id)
+
+    def async_shutdown(self) -> None:
+        """Cancel pending follow-ups (entry unload)."""
+        for device_id in list(self._followups):
+            self._followup_generation[device_id] = -1
+            self._cancel_followup(device_id)
 
     def _check_work_mode(self, device_id: str, work_mode: int) -> None:
         """Log, once, a workMode that is none of the kettle's modes (shown as unknown)."""

@@ -176,7 +176,7 @@ entity action → _async_send_command(command)
 | Platform | Entities |
 |---|---|
 | `light` | Main light, nightlight, main panel; per-segment and grouped-segment lights (`platforms/`) |
-| `select` | Scene, DIY scene, snapshot, HDMI source, music mode, fan speed, purifier mode, preset scene, nightlight scene |
+| `select` | Scene, DIY scene, snapshot, HDMI source, music mode, fan speed, purifier mode, preset scene, nightlight scene, kettle brew mode |
 | `switch` | Plugs, sockets, MQTT outlets, night light, light zones, named lights, music mode, DreamView, heater auto-stop, appliance power, probe live polling |
 | `fan` | Tower and purifier fans, ceiling fans |
 | `humidifier` | Humidifiers and dehumidifiers |

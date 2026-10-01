@@ -1,19 +1,25 @@
-"""H7175 kettle status entities, read from the kettle's AWS IoT frames.
+"""H7175 kettle entities shared by the platforms.
 
-Created for H7175 kettles only and added by the sensor and binary_sensor
-platforms. Each stays unknown until the kettle has pushed the frame it reads
-(account login is required for the push).
+Status entities (added by the sensor and binary_sensor platforms) read the
+kettle's AWS IoT frames and stay unknown until the kettle has pushed (account
+login is required for the push). The Brew mode select (select platform)
+changes the mode without switching the kettle on, as the Govee app does.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.components.select import SelectEntity
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.const import EntityCategory, UnitOfTime
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers.restore_state import RestoredExtraData, RestoreEntity
 
 from ..const import (
+    DOMAIN,
+    SUFFIX_KETTLE_BREW_MODE,
     SUFFIX_KETTLE_DIY_SLOT,
     SUFFIX_KETTLE_HEATING_STATUS,
     SUFFIX_KETTLE_KEEP_WARM_MINUTES,
@@ -22,7 +28,16 @@ from ..const import (
 )
 from ..entity import GoveeEntity
 from .frames import HEATING_STATUS, KETTLE_CUSTOM_WORK_MODE
-from .modes import kettle_modes, mode_key
+from ..models import WorkModeCommand
+from .modes import (
+    KETTLE_MANUAL_MODE,
+    kettle_modes,
+    manual_command,
+    mode_key,
+    restore_slot,
+    selected_mode,
+    slot_restore_data,
+)
 
 if TYPE_CHECKING:
     from ..coordinator import GoveeCoordinator
@@ -127,6 +142,93 @@ class GoveeKettleKeepWarmBinarySensor(_KettleEntity, BinarySensorEntity):
         """Keep warm on or off."""
         state = self.device_state
         return state.kettle_keep_warm_enabled if state else None
+
+
+class KettleSlotRestoreMixin(GoveeEntity, RestoreEntity):
+    """Restore the selected custom slot, which the poll does not report.
+
+    After a restart a kettle in a custom slot is reported as ``{"workMode":
+    1}`` until it pushes. The slot is stored by value; a restore that arrives
+    before the kettle's first state is kept until that state is in.
+    """
+
+    _modes: dict[str, tuple[int, int]]
+    _pending_restore: dict[str, Any] | None = None
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the stored slot."""
+        await super().async_added_to_hass()
+        extra = await self.async_get_last_extra_data()
+        if extra is not None:
+            self._pending_restore = extra.as_dict()
+            self._apply_pending_restore()
+
+    def _apply_pending_restore(self) -> None:
+        state = self.device_state
+        if self._pending_restore is not None and state is not None:
+            restore_slot(self._modes, state, self._pending_restore)
+            self._pending_restore = None
+
+    def _handle_coordinator_update(self) -> None:
+        """Apply a pending restore once the kettle's first state is in."""
+        self._apply_pending_restore()
+        super()._handle_coordinator_update()
+
+    @property
+    def extra_restore_state_data(self) -> RestoredExtraData | None:
+        """Keep the selected custom slot by value."""
+        data = slot_restore_data(self._modes, self.device_state)
+        return RestoredExtraData(data) if data is not None else None
+
+
+class GoveeKettleBrewModeSelect(KettleSlotRestoreMixin, SelectEntity):
+    """The kettle's brew mode, selected without switching it on (as the Govee app does)."""
+
+    _attr_translation_key = "kettle_brew_mode"
+
+    def __init__(self, coordinator: GoveeCoordinator, device: GoveeDevice) -> None:
+        """Initialize the Brew mode select."""
+        super().__init__(coordinator, device)
+        self._attr_unique_id = f"{device.device_id}{SUFFIX_KETTLE_BREW_MODE}"
+        self._modes = kettle_modes(device)
+        self._attr_options = list(self._modes)
+
+    @property
+    def current_option(self) -> str | None:
+        """The mode the kettle has selected, also while it is off."""
+        return selected_mode(self._modes, self.device_state)
+
+    def _error(self, key: str, **placeholders: str) -> ServiceValidationError:
+        return ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key=key,
+            translation_placeholders={"device": self._device.name, **placeholders},
+        )
+
+    async def async_select_option(self, option: str) -> None:
+        """Select a mode; the kettle stays on or off. ``manual`` re-sends the target."""
+        target = self._modes.get(option)
+        if target is None:
+            raise self._error("unknown_option", option=option)
+        if option != KETTLE_MANUAL_MODE:
+            await self._async_send_command(WorkModeCommand(work_mode=target[0], mode_value=target[1]))
+            return
+        state = self.device_state
+        current = state.kettle_target_temperature if state is not None else None
+        if current is None:
+            raise self._error("kettle_manual_no_target")
+        await self._async_send_command(
+            manual_command(current, self.coordinator.kettles.reports_fahrenheit(self._device_id))
+        )
+
+
+def kettle_selects(coordinator: GoveeCoordinator) -> list[SelectEntity]:
+    """The Brew mode select of every H7175 kettle with modes."""
+    return [
+        GoveeKettleBrewModeSelect(coordinator, device)
+        for device in coordinator.devices.values()
+        if device.decodes_kettle_frames and not device.is_group and device.get_kettle_mode_options()
+    ]
 
 
 def kettle_sensors(coordinator: GoveeCoordinator) -> list[SensorEntity]:
