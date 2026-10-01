@@ -18,6 +18,9 @@ from custom_components.govee.diagnostics import (
 )
 from custom_components.govee.models import GoveeDeviceState
 from custom_components.govee.models.device import (
+    CAPABILITY_SEGMENT_COLOR,
+    GoveeCapability,
+    GoveeDevice,
     GoveeLeakSensor,
     GoveeLeakSensorState,
 )
@@ -551,6 +554,58 @@ class TestDeviceDiagnostics:
         assert hub_mac not in rendered
         assert sensor_mac not in rendered
         assert _MAC_RE.search(rendered) is None
+
+    @pytest.mark.asyncio
+    async def test_device_dump_includes_segment_resolution(self) -> None:
+        """The per-device record explains how segment_count was derived."""
+        mac_id = "03:9C:DC:06:75:4B:10:7D"
+        device = GoveeDevice(
+            device_id=mac_id,
+            sku="H7076",
+            name="Strip",
+            device_type="devices.types.light",
+            capabilities=(
+                GoveeCapability(
+                    type=CAPABILITY_SEGMENT_COLOR,
+                    instance="segmentedColorRgb",
+                    parameters={
+                        "dataType": "STRUCT",
+                        "fields": [
+                            {
+                                "fieldName": "segment",
+                                "elementRange": {"min": 0, "max": 14},
+                                "size": {"min": 1, "max": 15},
+                            }
+                        ],
+                    },
+                ),
+            ),
+            is_group=False,
+        )
+        coordinator = _coordinator_stub(
+            devices={mac_id: device},
+            get_state=lambda _did: GoveeDeviceState.create_empty(mac_id),
+        )
+
+        device_entry = MagicMock()
+        device_entry.id = "ha_dev_strip"
+        device_entry.name = "Strip"
+        device_entry.name_by_user = None
+        device_entry.identifiers = {("govee", mac_id)}
+        device_entry.model = "H7076"
+        device_entry.sw_version = None
+        device_entry.hw_version = None
+
+        out = await async_get_device_diagnostics(MagicMock(), _entry_stub(coordinator), device_entry)
+
+        record = next(iter(out["devices"].values()))
+        assert record["segment_resolution"] == {
+            "api_count": 15,
+            "size_max": 15,
+            "override": 4,
+            "effective": 4,
+            "source": "override",
+        }
 
 
 class TestLanDiscoveryDiag:

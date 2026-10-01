@@ -1546,3 +1546,54 @@ class TestSegmentCountOverride:
         device = _make_rgbic_device("H6000", cap)
         # No segment capability → 0, not an exception.
         assert device.segment_count == 0
+
+
+class TestSegmentCountResolution:
+    """GoveeDevice.segment_count_resolution explains segment_count for diagnostics."""
+
+    def test_override_source(self):
+        """A SKU in SKU_SEGMENT_OVERRIDES reports source=override with the raw counts kept."""
+        cap = _make_rgbic_segment_capability(element_range_max=14, size_max=15)
+        device = _make_rgbic_device("H7076", cap)
+        assert device.segment_count_resolution == {
+            "api_count": 15,
+            "size_max": 15,
+            "override": 4,
+            "effective": 4,
+            "source": "override",
+        }
+
+    def test_size_max_source_when_clamp_lowers_the_count(self):
+        """No override and size.max below the API count reports source=size_max."""
+        cap = _make_rgbic_segment_capability(element_range_max=20, size_max=15)
+        device = _make_rgbic_device("H6000", cap)
+        resolution = device.segment_count_resolution
+        assert resolution is not None
+        assert resolution["source"] == "size_max"
+        assert resolution["api_count"] == 21
+        assert resolution["effective"] == 15 == device.segment_count
+
+    def test_api_source_when_nothing_adjusts_the_count(self):
+        """No override and no lowering clamp reports source=api."""
+        cap = _make_rgbic_segment_capability(element_range_max=14, size_max=None)
+        device = _make_rgbic_device("H6000", cap)
+        assert device.segment_count_resolution == {
+            "api_count": 15,
+            "size_max": None,
+            "override": None,
+            "effective": 15,
+            "source": "api",
+        }
+
+    def test_none_without_segment_capability(self):
+        """Devices without a segment capability have no resolution."""
+        device = GoveeDevice(
+            device_id="AA:BB:CC:DD:EE:FF:00:98",
+            sku="H6000",
+            name="Plain bulb",
+            device_type="devices.types.light",
+            capabilities=(),
+            is_group=False,
+        )
+        assert device.segment_count_resolution is None
+        assert device.segment_count == 0

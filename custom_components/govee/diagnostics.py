@@ -233,6 +233,9 @@ def _device_diag(
             "ble": coordinator.is_ble_available(device_id),
         },
         "transport_health": _transport_health(coordinator, device_id),
+        # How segment_count was derived (parser, size.max clamp, SKU override),
+        # so an over-reported count is diagnosable from a download alone.
+        "segment_resolution": device.segment_count_resolution,
     }
 
 
