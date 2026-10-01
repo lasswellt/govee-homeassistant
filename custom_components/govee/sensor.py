@@ -452,7 +452,12 @@ class GoveeTemperatureSensor(_BffThermometerAvailabilityMixin, SensorEntity):
         if unit_hint is None:
             unit_hint = self.coordinator.account_temperature_unit(self._device_id)
 
-        if resolve_fahrenheit_conversion(self._device.sku, api_unit, unit_hint):
+        if self._device.decodes_kettle_frames:
+            # H7175: the kettle's declared unit wins over the API-unit option.
+            fahrenheit = self.coordinator.kettles.reports_fahrenheit(self._device_id)
+        else:
+            fahrenheit = resolve_fahrenheit_conversion(self._device.sku, api_unit, unit_hint)
+        if fahrenheit:
             return (value - 32.0) * (5.0 / 9.0)
 
         return value

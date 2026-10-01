@@ -118,7 +118,7 @@ class TestSecondProbeEntity:
         return SimpleNamespace(
             device_state=state,
             coordinator=coordinator,
-            _device=SimpleNamespace(sku=sku),
+            _device=SimpleNamespace(sku=sku, decodes_kettle_frames=False),
             _device_id="AA:BB:CC:DD:EE:FF:00:11",
         )
 
