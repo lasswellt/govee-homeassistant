@@ -86,7 +86,7 @@ Govee in Home Assistant has several integrations, and it's easy to pick one that
 | **Humidifiers & dehumidifiers** | H7140, H7141, H7150, H7151, H7152 | Modes + target‑humidity setpoint; dehumidifiers add a **Water Tank Full** sensor (real‑time event push, API key only) with a paired **Clear Water Alert** button. The pump model (H7152) also gets a **Pump State** problem sensor, a **Mode** (Pump / Water Tank) sensor and live **Temperature** / **Humidity**, decoded from the AWS IoT push — account login required, and they update when the device pushes |
 | **Aroma diffusers** | H7161 | Power switch + light/mist scene selector |
 | **Space heaters** | H7130, H7131, H713B, H721C | Power switch, target‑temperature number, auto‑stop switch; temperature unit follows what the device itself reports |
-| **Kettles** | H717A, H7170 | Power switch and a water‑temperature sensor (unit follows what the kettle declares) |
+| **Kettles** | H717A, H7170, H7175 | Power switch and a water‑temperature sensor (unit follows what the kettle declares); see [Kettles](#kettles) |
 | **Thermometers / hygrometers** | H5053, H5075, H5103, H5107, H5109, H5110, H5111, H5112, H5179, H5220, H5301, H5310 | Temperature & humidity sensors, **Battery** (account login) + a "Last Changed" timestamp; gateway‑bridged models (H5301/H5310 via an H5044) nest under the hub; models that report °F without saying so are converted automatically |
 | **Probe (cooking) thermometers** | H5192 | Core and ambient temperature per probe, plus the four alarm limits as editable numbers. These are **pull** devices — they answer a read and otherwise stay silent — so a **Live polling** switch (off by default, to spare the battery) controls whether readings update |
 | **Air‑quality & CO₂ monitors** | H5106, H5140 | CO₂ (ppm), air‑quality (AQI), temperature & humidity sensors |
@@ -244,6 +244,24 @@ Some gateway‑bridged sensors are listed by Govee with no reading attached. Whe
 
 ---
 
+## Kettles
+
+All kettles get a power switch and a water‑temperature sensor whose unit follows what the kettle declares, even when the API‑unit option is set.
+
+**H7175.** A **water heater** entity carries the target temperature, the brew modes and power; the existing power switch keeps its entity and is named "Power". Mode states are fixed keys, shown translated: `off`, `custom_1`–`custom_4`, `green_tea`, `oolong_tea`, `coffee`, `black_tea_boil` and `manual` (a target set directly, with no preset). Choosing a mode while the kettle is off switches it on in that mode; setting the target selects `manual`. A **Brew mode** selector offers the same keys and only selects the mode, as the Govee app does; its options are what automations and dashboard buttons should use (`select.select_option` with `option: green_tea`, ...).
+
+A kettle starts heating on command but does not report until asked, so after a command the integration re‑reads it twice (after 5 and 20 seconds) and polls a heating kettle every cycle, both only while the daily request budget allows. A value the kettle pushed, or a command just set, is kept over a cloud read that still shows the old value for up to 45 seconds.
+
+With account login the kettle's real‑time push updates the water temperature and adds a **Heating status** sensor, **Keep warm** and **On base** binary sensors, a **Button** event for the kettle's own button, and diagnostic **Keep warm duration**, **Keep warm remaining** and **DIY slot** sensors (the custom slot the Govee app marks "DIY"). The push carries no unit, so its temperatures are used only once a cloud poll has told the integration the kettle's unit; that poll is never skipped.
+
+**Custom slot labels.** Govee's API only calls the custom slots Custom 1–4. In ⚙️ Configure → *Kettle slot labels* you can give them labels (for example the names from the Govee app). Labels are display text only: the mode stays `custom_1`–`custom_4`, so automations keep working when a label changes, and the labels appear in the water heater's and Brew mode selector's `labels` attribute for dashboards.
+
+**Experimental keep‑warm control.** Keep warm is not in Govee's API. With the option *Experimental: kettle keep‑warm control via device frames* (off by default, shown only while an H7175 is loaded, account login required) the H7175 gets a **Keep warm** switch and a **Keep warm duration** selector (30 min to 2 h). They send the kettle's own command frame, as the Govee app does; see [Known limitations](#known-limitations).
+
+The H717A and H7170 keep their power switch and temperature sensor; their frames are unknown.
+
+---
+
 ## Known limitations
 
 - Everything runs through Govee's cloud unless a device supports the LAN API or is within Bluetooth range; there is no fully local mode.
@@ -252,6 +270,7 @@ Some gateway‑bridged sensors are listed by Govee with no reading attached. Whe
 - Thermometer readings refresh on Govee's schedule, typically every 10 minutes for Wi-Fi sensors and up to an hour for Bluetooth sensors behind a gateway; see [Thermometers & sensors](#thermometers--sensors).
 - Account login, real-time MQTT, LAN control, and Bluetooth passthrough use undocumented interfaces that can stop working when Govee changes them. The developer API path is the stable one.
 - Bluetooth-only devices are not supported here; use Home Assistant's built-in `govee_ble` integration for those.
+- The H7175 keep-warm control is experimental: it writes the kettle's own command frame over the undocumented real-time connection and was verified on one kettle with a Fahrenheit account. A change shows at once; if the kettle does not confirm it within 30 seconds, keep warm shows as unknown until the kettle reports again.
 - One Govee account carries one real-time session: two Home Assistant installs signed in to the same account evict each other from AWS IoT in turn. Use separate accounts.
 
 ---
@@ -262,8 +281,9 @@ Actions raise an error when a device is unknown or Govee rejects the command, so
 
 - `govee.refresh_scenes` re-fetches the scene catalog from Govee, for one device or for every device when `device_id` is omitted.
 - `govee.set_segment_color` sets the RGB color of specific segments on an RGBIC device.
+- `govee.request_status` asks a device to report its status over the real‑time connection (account login), once or every `interval` seconds for `duration` seconds. It spends no cloud API requests; use it to follow a heating kettle closely.
 
-`device_id` accepts the Home Assistant device or the Govee device ID for both actions.
+`device_id` accepts the Home Assistant device or the Govee device ID for every action.
 
 | Action | Field | Meaning |
 |---|---|---|
@@ -271,6 +291,9 @@ Actions raise an error when a device is unknown or Govee rejects the command, so
 | `govee.set_segment_color` | `device_id` (required) | The RGBIC light. |
 | | `segments` (required) | List of segment indices counted from 0; an index beyond the device's segment count is rejected. |
 | | `rgb_color` (required) | `[R, G, B]`, each 0 to 255. |
+| `govee.request_status` | `device_id` (required) | The device to ask. |
+| | `duration` (optional) | Keep asking for this many seconds, up to 120; 0 (default) asks once. |
+| | `interval` (optional) | Seconds between queries, at least 3 (default 5). |
 
 ```yaml
 action: govee.refresh_scenes

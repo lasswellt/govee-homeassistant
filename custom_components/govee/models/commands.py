@@ -417,11 +417,16 @@ class TemperatureSettingCommand(DeviceCommand):
     containing autoStop, temperature, and unit fields. The autoStop field
     must be included or the device silently ignores the command (HTTP 200
     but no temperature change).
+
+    Kettles use the same STRUCT under ``sliderTemperature`` without autoStop:
+    pass ``setting_instance=INSTANCE_SLIDER_TEMPERATURE`` and
+    ``auto_stop=None``.
     """
 
     temperature: int
-    auto_stop: int = 0
+    auto_stop: int | None = 0
     unit: str = "Celsius"
+    setting_instance: str = INSTANCE_TARGET_TEMPERATURE
 
     @property
     def capability_type(self) -> str:
@@ -429,11 +434,10 @@ class TemperatureSettingCommand(DeviceCommand):
 
     @property
     def instance(self) -> str:
-        return INSTANCE_TARGET_TEMPERATURE
+        return self.setting_instance
 
     def get_value(self) -> dict[str, Any]:
-        return {
-            "autoStop": self.auto_stop,
-            "temperature": self.temperature,
-            "unit": self.unit,
-        }
+        value: dict[str, Any] = {"temperature": self.temperature, "unit": self.unit}
+        if self.auto_stop is not None:
+            value["autoStop"] = self.auto_stop
+        return value

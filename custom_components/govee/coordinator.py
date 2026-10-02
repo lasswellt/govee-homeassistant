@@ -39,6 +39,8 @@ from .api import (
 from .api.auth import GoveeAuthClient, _derive_client_id
 from .api.openapi_events import GoveeOpenApiEventClient
 from .ble_passthrough import BlePassthroughManager
+from .kettle.manager import KettleManager
+from .status_burst import StatusBurst
 
 from homeassistant.helpers.event import async_call_later
 
@@ -81,6 +83,7 @@ from .const import (
     CONF_WATER_DETECTOR_POLL_INTERVAL,
     DEFAULT_API_TEMPERATURE_UNIT,
     DEFAULT_DAILY_REQUEST_BUDGET,
+    KETTLE_FOLLOWUP_MIN_REMAINING,
     DEFAULT_ENABLE_MQTT_CONTROL,
     DEFAULT_MQTT_STATUS_INTERVAL,
     DEFAULT_PROBE_POLL_INTERVAL,
@@ -389,6 +392,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             device_topics=self._device_topics,
             ensure_device_topic=self._ensure_device_topic,
         )
+        # H7175 kettle pushes, unit decisions and poll rules (kettle/manager.py).
+        self.kettles = KettleManager(self)
+        # Repeated status queries for one device (status_burst.py).
+        self.status_burst = StatusBurst(self)
 
         # BLE direct transport — per-device GoveeBLEDevice instances
         # populated dynamically from Bluetooth advertisements.
@@ -537,6 +544,8 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # and is left out of every later sweep until the entry reloads.
         self._status_query_strikes: dict[str, int] = {}
         self._status_query_quarantine: set[str] = set()
+        # True while _async_update_data runs (kettle follow-up reads wait).
+        self._poll_in_progress = False
         # Last seen lastTime per detector — warnMessage is only called when the
         # device has freshly reported (or is currently wet), keeping the account
         # API request count low.
@@ -3499,6 +3508,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 self._store_frame_temperature_in_entity_unit(device_id, device.sku, state)
         if device is not None and device.mqtt_outlet_count:
             self._apply_outlet_mask(device, state, state_data.get("onOff"))
+        # H7175 kettles push their temperatures under ``sta``, and their mode,
+        # heating status and keep warm in frames.
+        if device is not None and device.decodes_kettle_frames:
+            self.kettles.on_push(device_id, state, state_data, self._op_frames_from(state_data))
 
         if was_offline:
             device = self._devices.get(device_id)
@@ -3674,11 +3687,89 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             self._schedule_refresh()
         self.async_update_listeners()
 
+    @property
+    def poll_in_progress(self) -> bool:
+        """Whether a whole-house poll is running."""
+        return self._poll_in_progress
+
+    def cloud_budget_tight(self) -> bool:
+        """Whether today's cloud requests are spent, or the configured cadence overspends.
+
+        Extra reads (a kettle's follow-ups, a heating kettle's every-cycle
+        poll) yield to the daily request budget (#204).
+        """
+        requests_today: object = self._api_client.requests_today
+        if isinstance(requests_today, int) and requests_today >= self._daily_request_budget:
+            return True
+        return poll_exceeds_budget(
+            requests_per_cycle=sum(1 for device in self._devices.values() if not device.is_group),
+            base_interval=int(self._original_update_interval.total_seconds()),
+            daily_budget=int(self._daily_request_budget),
+        )
+
+    def extra_cloud_read_allowed(self) -> bool:
+        """Whether a read outside the poll fits the rate limit and the daily budget."""
+        remaining: object = self._api_client.rate_limit_remaining
+        if self._rate_limited or (isinstance(remaining, int) and remaining < KETTLE_FOLLOWUP_MIN_REMAINING):
+            return False
+        return not self.cloud_budget_tight()
+
+    async def async_read_device(self, device_id: str) -> None:
+        """Read one device from the cloud now and notify listeners.
+
+        The whole-house poll keeps its schedule (listeners only).
+        """
+        device = self._devices.get(device_id)
+        if device is None:
+            return
+        result = await self._fetch_device_state_bounded(device_id, device)
+        if isinstance(result, GoveeDeviceState):
+            self._note_state_change(device_id, result)
+            self._states[device_id] = result
+            self.async_update_listeners()
+
+    def status_query_possible(self, device_id: str) -> bool:
+        """Whether a status query can go out to the device (MQTT up, topic known, not quarantined)."""
+        client = self._mqtt_client
+        return (
+            client is not None
+            and client.connected
+            and bool(self._device_topics.get(device_id))
+            and device_id not in self._status_query_quarantine
+        )
+
+    async def async_request_status(self, device_id: str) -> None:
+        """Ask a device to push its status over AWS IoT, if that can go out.
+
+        An MQTT publish, not a cloud request. While no sweep query is in
+        flight, a session drop during this one is charged to the device like
+        a sweep's (issue #195).
+        """
+        client = self._mqtt_client
+        if client is None or not self.status_query_possible(device_id):
+            return
+        attribute = self._status_query_in_flight is None
+        if attribute:
+            self._status_query_in_flight = device_id
+        try:
+            await client.async_publish_status_query(self._device_topics[device_id])
+        finally:
+            if attribute and self._status_query_in_flight == device_id:
+                self._status_query_in_flight = None
+
     async def _async_update_data(self) -> dict[str, GoveeDeviceState]:
         """Fetch state for all devices (parallel).
 
         Called by DataUpdateCoordinator on poll interval.
         """
+        self._poll_in_progress = True
+        try:
+            return await self._async_poll_all()
+        finally:
+            self._poll_in_progress = False
+
+    async def _async_poll_all(self) -> dict[str, GoveeDeviceState]:
+        """The body of :meth:`_async_update_data`."""
         # Pick up devices added to the account since setup (#101). Throttled and
         # failure-isolated inside the method so it never disrupts the state poll.
         await self._async_maybe_rediscover_devices()
@@ -4028,8 +4119,12 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         window *= LOCAL_READING_FRESHNESS_FACTOR
         now = dt_util.utcnow()
         fresh: set[str] = set()
-        for device_id in pollable:
+        for device_id, device in pollable.items():
             if device_id not in self._states:
+                continue
+            # A push can create a kettle's state before the poll that tells its
+            # unit; that poll is never skipped (see kettle/manager.py).
+            if device.decodes_kettle_frames and self.kettles.must_poll(device_id):
                 continue
             latest = self._local_last_updated(device_id)
             age = None if latest is None else (now - latest).total_seconds()
@@ -4289,6 +4384,8 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                     state.heater_auto_stop = existing_state.heater_auto_stop
                 if existing_state.device_temperature_unit is not None and state.device_temperature_unit is None:
                     state.device_temperature_unit = existing_state.device_temperature_unit
+                if device.decodes_kettle_frames:
+                    self.kettles.merge_poll(device_id, existing_state, state)
 
                 # Stand-alone thermometer/hygrometer readings (H5179, H5109,
                 # H5110, HS5108, HS5106): battery-powered sensors push to the
@@ -4608,6 +4705,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
     ) -> bool:
         """Send control command to device with optimistic update.
 
+        An H7175 kettle that accepted a command is re-read shortly afterwards
+        (see KettleManager.schedule_followup).
+
         Args:
             device_id: Device identifier.
             command: Command to execute.
@@ -4615,6 +4715,14 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         Returns:
             True if command succeeded.
         """
+        success = await self._async_control_device(device_id, command)
+        device = self._devices.get(device_id)
+        if success and device is not None and device.decodes_kettle_frames:
+            self.kettles.schedule_followup(device_id)
+        return success
+
+    async def _async_control_device(self, device_id: str, command: DeviceCommand) -> bool:
+        """Send a command over the best transport; see :meth:`async_control_device`."""
         device = self._devices.get(device_id)
         if not device:
             _LOGGER.error("Unknown device: %s", device_id)
@@ -5554,6 +5662,13 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         state = self._states.get(device_id)
         if not state:
             return
+        # H7175: kettle power, targets and modes (the heater's targetTemperature
+        # too is a TemperatureSettingCommand, but heaters are not kettles).
+        if isinstance(command, (PowerCommand, TemperatureSettingCommand, WorkModeCommand)):
+            device = self._devices.get(device_id)
+            if device is not None and device.decodes_kettle_frames:
+                self.kettles.apply_command(device_id, state, command)
+                return
 
         if isinstance(command, PowerCommand):
             state.apply_optimistic_power(command.power_on)
@@ -5760,6 +5875,8 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
     async def async_shutdown(self) -> None:
         """Shutdown coordinator and cleanup resources."""
+        self.kettles.async_shutdown()
+        self.status_burst.async_shutdown()
         # Cancel BFF polling
         if self._bff_poll_unsub:
             self._bff_poll_unsub()

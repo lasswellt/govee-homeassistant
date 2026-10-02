@@ -34,6 +34,7 @@ from .const import (
     CONF_API_KEY,
     CONF_EMAIL,
     CONF_ENABLE_DIY_SCENES,
+    CONF_KETTLE_FRAME_CONTROL,
     CONF_ENABLE_GROUPS,
     CONF_ENABLE_SCENES,
     CONF_PASSWORD,
@@ -41,6 +42,7 @@ from .const import (
     CONF_SEGMENT_MODE_BY_DEVICE,
     CONFIG_VERSION,
     DEFAULT_ENABLE_DIY_SCENES,
+    DEFAULT_KETTLE_FRAME_CONTROL,
     DEFAULT_ENABLE_GROUPS,
     DEFAULT_ENABLE_SCENES,
     DEFAULT_POLL_INTERVAL,
@@ -53,6 +55,8 @@ from .const import (
     SEGMENT_MODE_GROUPED,
     SEGMENT_MODE_INDIVIDUAL,
     SUFFIX_DIY_SCENE_SELECT,
+    SUFFIX_KEEP_WARM,
+    SUFFIX_KEEP_WARM_DURATION,
     SUFFIX_DIY_STYLE_SELECT,
     SUFFIX_GROUPED_SEGMENT,
     SUFFIX_SCENE_SELECT,
@@ -77,6 +81,7 @@ PLATFORMS: list[Platform] = [
     Platform.LIGHT,  # Main light + segments
     Platform.FAN,  # Fan devices
     Platform.HUMIDIFIER,  # Humidifiers / dehumidifiers
+    Platform.WATER_HEATER,  # H7175 kettles
     Platform.SWITCH,
     Platform.SENSOR,
     Platform.BINARY_SENSOR,
@@ -420,6 +425,7 @@ async def _async_cleanup_orphaned_entities(
     device_modes = options.get(CONF_SEGMENT_MODE_BY_DEVICE, {})
     enable_scenes = options.get(CONF_ENABLE_SCENES, DEFAULT_ENABLE_SCENES)
     enable_diy_scenes = options.get(CONF_ENABLE_DIY_SCENES, DEFAULT_ENABLE_DIY_SCENES)
+    kettle_frame_control = options.get(CONF_KETTLE_FRAME_CONTROL, DEFAULT_KETTLE_FRAME_CONTROL)
 
     _LOGGER.debug(
         "Orphan cleanup: device_modes=%s, enable_scenes=%s, enable_diy_scenes=%s",
@@ -491,6 +497,9 @@ async def _async_cleanup_orphaned_entities(
             elif suffix == SUFFIX_DIY_SCENE_SELECT and not enable_diy_scenes:
                 should_remove = True
                 removal_reason = "DIY scenes disabled"
+            elif suffix in (SUFFIX_KEEP_WARM, SUFFIX_KEEP_WARM_DURATION) and not kettle_frame_control:
+                should_remove = True
+                removal_reason = "kettle keep-warm control disabled"
             elif suffix == SUFFIX_DIY_STYLE_SELECT:
                 # The DIY style selector never sent a command; it was removed.
                 should_remove = True

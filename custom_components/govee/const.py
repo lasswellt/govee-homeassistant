@@ -17,6 +17,13 @@ CONF_ENABLE_SCENES: Final = "enable_scenes"
 CONF_ENABLE_DIY_SCENES: Final = "enable_diy_scenes"
 CONF_EXPOSE_TRANSPORT_ENTITIES: Final = "expose_transport_entities"
 CONF_ENABLE_MQTT_CONTROL: Final = "enable_mqtt_control"
+# Display labels for H7175 custom slots, set in the options flow:
+# {device_id: {"custom_1": "Herbal tea", ...}}. The mode state stays custom_N.
+CONF_KETTLE_SLOT_LABELS: Final = "kettle_slot_labels"
+# Experimental: H7175 keep-warm switch and duration select, written as the
+# kettle's own 3a 22 frame over the AWS IoT passthrough (kettle/control.py).
+# Off by default; its entities exist only while it is on.
+CONF_KETTLE_FRAME_CONTROL: Final = "kettle_frame_control"
 
 # Standalone water-detector (H5054) leak-poll interval (seconds). These RF-only
 # sensors deliver their trip only via the account warnMessage history (issue
@@ -243,6 +250,7 @@ DEFAULT_ENABLE_DIY_SCENES: Final = True
 DEFAULT_SEGMENT_MODE: Final = "individual"  # "disabled", "grouped", or "individual"
 DEFAULT_EXPOSE_TRANSPORT_ENTITIES: Final = False
 DEFAULT_ENABLE_MQTT_CONTROL: Final = False
+DEFAULT_KETTLE_FRAME_CONTROL: Final = False
 DEFAULT_API_TEMPERATURE_UNIT: Final = "auto"
 DEFAULT_LAN_TARGETS: Final = ""
 DEFAULT_WATER_DETECTOR_POLL_INTERVAL: Final = 120  # seconds (2 minutes)
@@ -298,6 +306,28 @@ LOCAL_READING_FRESHNESS_FACTOR: Final = 1.5
 # cycle — cheap insurance against a local transport that reports confidently
 # wrong values, and against cloud-only fields the local frames never carry.
 MAX_LOCAL_FRESH_SKIPS: Final = 5
+
+# Diagnostics: how many distinct pushed frames are kept per H7175 kettle.
+KETTLE_FRAME_HISTORY: Final = 50
+# H7175 follow-up reads: seconds after an accepted command at which the kettle
+# is re-read (one cloud read, then a status query), skipped while fewer than
+# KETTLE_FOLLOWUP_MIN_REMAINING requests are left in Govee's window.
+KETTLE_FOLLOWUP_DELAYS: Final = (5, 20)
+KETTLE_FOLLOWUP_MIN_REMAINING: Final = 10
+# Without a heating status, an H7175 counts as heating (polled every cycle)
+# while more than this many degrees (its own unit) below its target.
+KETTLE_HEATING_TOLERANCE: Final = 2
+# How long a value an H7175 pushed, or a command set, is kept over cloud
+# reads that disagree (the cloud lags the kettle by several seconds).
+KETTLE_PROTECT_SECONDS: Final = 45
+# A keep-warm write is shown at once; the kettle then has this long to report
+# it before its on/off becomes unknown, and is asked for its status this
+# often meanwhile. The Govee app took 5-15 s to show writes sent from HA.
+KETTLE_FRAME_CONFIRM_TIMEOUT: Final = 30.0
+KETTLE_FRAME_REQUERY_INTERVAL: Final = 10.0
+# Diagnostics: per kind of H7175 status frame, how many of the latest
+# distinct ones are kept.
+KETTLE_FRAME_HISTORY_PER_KIND: Final = 10
 
 # How long a device must have been off with no observed state change before
 # its poll cadence is stretched. Half an hour: long enough that a light
@@ -532,3 +562,16 @@ SUFFIX_HEATER_AUTO_STOP: Final = "_heater_auto_stop"
 SUFFIX_PURIFIER_MODE_SELECT: Final = "_purifier_mode_select"
 SUFFIX_PRESET_SCENE_SELECT: Final = "_preset_scene_select"
 SUFFIX_NIGHTLIGHT_SCENE_SELECT: Final = "_nightlight_scene_select"
+# H7175 kettle. The water heater is suffixed so the kettle's existing power
+# switch keeps its bare-device-id unique_id.
+SUFFIX_KETTLE: Final = "_kettle"
+SUFFIX_KETTLE_HEATING_STATUS: Final = "_kettle_heating_status"
+SUFFIX_KETTLE_KEEP_WARM_STATUS: Final = "_kettle_keep_warm_status"
+SUFFIX_KETTLE_KEEP_WARM_MINUTES: Final = "_kettle_keep_warm_minutes"
+SUFFIX_KETTLE_KEEP_WARM_REMAINING: Final = "_kettle_keep_warm_remaining"
+SUFFIX_KETTLE_DIY_SLOT: Final = "_kettle_diy_slot"
+SUFFIX_KETTLE_BREW_MODE: Final = "_kettle_brew_mode"
+SUFFIX_KEEP_WARM: Final = "_keep_warm"
+SUFFIX_KEEP_WARM_DURATION: Final = "_keep_warm_duration"
+SUFFIX_KETTLE_ON_BASE: Final = "_kettle_on_base"
+SUFFIX_KETTLE_BUTTON: Final = "_kettle_button"
