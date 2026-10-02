@@ -278,8 +278,9 @@ Actions raise an error when a device is unknown or Govee rejects the command, so
 
 - `govee.refresh_scenes` re-fetches the scene catalog from Govee, for one device or for every device when `device_id` is omitted.
 - `govee.set_segment_color` sets the RGB color of specific segments on an RGBIC device.
+- `govee.request_status` asks a device to report its status over the real‑time connection (account login), once or every `interval` seconds for `duration` seconds. It spends no cloud API requests; use it to follow a heating kettle closely.
 
-`device_id` accepts the Home Assistant device or the Govee device ID for both actions.
+`device_id` accepts the Home Assistant device or the Govee device ID for every action.
 
 | Action | Field | Meaning |
 |---|---|---|
@@ -287,6 +288,9 @@ Actions raise an error when a device is unknown or Govee rejects the command, so
 | `govee.set_segment_color` | `device_id` (required) | The RGBIC light. |
 | | `segments` (required) | List of segment indices counted from 0; an index beyond the device's segment count is rejected. |
 | | `rgb_color` (required) | `[R, G, B]`, each 0 to 255. |
+| `govee.request_status` | `device_id` (required) | The device to ask. |
+| | `duration` (optional) | Keep asking for this many seconds, up to 120; 0 (default) asks once. |
+| | `interval` (optional) | Seconds between queries, at least 3 (default 5). |
 
 ```yaml
 action: govee.refresh_scenes

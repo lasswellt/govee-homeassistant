@@ -613,6 +613,24 @@
           "description": "The raw BLE command frame as hex bytes, separated by spaces or colons (e.g. \"33 05 15 01 FF 00 00\"). Up to 20 bytes; a checksum is appended automatically for 19 bytes or fewer."
         }
       }
+    },
+    "request_status": {
+      "name": "Request status",
+      "description": "Asks a device to report its status over AWS IoT (the real-time connection), once or repeatedly for a while. Needs the account login. Spends no cloud API requests.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The device to ask. Accepts a Home Assistant device or a Govee device ID."
+        },
+        "duration": {
+          "name": "Duration",
+          "description": "Keep asking for this many seconds (up to 120). 0 asks once."
+        },
+        "interval": {
+          "name": "Interval",
+          "description": "Seconds between queries while repeating (at least 3)."
+        }
+      }
     }
   },
   "exceptions": {
@@ -651,6 +669,9 @@
     },
     "kettle_target_with_mode": {
       "message": "Setting a target temperature puts {device} in Manual, so it cannot be combined with the {mode} mode."
+    },
+    "status_query_unavailable": {
+      "message": "Cannot ask {device} for its status: this needs the account (email/password) login with AWS IoT connected, and the device must have a topic and not be quarantined."
     }
   },
   "issues": {

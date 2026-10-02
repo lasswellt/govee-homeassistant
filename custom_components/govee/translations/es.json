@@ -469,6 +469,24 @@
           "description": "Color como valores [R, G, B]"
         }
       }
+    },
+    "request_status": {
+      "name": "Solicitar estado",
+      "description": "Pide a un dispositivo que informe de su estado por AWS IoT (la conexión en tiempo real), una vez o repetidamente durante un tiempo. Requiere iniciar sesión con la cuenta. No gasta solicitudes a la API en la nube.",
+      "fields": {
+        "device_id": {
+          "name": "Dispositivo",
+          "description": "El dispositivo al que preguntar. Acepta un dispositivo de Home Assistant o un ID de dispositivo de Govee."
+        },
+        "duration": {
+          "name": "Duración",
+          "description": "Seguir preguntando durante estos segundos (hasta 120). 0 pregunta una vez."
+        },
+        "interval": {
+          "name": "Intervalo",
+          "description": "Segundos entre consultas mientras se repite (al menos 3)."
+        }
+      }
     }
   },
   "issues": {

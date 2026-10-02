@@ -40,6 +40,7 @@ from .api.auth import GoveeAuthClient, _derive_client_id
 from .api.openapi_events import GoveeOpenApiEventClient
 from .ble_passthrough import BlePassthroughManager
 from .kettle.manager import KettleManager
+from .status_burst import StatusBurst
 
 from homeassistant.helpers.event import async_call_later
 
@@ -393,6 +394,8 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         )
         # H7175 kettle pushes, unit decisions and poll rules (kettle/manager.py).
         self.kettles = KettleManager(self)
+        # Repeated status queries for one device (status_burst.py).
+        self.status_burst = StatusBurst(self)
 
         # BLE direct transport — per-device GoveeBLEDevice instances
         # populated dynamically from Bluetooth advertisements.
@@ -3725,12 +3728,34 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             self._states[device_id] = result
             self.async_update_listeners()
 
-    async def async_request_status(self, device_id: str) -> None:
-        """Ask a device to push its status over AWS IoT, if that can go out."""
+    def status_query_possible(self, device_id: str) -> bool:
+        """Whether a status query can go out to the device (MQTT up, topic known, not quarantined)."""
         client = self._mqtt_client
-        topic = self._device_topics.get(device_id)
-        if client is not None and client.connected and topic and device_id not in self._status_query_quarantine:
-            await client.async_publish_status_query(topic)
+        return (
+            client is not None
+            and client.connected
+            and bool(self._device_topics.get(device_id))
+            and device_id not in self._status_query_quarantine
+        )
+
+    async def async_request_status(self, device_id: str) -> None:
+        """Ask a device to push its status over AWS IoT, if that can go out.
+
+        An MQTT publish, not a cloud request. While no sweep query is in
+        flight, a session drop during this one is charged to the device like
+        a sweep's (issue #195).
+        """
+        client = self._mqtt_client
+        if client is None or not self.status_query_possible(device_id):
+            return
+        attribute = self._status_query_in_flight is None
+        if attribute:
+            self._status_query_in_flight = device_id
+        try:
+            await client.async_publish_status_query(self._device_topics[device_id])
+        finally:
+            if attribute and self._status_query_in_flight == device_id:
+                self._status_query_in_flight = None
 
     async def _async_update_data(self) -> dict[str, GoveeDeviceState]:
         """Fetch state for all devices (parallel).
@@ -5851,6 +5876,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
     async def async_shutdown(self) -> None:
         """Shutdown coordinator and cleanup resources."""
         self.kettles.async_shutdown()
+        self.status_burst.async_shutdown()
         # Cancel BFF polling
         if self._bff_poll_unsub:
             self._bff_poll_unsub()
