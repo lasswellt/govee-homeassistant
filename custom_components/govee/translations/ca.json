@@ -163,6 +163,20 @@
       },
       "govee_nightlight_scene_select": {
         "name": "Escena de llum nocturna"
+      },
+      "kettle_brew_mode": {
+        "name": "Mode de preparació",
+        "state": {
+          "custom_1": "Personalitzat 1",
+          "custom_2": "Personalitzat 2",
+          "custom_3": "Personalitzat 3",
+          "custom_4": "Personalitzat 4",
+          "green_tea": "Te verd",
+          "oolong_tea": "Te oolong",
+          "coffee": "Cafè",
+          "black_tea_boil": "Te negre / bullir",
+          "manual": "Manual"
+        }
       }
     },
     "switch": {
@@ -182,7 +196,7 @@
         "name": "Aturada automàtica"
       },
       "govee_appliance_power": {
-        "name": "{device_name}"
+        "name": "Alimentació"
       },
       "govee_light_zone": {
         "name": "Zona de llum {zone}"
@@ -260,6 +274,31 @@
       },
       "sensor_temperature_2": {
         "name": "Temperatura de la sonda 2"
+      },
+      "kettle_heating_status": {
+        "name": "Estat d'escalfament",
+        "state": {
+          "idle": "En repòs",
+          "heating": "Escalfant",
+          "keeping_warm": "Mantenint calent",
+          "reached_target": "Temperatura assolida",
+          "scheduled": "Programat"
+        }
+      },
+      "kettle_keep_warm_minutes": {
+        "name": "Durada de mantenir calent"
+      },
+      "kettle_diy_slot": {
+        "name": "Ranura DIY",
+        "state": {
+          "custom_1": "Personalitzat 1",
+          "custom_2": "Personalitzat 2",
+          "custom_3": "Personalitzat 3",
+          "custom_4": "Personalitzat 4"
+        }
+      },
+      "kettle_keep_warm_remaining": {
+        "name": "Temps restant de mantenir calent"
       }
     },
     "binary_sensor": {
@@ -292,6 +331,9 @@
       },
       "leak_hub_online": {
         "name": "Internet"
+      },
+      "kettle_keep_warm": {
+        "name": "Mantenir calent"
       }
     },
     "fan": {
@@ -344,6 +386,21 @@
               "press": "Polsada"
             }
           }
+        }
+      }
+    },
+    "water_heater": {
+      "kettle": {
+        "state": {
+          "custom_1": "Personalitzat 1",
+          "custom_2": "Personalitzat 2",
+          "custom_3": "Personalitzat 3",
+          "custom_4": "Personalitzat 4",
+          "green_tea": "Te verd",
+          "oolong_tea": "Te oolong",
+          "coffee": "Cafè",
+          "black_tea_boil": "Te negre / bullir",
+          "manual": "Manual"
         }
       }
     }

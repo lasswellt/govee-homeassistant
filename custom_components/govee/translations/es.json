@@ -163,6 +163,20 @@
       },
       "govee_nightlight_scene_select": {
         "name": "Escena de luz nocturna"
+      },
+      "kettle_brew_mode": {
+        "name": "Modo de preparación",
+        "state": {
+          "custom_1": "Personalizado 1",
+          "custom_2": "Personalizado 2",
+          "custom_3": "Personalizado 3",
+          "custom_4": "Personalizado 4",
+          "green_tea": "Té verde",
+          "oolong_tea": "Té oolong",
+          "coffee": "Café",
+          "black_tea_boil": "Té negro / hervir",
+          "manual": "Manual"
+        }
       }
     },
     "switch": {
@@ -182,7 +196,7 @@
         "name": "Apagado automático"
       },
       "govee_appliance_power": {
-        "name": "{device_name}"
+        "name": "Alimentación"
       },
       "govee_light_zone": {
         "name": "Zona de luz {zone}"
@@ -260,6 +274,31 @@
       },
       "sensor_temperature_2": {
         "name": "Temperatura de la sonda 2"
+      },
+      "kettle_heating_status": {
+        "name": "Estado de calentamiento",
+        "state": {
+          "idle": "En reposo",
+          "heating": "Calentando",
+          "keeping_warm": "Manteniendo caliente",
+          "reached_target": "Temperatura alcanzada",
+          "scheduled": "Programado"
+        }
+      },
+      "kettle_keep_warm_minutes": {
+        "name": "Duración de mantener caliente"
+      },
+      "kettle_diy_slot": {
+        "name": "Ranura DIY",
+        "state": {
+          "custom_1": "Personalizado 1",
+          "custom_2": "Personalizado 2",
+          "custom_3": "Personalizado 3",
+          "custom_4": "Personalizado 4"
+        }
+      },
+      "kettle_keep_warm_remaining": {
+        "name": "Tiempo restante de mantener caliente"
       }
     },
     "binary_sensor": {
@@ -292,6 +331,9 @@
       },
       "leak_hub_online": {
         "name": "Internet"
+      },
+      "kettle_keep_warm": {
+        "name": "Mantener caliente"
       }
     },
     "fan": {
@@ -344,6 +386,21 @@
               "press": "Pulsación"
             }
           }
+        }
+      }
+    },
+    "water_heater": {
+      "kettle": {
+        "state": {
+          "custom_1": "Personalizado 1",
+          "custom_2": "Personalizado 2",
+          "custom_3": "Personalizado 3",
+          "custom_4": "Personalizado 4",
+          "green_tea": "Té verde",
+          "oolong_tea": "Té oolong",
+          "coffee": "Café",
+          "black_tea_boil": "Té negro / hervir",
+          "manual": "Manual"
         }
       }
     }

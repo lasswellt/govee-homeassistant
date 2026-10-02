@@ -222,6 +222,20 @@
       },
       "govee_nightlight_scene_select": {
         "name": "Night light scene"
+      },
+      "kettle_brew_mode": {
+        "name": "Brew mode",
+        "state": {
+          "custom_1": "Custom 1",
+          "custom_2": "Custom 2",
+          "custom_3": "Custom 3",
+          "custom_4": "Custom 4",
+          "green_tea": "Green tea",
+          "oolong_tea": "Oolong tea",
+          "coffee": "Coffee",
+          "black_tea_boil": "Black tea / boil",
+          "manual": "Manual"
+        }
       }
     },
     "switch": {
@@ -375,6 +389,31 @@
       },
       "ieee_address": {
         "name": "IEEE address"
+      },
+      "kettle_heating_status": {
+        "name": "Heating status",
+        "state": {
+          "idle": "Idle",
+          "heating": "Heating",
+          "keeping_warm": "Keeping warm",
+          "reached_target": "Reached target",
+          "scheduled": "Scheduled"
+        }
+      },
+      "kettle_keep_warm_minutes": {
+        "name": "Keep warm duration"
+      },
+      "kettle_diy_slot": {
+        "name": "DIY slot",
+        "state": {
+          "custom_1": "Custom 1",
+          "custom_2": "Custom 2",
+          "custom_3": "Custom 3",
+          "custom_4": "Custom 4"
+        }
+      },
+      "kettle_keep_warm_remaining": {
+        "name": "Keep warm remaining"
       }
     },
     "binary_sensor": {
@@ -416,6 +455,9 @@
       },
       "leak_lower_probe": {
         "name": "Lower probe"
+      },
+      "kettle_keep_warm": {
+        "name": "Keep warm"
       }
     },
     "fan": {
@@ -474,6 +516,21 @@
               "press": "Press"
             }
           }
+        }
+      }
+    },
+    "water_heater": {
+      "kettle": {
+        "state": {
+          "custom_1": "Custom 1",
+          "custom_2": "Custom 2",
+          "custom_3": "Custom 3",
+          "custom_4": "Custom 4",
+          "green_tea": "Green tea",
+          "oolong_tea": "Oolong tea",
+          "coffee": "Coffee",
+          "black_tea_boil": "Black tea / boil",
+          "manual": "Manual"
         }
       }
     }
@@ -552,6 +609,12 @@
     },
     "ptreal_unavailable": {
       "message": "Could not send the raw ptReal frame to {device}. This requires the account (email/password) login with AWS IoT connected, and the device must not be a group."
+    },
+    "kettle_manual_no_target": {
+      "message": "{device} has no target temperature yet, so Manual cannot be selected."
+    },
+    "kettle_target_with_mode": {
+      "message": "Setting a target temperature puts {device} in Manual, so it cannot be combined with the {mode} mode."
     }
   },
   "issues": {

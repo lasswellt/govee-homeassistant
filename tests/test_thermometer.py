@@ -193,7 +193,7 @@ class TestTemperatureSensorFahrenheitConversion:
         stub = SimpleNamespace(
             device_state=state,
             coordinator=coordinator,
-            _device=SimpleNamespace(sku=sku),
+            _device=SimpleNamespace(sku=sku, decodes_kettle_frames=False),
             _device_id="AA:BB:CC:DD:EE:FF:00:11",
             # native_value reads the stored value through this hook so the
             # second probe reuses the same conversion path (#150).
@@ -248,7 +248,7 @@ class TestTemperatureSensorFahrenheitConversion:
         stub = SimpleNamespace(
             device_state=state,
             coordinator=coordinator,
-            _device=SimpleNamespace(sku="H5109"),
+            _device=SimpleNamespace(sku="H5109", decodes_kettle_frames=False),
             _device_id="AA:BB:CC:DD:EE:FF:00:11",
             _raw_reading=state.sensor_temperature,
         )
