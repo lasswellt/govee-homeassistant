@@ -15,6 +15,7 @@ Frame                               Meaning
 ``aa 05 01 <page> [hi lo slot 00]`` two custom-slot temperatures per page
 ``aa 05 <wm> <hi> <lo>`` (wm >= 2)  built-in preset temperature
 ``aa 10 01 <hi> <lo>``              current water temperature, always °F
+``aa 17 00 <b3> <b4>``               base: ``02 02`` off, ``00 00`` on; b4 0x80: button
 ``aa 19 <code>``                    heating status (see HEATING_STATUS)
 ``aa 22 <on> <minutes u16> <left>`` keep warm: on/off, set minutes, minutes left
 ``3a 22 <on> <minutes u16> <lo>``   echo of a keep-warm command (byte 5 repeats)
@@ -32,6 +33,17 @@ In ``aa 22`` byte 5 is the keep-warm time left, in minutes: it equals the set
 duration until keep warm runs, then counts down (``aa22 01 0078 74`` = 120
 set, 116 left, seen while keeping warm). A frame whose byte 5 exceeds the set
 duration is skipped.
+
+``aa 17``: ``aa 17 00 02 02`` when the kettle is lifted off its base and
+``aa 17 00 00 00`` when it is put back (confirmed against logged lift and
+replace times, idle, keeping warm and empty; homebridge-govee reads byte 3 the
+same way). Each lift also pushes ``aa 10`` and ``aa 22``. The top bit of byte
+4 is not part of it: it marks a press of the kettle's button (``aa 17 00 00
+80 00``, confirmed against four logged presses), and clears about 3 s later.
+
+Frames with another prefix (``ab 00 01 00 03 02 02 00 01 ...`` was seen with
+no user action) are not decoded; the diagnostics history and the capture log
+keep them.
 """
 
 from __future__ import annotations
@@ -48,6 +60,7 @@ _OPCODE_MODE = 0x05
 _OPCODE_TEMPERATURE = 0x10
 _OPCODE_HEATING = 0x19
 _OPCODE_KEEP_WARM = 0x22
+_OPCODE_BASE = 0x17
 _SUB_SELECTED_MODE = 0x00
 _SUB_CUSTOM_SLOTS = 0x01
 _SUB_CURRENT_TEMPERATURE = 0x01
@@ -96,6 +109,9 @@ class KettleFrameReport:
         keep_warm: ``(enabled, minutes)``; a status wins over an echo.
         keep_warm_frame: The frame keep warm came from.
         keep_warm_remaining: Minutes of keep warm left (``aa 22`` only).
+        on_base: Whether the kettle is on its base (``aa 17``).
+        base_frame: The ``aa 17`` frame it came from (diagnostics).
+        button_down: Whether that frame has the button bit set.
     """
 
     work_mode: int | None = None
@@ -109,6 +125,9 @@ class KettleFrameReport:
     keep_warm: tuple[bool, int] | None = None
     keep_warm_frame: bytes | None = None
     keep_warm_remaining: int | None = None
+    on_base: bool | None = None
+    base_frame: bytes | None = None
+    button_down: bool | None = None
 
 
 def _keep_warm(raw: bytes) -> tuple[bool, int] | None:
@@ -131,6 +150,9 @@ def decode_kettle_frames(frames: Iterable[bytes]) -> KettleFrameReport:
     heating_status: str | None = None
     keep_warm: tuple[bool, int] | None = None
     keep_warm_frame: bytes | None = None
+    on_base: bool | None = None
+    base_frame: bytes | None = None
+    button_down: bool | None = None
     for raw in frames:
         if not checksum_ok(raw) or raw[0] not in (STATUS_PREFIX, COMMAND_PREFIX):
             continue
@@ -144,6 +166,11 @@ def decode_kettle_frames(frames: Iterable[bytes]) -> KettleFrameReport:
                 keep_warm, keep_warm_frame = decoded, bytes(raw)
         elif raw[0] != STATUS_PREFIX:
             continue
+        elif opcode == _OPCODE_BASE and sub == 0x00:
+            # Bytes 3-4; the top bit of byte 4 is the button, not the base.
+            on_base = raw[3] == 0x00 and raw[4] & 0x7F == 0x00
+            button_down = bool(raw[4] & 0x80)
+            base_frame = bytes(raw)
         elif opcode == _OPCODE_HEATING:
             heating_seen, heating_status = True, HEATING_STATUS.get(sub)
         elif opcode == _OPCODE_TEMPERATURE and sub == _SUB_CURRENT_TEMPERATURE:
@@ -175,6 +202,9 @@ def decode_kettle_frames(frames: Iterable[bytes]) -> KettleFrameReport:
         heating_status=heating_status,
         keep_warm=keep_warm,
         keep_warm_frame=keep_warm_frame,
+        on_base=on_base,
+        base_frame=base_frame,
+        button_down=button_down,
         keep_warm_remaining=(
             keep_warm_frame[5] if keep_warm_frame is not None and keep_warm_frame[0] == STATUS_PREFIX else None
         ),

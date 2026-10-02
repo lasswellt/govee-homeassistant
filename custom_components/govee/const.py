@@ -315,6 +315,9 @@ KETTLE_HEATING_TOLERANCE: Final = 2
 # How long a value an H7175 pushed, or a command set, is kept over cloud
 # reads that disagree (the cloud lags the kettle by several seconds).
 KETTLE_PROTECT_SECONDS: Final = 45
+# Diagnostics: per kind of H7175 status frame, how many of the latest
+# distinct ones are kept.
+KETTLE_FRAME_HISTORY_PER_KIND: Final = 10
 
 # How long a device must have been off with no observed state change before
 # its poll cadence is stretched. Half an hour: long enough that a light
@@ -558,3 +561,5 @@ SUFFIX_KETTLE_KEEP_WARM_MINUTES: Final = "_kettle_keep_warm_minutes"
 SUFFIX_KETTLE_KEEP_WARM_REMAINING: Final = "_kettle_keep_warm_remaining"
 SUFFIX_KETTLE_DIY_SLOT: Final = "_kettle_diy_slot"
 SUFFIX_KETTLE_BREW_MODE: Final = "_kettle_brew_mode"
+SUFFIX_KETTLE_ON_BASE: Final = "_kettle_on_base"
+SUFFIX_KETTLE_BUTTON: Final = "_kettle_button"

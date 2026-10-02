@@ -270,6 +270,10 @@ class GoveeDeviceState:
     kettle_keep_warm_enabled: bool | None = None
     kettle_keep_warm_minutes: int | None = None
     kettle_keep_warm_remaining: int | None = None
+    # Whether the kettle sits on its base, and the aa 17 frame as hex (for the
+    # diagnostics: its byte 4 top bit is an unknown flag, see kettle/frames.py).
+    kettle_on_base: bool | None = None
+    kettle_base_frame: str | None = None
 
     # Purifier state
     purifier_mode: int | None = None  # Purifier mode value (1=Sleep, 2=Low, 3=High, etc.)

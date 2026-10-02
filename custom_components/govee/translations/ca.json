@@ -357,6 +357,9 @@
       },
       "kettle_keep_warm": {
         "name": "Mantenir calent"
+      },
+      "kettle_on_base": {
+        "name": "A la base"
       }
     },
     "fan": {
@@ -407,6 +410,16 @@
           "event_type": {
             "state": {
               "press": "Polsada"
+            }
+          }
+        }
+      },
+      "kettle_button": {
+        "name": "Botó",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "pressed": "Premut"
             }
           }
         }

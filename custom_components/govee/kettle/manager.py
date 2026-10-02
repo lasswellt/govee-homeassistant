@@ -42,6 +42,7 @@ from ..const import (
     KETTLE_FRAME_HISTORY,
     KETTLE_HEATING_TOLERANCE,
     KETTLE_PROTECT_SECONDS,
+    KETTLE_FRAME_HISTORY_PER_KIND,
     resolve_fahrenheit_conversion,
 )
 from ..models import GoveeDeviceState, PowerCommand, TemperatureSettingCommand, WorkModeCommand
@@ -52,6 +53,10 @@ if TYPE_CHECKING:
     from ..coordinator import GoveeCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+# One DEBUG line per distinct pushed frame, so a capture of an unknown frame
+# does not depend on the diagnostics history. Enable on its own with
+# ``custom_components.govee.kettle.capture: debug``.
+_CAPTURE = logging.getLogger(f"{__package__}.capture")
 
 # State fields only a push sets; a poll result carries them over.
 _PUSH_ONLY_FIELDS = (
@@ -60,6 +65,8 @@ _PUSH_ONLY_FIELDS = (
     "kettle_keep_warm_enabled",
     "kettle_keep_warm_minutes",
     "kettle_keep_warm_remaining",
+    "kettle_on_base",
+    "kettle_base_frame",
 )
 
 
@@ -94,9 +101,14 @@ class KettleManager:
         self._coordinator = coordinator
         # Diagnostics: recent distinct status frames, command echoes apart so
         # a heating kettle's changing temperature frames cannot flush them.
-        self._frames: dict[str, deque[dict[str, str]]] = {}
+        # Status frames are kept per kind (the last few distinct of each), so
+        # a rare frame is not flushed by the temperature frames of a heating
+        # kettle.
+        self._frames: dict[str, dict[bytes, deque[dict[str, str]]]] = {}
         self._command_frames: dict[str, deque[dict[str, str]]] = {}
-        self._last_frame: dict[str, dict[bytes, bytes]] = {}
+        # The kettle's button: listeners per kettle, and whether it is down.
+        self._button_listeners: dict[str, list[Callable[[], None]]] = {}
+        self._button_down: dict[str, bool] = {}
         # workModes outside a kettle's modes, logged once each.
         self._unlisted_logged: set[tuple[str, int]] = set()
         # Per kettle: fields a push or command set, with the value and when
@@ -202,6 +214,12 @@ class KettleManager:
             state.kettle_keep_warm_remaining = report.keep_warm_remaining
         if report.slot_flags:
             state.kettle_diy_slot = _diy_slot(state.kettle_diy_slot, report.slot_flags)
+        if report.on_base is not None:
+            state.kettle_on_base = report.on_base
+        if report.base_frame is not None:
+            state.kettle_base_frame = report.base_frame.hex()
+        if report.button_down is not None:
+            self._note_button(device_id, report.button_down)
         if not self.unit_known(device_id):
             _LOGGER.debug("Withholding pushed temperatures for %s until its unit is known", device_id)
             self._protect(device_id, state, pushed)
@@ -355,26 +373,50 @@ class KettleManager:
             _LOGGER.debug("Kettle %s reports workMode %s, which is not one of its modes", device_id, work_mode)
 
     # ------------------------------------------------------------------ #
+    # Button
+    # ------------------------------------------------------------------ #
+
+    def add_button_listener(self, device_id: str, listener: Callable[[], None]) -> Callable[[], None]:
+        """Call ``listener`` on each press of the kettle's button; returns the remover."""
+        listeners = self._button_listeners.setdefault(device_id, [])
+        listeners.append(listener)
+        return lambda: listeners.remove(listener)
+
+    def _note_button(self, device_id: str, down: bool) -> None:
+        """Fire once per press: on the change into the pressed state.
+
+        The bit stays set until a later frame clears it (about 3 s), so a
+        status push repeating the pressed frame is not another press.
+        """
+        was_down = self._button_down.get(device_id, False)
+        self._button_down[device_id] = down
+        if down and not was_down:
+            for listener in list(self._button_listeners.get(device_id, ())):
+                listener()
+
+    # ------------------------------------------------------------------ #
     # Diagnostics
     # ------------------------------------------------------------------ #
 
     def _record_frames(self, device_id: str, frames: list[bytes]) -> None:
-        """Keep distinct status frames (per kind) and every command echo."""
-        statuses = self._frames.setdefault(device_id, deque(maxlen=KETTLE_FRAME_HISTORY))
+        """Keep the last few distinct status frames of each kind, and every command echo."""
+        by_kind = self._frames.setdefault(device_id, {})
         commands = self._command_frames.setdefault(device_id, deque(maxlen=KETTLE_FRAME_HISTORY))
-        last = self._last_frame.setdefault(device_id, {})
         now = dt_util.utcnow().isoformat()
         for frame in frames:
             if frame[:1] == bytes([COMMAND_PREFIX]):
                 commands.append({"at": now, "frame": frame.hex()})
+                _CAPTURE.debug("%s %s command %s", device_id, now, frame.hex())
                 continue
             # The custom-slot pages (aa 05 01 <page>) are told apart by page.
             kind = bytes(frame[:4]) if frame[:3] == b"\xaa\x05\x01" else bytes(frame[:3])
-            if last.get(kind) != frame:
-                last[kind] = bytes(frame)
-                statuses.append({"at": now, "frame": frame.hex()})
+            history = by_kind.setdefault(kind, deque(maxlen=KETTLE_FRAME_HISTORY_PER_KIND))
+            if not history or history[-1]["frame"] != frame.hex():
+                history.append({"at": now, "frame": frame.hex()})
+                _CAPTURE.debug("%s %s status %s", device_id, now, frame.hex())
 
     def recent_frames(self, device_id: str) -> list[dict[str, str]]:
         """Recent distinct pushed frames, oldest first."""
-        merged = [*self._frames.get(device_id, ()), *self._command_frames.get(device_id, ())]
+        statuses = [entry for history in self._frames.get(device_id, {}).values() for entry in history]
+        merged = [*statuses, *self._command_frames.get(device_id, ())]
         return sorted(merged, key=lambda entry: entry["at"])

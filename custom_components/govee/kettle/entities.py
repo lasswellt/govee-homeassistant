@@ -10,7 +10,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.components.binary_sensor import BinarySensorDeviceClass, BinarySensorEntity
+from homeassistant.components.event import EventDeviceClass, EventEntity
 from homeassistant.components.select import SelectEntity
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.const import EntityCategory, UnitOfTime
@@ -25,6 +26,8 @@ from ..const import (
     SUFFIX_KETTLE_KEEP_WARM_MINUTES,
     SUFFIX_KETTLE_KEEP_WARM_REMAINING,
     SUFFIX_KETTLE_KEEP_WARM_STATUS,
+    SUFFIX_KETTLE_BUTTON,
+    SUFFIX_KETTLE_ON_BASE,
 )
 from ..entity import GoveeEntity
 from .frames import HEATING_STATUS, KETTLE_CUSTOM_WORK_MODE
@@ -246,6 +249,50 @@ def kettle_selects(coordinator: GoveeCoordinator) -> list[SelectEntity]:
     ]
 
 
+class GoveeKettleOnBaseBinarySensor(_KettleEntity, BinarySensorEntity):
+    """Whether the kettle sits on its base (``aa 17``).
+
+    Shown as plugged in / unplugged: the base is what powers the kettle.
+    """
+
+    _attr_translation_key = "kettle_on_base"
+    _attr_device_class = BinarySensorDeviceClass.PLUG
+    _suffix = SUFFIX_KETTLE_ON_BASE
+
+    @property
+    def is_on(self) -> bool | None:
+        """On the base; unknown until reported."""
+        state = self.device_state
+        return state.kettle_on_base if state else None
+
+
+class GoveeKettleButtonEvent(_KettleEntity, EventEntity):
+    """A press of the kettle's own button (``aa 17``, byte 4 top bit)."""
+
+    _attr_translation_key = "kettle_button"
+    _attr_device_class = EventDeviceClass.BUTTON
+    _attr_event_types = ["pressed"]
+    _suffix = SUFFIX_KETTLE_BUTTON
+
+    async def async_added_to_hass(self) -> None:
+        """Listen for presses."""
+        await super().async_added_to_hass()
+        self.async_on_remove(self.coordinator.kettles.add_button_listener(self._device_id, self._pressed))
+
+    def _pressed(self) -> None:
+        self._trigger_event("pressed")
+        self.async_write_ha_state()
+
+
+def kettle_events(coordinator: GoveeCoordinator) -> list[EventEntity]:
+    """The button event of every H7175 kettle."""
+    return [
+        GoveeKettleButtonEvent(coordinator, device)
+        for device in coordinator.devices.values()
+        if device.decodes_kettle_frames and not device.is_group
+    ]
+
+
 def kettle_sensors(coordinator: GoveeCoordinator) -> list[SensorEntity]:
     """The status sensors of every H7175 kettle."""
     entities: list[SensorEntity] = []
@@ -260,9 +307,10 @@ def kettle_sensors(coordinator: GoveeCoordinator) -> list[SensorEntity]:
 
 
 def kettle_binary_sensors(coordinator: GoveeCoordinator) -> list[BinarySensorEntity]:
-    """The keep-warm binary sensor of every H7175 kettle."""
-    return [
-        GoveeKettleKeepWarmBinarySensor(coordinator, device)
-        for device in coordinator.devices.values()
-        if device.decodes_kettle_frames and not device.is_group
-    ]
+    """The keep-warm and on-base binary sensors of every H7175 kettle."""
+    entities: list[BinarySensorEntity] = []
+    for device in coordinator.devices.values():
+        if device.decodes_kettle_frames and not device.is_group:
+            entities.append(GoveeKettleKeepWarmBinarySensor(coordinator, device))
+            entities.append(GoveeKettleOnBaseBinarySensor(coordinator, device))
+    return entities

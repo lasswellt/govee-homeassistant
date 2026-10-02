@@ -481,6 +481,9 @@
       },
       "kettle_keep_warm": {
         "name": "Keep warm"
+      },
+      "kettle_on_base": {
+        "name": "On base"
       }
     },
     "fan": {
@@ -537,6 +540,16 @@
           "event_type": {
             "state": {
               "press": "Press"
+            }
+          }
+        }
+      },
+      "kettle_button": {
+        "name": "Button",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "pressed": "Pressed"
             }
           }
         }

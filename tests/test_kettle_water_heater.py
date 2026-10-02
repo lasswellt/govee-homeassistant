@@ -378,7 +378,7 @@ class TestStatusEntities:
             "GoveeKettleKeepWarmMinutesSensor",
             "GoveeKettleKeepWarmRemainingSensor",
         ]
-        assert len(kettle_binary_sensors(coordinator)) == 2
+        assert len(kettle_binary_sensors(coordinator)) == 4
 
     def test_power_switch_name(self):
         """On an H7175 the water heater takes the device name; other kettles keep theirs."""
