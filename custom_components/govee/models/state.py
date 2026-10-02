@@ -255,6 +255,25 @@ class GoveeDeviceState:
     # "Fahrenheit"). Not heater-specific despite the capability's origins —
     # kettles declare it too, under a different instance name (issue #171).
     device_temperature_unit: str | None = None
+    # Kettle target temperature (``sliderTemperature``), in the unit the
+    # kettle reports, not normalised to °C.
+    kettle_target_temperature: float | None = None
+    # H7175 kettle, from its AWS IoT frames (kettle/frames.py). The poll
+    # reports ``{"workMode": 1}`` alone for a custom slot, so the slot is
+    # remembered in ``kettle_mode_value``. Preset temperatures are
+    # ``{workMode: {modeValue: temperature}}`` in the kettle's unit; the DIY
+    # slot is the custom slot the Govee app marks "DIY", not the selection.
+    kettle_mode_value: int | None = None
+    kettle_preset_temperatures: dict[int, dict[int, float]] = field(default_factory=dict)
+    kettle_diy_slot: int | None = None
+    kettle_heating_status: str | None = None
+    kettle_keep_warm_enabled: bool | None = None
+    kettle_keep_warm_minutes: int | None = None
+    kettle_keep_warm_remaining: int | None = None
+    # Whether the kettle sits on its base, and the aa 17 frame as hex (for the
+    # diagnostics: its byte 4 top bit is an unknown flag, see kettle/frames.py).
+    kettle_on_base: bool | None = None
+    kettle_base_frame: str | None = None
 
     # Purifier state
     purifier_mode: int | None = None  # Purifier mode value (1=Sleep, 2=Low, 3=High, etc.)
@@ -531,6 +550,12 @@ class GoveeDeviceState:
                 unit = value.get("unit") if isinstance(value, dict) else None
                 if isinstance(unit, str) and unit:
                     self.device_temperature_unit = unit
+                # Kettle setpoint, e.g. {"unit": "Fahrenheit", "targetTemperature": 176}.
+                if instance == "sliderTemperature" and isinstance(value, dict):
+                    slider = value.get("targetTemperature", value.get("temperature"))
+                    parsed_slider = _coerce_sensor_value(slider, ())
+                    if parsed_slider is not None:
+                        self.kettle_target_temperature = parsed_slider
 
                 # Heaters report target temperature + autoStop in a STRUCT.
                 # Capturing autoStop here lets temperature-change commands

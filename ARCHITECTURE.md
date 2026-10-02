@@ -14,7 +14,7 @@ Layers, outermost first:
 
 | Layer | Where | Role |
 |---|---|---|
-| Entities | `light.py`, `select.py`, `switch.py`, `fan.py`, `humidifier.py`, `number.py`, `sensor.py`, `binary_sensor.py`, `event.py`, `button.py`, `platforms/` | Home Assistant platforms; every entity is a `CoordinatorEntity` (most through `GoveeEntity`) |
+| Entities | `light.py`, `select.py`, `switch.py`, `fan.py`, `humidifier.py`, `water_heater.py`, `number.py`, `sensor.py`, `binary_sensor.py`, `event.py`, `button.py`, `platforms/` | Home Assistant platforms; every entity is a `CoordinatorEntity` (most through `GoveeEntity`) |
 | Coordinator | `coordinator.py` | Discovery, polling, every transport, command routing, optimistic state, repairs |
 | API clients | `api/` | REST, account login and BFF reads, AWS IoT MQTT, OpenAPI events, LAN, BLE, probe frames |
 | Models | `models/` | Devices, capabilities, colours, and commands as frozen dataclasses; device state as a mutable object the coordinator updates in place |
@@ -34,6 +34,7 @@ custom_components/govee/
 ├── switch.py                # Plugs, sockets, outlets, zones, named lights, music, DreamView, auto-stop, probe polling
 ├── fan.py                   # Tower and purifier fans, ceiling fans
 ├── humidifier.py            # Humidifiers and dehumidifiers
+├── water_heater.py          # H7175 kettle: target, brew modes, power
 ├── number.py                # Music sensitivity, heater target, probe alarm limits
 ├── sensor.py                # Readings, thermometers, probes, filter, AQI/CO2, diagnostics
 ├── binary_sensor.py         # Connectivity, water tank, pump, leak, occupancy, leak/hub online
@@ -46,6 +47,8 @@ custom_components/govee/
 ├── transport_health.py      # Per-device, per-transport health tracking
 ├── ble_advertisement.py     # Bluetooth advertisement correlation and enrolment
 ├── ble_passthrough.py       # BLE frames tunnelled over AWS IoT
+├── kettle/                  # H7175 kettle: frame decoder, coordinator-owned push and poll rules,
+│                            #   brew modes, kettle entities, custom-slot labels
 ├── const.py                 # Constants, SKU lists, option keys and ranges
 ├── manifest.json            # Metadata, requirements, Bluetooth matchers
 ├── strings.json             # UI strings (mirrored in translations/en.json; ca and es partial)
@@ -173,14 +176,15 @@ entity action → _async_send_command(command)
 | Platform | Entities |
 |---|---|
 | `light` | Main light, nightlight, main panel; per-segment and grouped-segment lights (`platforms/`) |
-| `select` | Scene, DIY scene, snapshot, HDMI source, music mode, fan speed, purifier mode, preset scene, nightlight scene |
+| `select` | Scene, DIY scene, snapshot, HDMI source, music mode, fan speed, purifier mode, preset scene, nightlight scene, kettle brew mode |
 | `switch` | Plugs, sockets, MQTT outlets, night light, light zones, named lights, music mode, DreamView, heater auto-stop, appliance power, probe live polling |
 | `fan` | Tower and purifier fans, ceiling fans |
 | `humidifier` | Humidifiers and dehumidifiers |
+| `water_heater` | H7175 kettle: target temperature, brew modes (stable keys, translated), power |
 | `number` | Music sensitivity, heater target temperature, probe alarm limits |
-| `sensor` | Temperature, humidity, probe temperatures, battery, filter life, AQI, CO2, dehumidifier mode, kettle temperature, connection mode, and diagnostic timestamps; hub-level rate limit and MQTT status |
-| `binary_sensor` | Device connectivity, per-transport connectivity (opt-in), water tank full, pump state, water leak, occupancy, leak sensor and hub online |
-| `event` | Leak sensor button press |
+| `sensor` | Temperature, humidity, probe temperatures, battery, filter life, AQI, CO2, dehumidifier mode, kettle temperature, kettle heating status, keep-warm duration and DIY slot, connection mode, and diagnostic timestamps; hub-level rate limit and MQTT status |
+| `binary_sensor` | Device connectivity, per-transport connectivity (opt-in), water tank full, pump state, kettle keep warm, water leak, occupancy, leak sensor and hub online |
+| `event` | Leak sensor button press; H7175 kettle button |
 | `button` | Refresh scenes, clear water alert |
 
 Every platform declares `PARALLEL_UPDATES = 0`; the coordinator paces writes. Noisy diagnostics (rate limit, last update, last command, MQTT received, leak addresses) are disabled by default.

@@ -77,6 +77,7 @@ PLATFORMS: list[Platform] = [
     Platform.LIGHT,  # Main light + segments
     Platform.FAN,  # Fan devices
     Platform.HUMIDIFIER,  # Humidifiers / dehumidifiers
+    Platform.WATER_HEATER,  # H7175 kettles
     Platform.SWITCH,
     Platform.SENSOR,
     Platform.BINARY_SENSOR,

@@ -16,6 +16,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import GoveeConfigEntry, GoveeCoordinator
+from .kettle.entities import kettle_events
 from .models.device import GoveeLeakSensor, leak_sensor_device_info
 
 _LOGGER = logging.getLogger(__name__)
@@ -39,6 +40,8 @@ async def async_setup_entry(
     coordinator.register_leak_hubs()
     for sensor in coordinator.leak_sensors.values():
         entities.append(GoveeLeakButtonEvent(coordinator, sensor))
+    # H7175 kettles: the kettle's own button.
+    entities.extend(kettle_events(coordinator))
 
     if entities:
         async_add_entities(entities)

@@ -208,7 +208,7 @@ def _device_diag(
     per-transport health — enough to debug state-shape issues (e.g. #83) from a
     download alone.
     """
-    return {
+    record: dict[str, Any] = {
         "sku": device.sku,
         "name": device.name,
         "device_type": device.device_type,
@@ -237,6 +237,10 @@ def _device_diag(
         # so an over-reported count is diagnosable from a download alone.
         "segment_resolution": device.segment_count_resolution,
     }
+    # H7175 kettles: recent distinct pushed frames, command echoes included.
+    if device.decodes_kettle_frames:
+        record["recent_frames"] = coordinator.kettles.recent_frames(device_id)
+    return record
 
 
 def _leak_diag(coordinator: GoveeCoordinator) -> dict[str, Any]:
