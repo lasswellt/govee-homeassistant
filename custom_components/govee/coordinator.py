@@ -39,6 +39,7 @@ from .api import (
 from .api.auth import GoveeAuthClient, _derive_client_id
 from .api.openapi_events import GoveeOpenApiEventClient
 from .ble_passthrough import BlePassthroughManager
+from .kettle.manager import KettleManager
 
 from homeassistant.helpers.event import async_call_later
 
@@ -389,6 +390,8 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             device_topics=self._device_topics,
             ensure_device_topic=self._ensure_device_topic,
         )
+        # H7175 kettle pushes, unit decisions and poll rules (kettle/manager.py).
+        self.kettles = KettleManager(self)
 
         # BLE direct transport — per-device GoveeBLEDevice instances
         # populated dynamically from Bluetooth advertisements.
@@ -3499,6 +3502,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 self._store_frame_temperature_in_entity_unit(device_id, device.sku, state)
         if device is not None and device.mqtt_outlet_count:
             self._apply_outlet_mask(device, state, state_data.get("onOff"))
+        # H7175 kettles push their temperatures under ``sta``, and their mode,
+        # heating status and keep warm in frames.
+        if device is not None and device.decodes_kettle_frames:
+            self.kettles.on_push(device_id, state, state_data, self._op_frames_from(state_data))
 
         if was_offline:
             device = self._devices.get(device_id)
@@ -4028,8 +4035,12 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         window *= LOCAL_READING_FRESHNESS_FACTOR
         now = dt_util.utcnow()
         fresh: set[str] = set()
-        for device_id in pollable:
+        for device_id, device in pollable.items():
             if device_id not in self._states:
+                continue
+            # A push can create a kettle's state before the poll that tells its
+            # unit; that poll is never skipped (see kettle/manager.py).
+            if device.decodes_kettle_frames and self.kettles.must_poll(device_id):
                 continue
             latest = self._local_last_updated(device_id)
             age = None if latest is None else (now - latest).total_seconds()
@@ -4289,6 +4300,8 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                     state.heater_auto_stop = existing_state.heater_auto_stop
                 if existing_state.device_temperature_unit is not None and state.device_temperature_unit is None:
                     state.device_temperature_unit = existing_state.device_temperature_unit
+                if device.decodes_kettle_frames:
+                    self.kettles.merge_poll(device_id, existing_state, state)
 
                 # Stand-alone thermometer/hygrometer readings (H5179, H5109,
                 # H5110, HS5108, HS5106): battery-powered sensors push to the
@@ -5554,6 +5567,13 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         state = self._states.get(device_id)
         if not state:
             return
+        # H7175: kettle targets and modes (the heater's targetTemperature too
+        # is a TemperatureSettingCommand, but heaters are not kettles).
+        if isinstance(command, (TemperatureSettingCommand, WorkModeCommand)):
+            device = self._devices.get(device_id)
+            if device is not None and device.decodes_kettle_frames:
+                self.kettles.apply_command(device_id, state, command)
+                return
 
         if isinstance(command, PowerCommand):
             state.apply_optimistic_power(command.power_on)

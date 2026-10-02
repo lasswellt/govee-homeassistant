@@ -86,7 +86,7 @@ Govee in Home Assistant has several integrations, and it's easy to pick one that
 | **Humidifiers & dehumidifiers** | H7140, H7141, H7150, H7151, H7152 | Modes + target‑humidity setpoint; dehumidifiers add a **Water Tank Full** sensor (real‑time event push, API key only) with a paired **Clear Water Alert** button. The pump model (H7152) also gets a **Pump State** problem sensor, a **Mode** (Pump / Water Tank) sensor and live **Temperature** / **Humidity**, decoded from the AWS IoT push — account login required, and they update when the device pushes |
 | **Aroma diffusers** | H7161 | Power switch + light/mist scene selector |
 | **Space heaters** | H7130, H7131, H713B, H721C | Power switch, target‑temperature number, auto‑stop switch; temperature unit follows what the device itself reports |
-| **Kettles** | H717A, H7170 | Power switch and a water‑temperature sensor (unit follows what the kettle declares) |
+| **Kettles** | H717A, H7170, H7175 | Power switch and a water‑temperature sensor (unit follows what the kettle declares); see [Kettles](#kettles) |
 | **Thermometers / hygrometers** | H5053, H5075, H5103, H5107, H5109, H5110, H5111, H5112, H5179, H5220, H5301, H5310 | Temperature & humidity sensors, **Battery** (account login) + a "Last Changed" timestamp; gateway‑bridged models (H5301/H5310 via an H5044) nest under the hub; models that report °F without saying so are converted automatically |
 | **Probe (cooking) thermometers** | H5192 | Core and ambient temperature per probe, plus the four alarm limits as editable numbers. These are **pull** devices — they answer a read and otherwise stay silent — so a **Live polling** switch (off by default, to spare the battery) controls whether readings update |
 | **Air‑quality & CO₂ monitors** | H5106, H5140 | CO₂ (ppm), air‑quality (AQI), temperature & humidity sensors |
@@ -241,6 +241,18 @@ Some gateway‑bridged sensors are listed by Govee with no reading attached. Whe
 
 1. Enable Home Assistant's first‑party [**Govee Bluetooth (`govee_ble`)**](https://www.home-assistant.io/integrations/govee_ble/) for any sensor within Bluetooth range of your HA host.
 2. For distant sensors, add an [**ESPHome Bluetooth proxy**](https://esphome.io/components/bluetooth_proxy.html) nearby.
+
+---
+
+## Kettles
+
+All kettles get a power switch and a water‑temperature sensor whose unit follows what the kettle declares, even when the API‑unit option is set.
+
+**H7175.** A **water heater** entity carries the target temperature, the brew modes and power; the existing power switch keeps its entity and is named "Power". Mode states are fixed keys, shown translated: `off`, `custom_1`–`custom_4`, `green_tea`, `oolong_tea`, `coffee`, `black_tea_boil` and `manual` (a target set directly, with no preset). Choosing a mode while the kettle is off switches it on in that mode; setting the target selects `manual`.
+
+With account login the kettle's real‑time push updates the water temperature and adds a **Heating status** sensor, a **Keep warm** binary sensor and diagnostic **Keep warm duration**, **Keep warm remaining** and **DIY slot** sensors (the custom slot the Govee app marks "DIY"). The push carries no unit, so its temperatures are used only once a cloud poll has told the integration the kettle's unit; that poll is never skipped.
+
+The H717A and H7170 keep their power switch and temperature sensor; their frames are unknown.
 
 ---
 
