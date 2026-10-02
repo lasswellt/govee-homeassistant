@@ -298,7 +298,7 @@ async def test_options_flow_without_rgbic_devices(hass: HomeAssistant) -> None:
 
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["type"] is FlowResultType.FORM
-    assert result["step_id"] == "init"
+    assert result["step_id"] == "general"
 
     result = await hass.config_entries.options.async_configure(
         result["flow_id"],

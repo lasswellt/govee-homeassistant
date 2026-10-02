@@ -39,3 +39,28 @@ send_raw_ptreal:
       example: "33 05 15 01 FF 00 00"
       selector:
         text:
+
+request_status:
+  fields:
+    device_id:
+      required: true
+      example: "AA:BB:CC:DD:EE:FF:00:11"
+      selector:
+        device:
+          integration: govee
+    duration:
+      required: false
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 120
+          unit_of_measurement: s
+    interval:
+      required: false
+      default: 5
+      selector:
+        number:
+          min: 3
+          max: 60
+          unit_of_measurement: s

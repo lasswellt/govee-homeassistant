@@ -87,6 +87,13 @@
     "step": {
       "init": {
         "title": "Govee options",
+        "menu_options": {
+          "general": "General settings",
+          "kettle_slots": "Kettle slot labels"
+        }
+      },
+      "general": {
+        "title": "Govee options",
         "description": "If you have RGBIC devices, per-device segment settings will appear after submitting.",
         "data": {
           "poll_interval": "Polling interval (seconds)",
@@ -117,6 +124,16 @@
           "lan_targets": "Only needed when LAN-enabled Govee devices are on a different subnet or VLAN than Home Assistant, so the local discovery scan cannot reach them. Enter a comma-separated list of device IPs (10.20.0.51), broadcast addresses (10.20.0.255), and subnets in CIDR notation (10.20.0.0/24, /24 or smaller). Subnets are scanned device by device, since most routers drop cross-VLAN broadcasts. Leave blank if all devices share Home Assistant's network. Advanced: if a device still is not found because its scan reply cannot cross the VLAN, pin it with device_id=ip (AA:BB:CC:DD:EE:FF:00:11=10.20.0.51) to skip discovery for that device. Add a trailing ! (=10.20.0.51!) only for firmware that accepts LAN commands but never answers a status read. That turns off every LAN health check for the device, so a wrong IP will look like it is working while the device never responds. Enter off to turn LAN discovery and local control off entirely."
         }
       },
+      "kettle_slots": {
+        "title": "Kettle slot labels: {device_name}",
+        "description": "Optional display labels for the kettle's custom slots, for example the names you gave them in the Govee app. The mode itself stays Custom 1-4 (custom_1-custom_4 in automations); the labels appear in the entities' labels attribute. Leave a field blank for no label. A label may not repeat another label, a built-in mode, Manual or Off.",
+        "data": {
+          "slot_1": "Custom 1",
+          "slot_2": "Custom 2",
+          "slot_3": "Custom 3",
+          "slot_4": "Custom 4"
+        }
+      },
       "select_segment_devices": {
         "title": "Select segment devices",
         "description": "Choose which RGBIC devices to configure segment modes for.",
@@ -140,7 +157,13 @@
     },
     "error": {
       "invalid_lan_targets": "One of the LAN device addresses is not a valid IP, broadcast address, subnet (/24 or smaller), or device_id=ip override. Example: 10.20.0.51, 10.20.0.255, 10.20.0.0/24, AA:BB:CC:DD:EE:FF:00:11=10.20.0.51",
-      "unknown_lan_device": "A device_id=ip override names a device that is not on this Govee account. Copy the device ID exactly as it appears in the device's diagnostics (for example AA:BB:CC:DD:EE:FF:00:11)."
+      "unknown_lan_device": "A device_id=ip override names a device that is not on this Govee account. Copy the device ID exactly as it appears in the device's diagnostics (for example AA:BB:CC:DD:EE:FF:00:11).",
+      "duplicate_slot_label": "Two slots have the same label.",
+      "reserved_slot_label": "This label is a built-in mode, Manual or Off.",
+      "slot_label_too_long": "Use at most 40 characters."
+    },
+    "abort": {
+      "kettle_unavailable": "The kettle is no longer available. Open the options again."
     }
   },
   "selector": {
@@ -222,6 +245,20 @@
       },
       "govee_nightlight_scene_select": {
         "name": "Night light scene"
+      },
+      "kettle_brew_mode": {
+        "name": "Brew mode",
+        "state": {
+          "custom_1": "Custom 1",
+          "custom_2": "Custom 2",
+          "custom_3": "Custom 3",
+          "custom_4": "Custom 4",
+          "green_tea": "Green tea",
+          "oolong_tea": "Oolong tea",
+          "coffee": "Coffee",
+          "black_tea_boil": "Black tea / boil",
+          "manual": "Manual"
+        }
       }
     },
     "switch": {
@@ -375,6 +412,31 @@
       },
       "ieee_address": {
         "name": "IEEE address"
+      },
+      "kettle_heating_status": {
+        "name": "Heating status",
+        "state": {
+          "idle": "Idle",
+          "heating": "Heating",
+          "keeping_warm": "Keeping warm",
+          "reached_target": "Reached target",
+          "scheduled": "Scheduled"
+        }
+      },
+      "kettle_keep_warm_minutes": {
+        "name": "Keep warm duration"
+      },
+      "kettle_diy_slot": {
+        "name": "DIY slot",
+        "state": {
+          "custom_1": "Custom 1",
+          "custom_2": "Custom 2",
+          "custom_3": "Custom 3",
+          "custom_4": "Custom 4"
+        }
+      },
+      "kettle_keep_warm_remaining": {
+        "name": "Keep warm remaining"
       }
     },
     "binary_sensor": {
@@ -416,6 +478,12 @@
       },
       "leak_lower_probe": {
         "name": "Lower probe"
+      },
+      "kettle_keep_warm": {
+        "name": "Keep warm"
+      },
+      "kettle_on_base": {
+        "name": "On base"
       }
     },
     "fan": {
@@ -475,6 +543,31 @@
             }
           }
         }
+      },
+      "kettle_button": {
+        "name": "Button",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "pressed": "Pressed"
+            }
+          }
+        }
+      }
+    },
+    "water_heater": {
+      "kettle": {
+        "state": {
+          "custom_1": "Custom 1",
+          "custom_2": "Custom 2",
+          "custom_3": "Custom 3",
+          "custom_4": "Custom 4",
+          "green_tea": "Green tea",
+          "oolong_tea": "Oolong tea",
+          "coffee": "Coffee",
+          "black_tea_boil": "Black tea / boil",
+          "manual": "Manual"
+        }
       }
     }
   },
@@ -520,6 +613,24 @@
           "description": "The raw BLE command frame as hex bytes, separated by spaces or colons (e.g. \"33 05 15 01 FF 00 00\"). Up to 20 bytes; a checksum is appended automatically for 19 bytes or fewer."
         }
       }
+    },
+    "request_status": {
+      "name": "Request status",
+      "description": "Asks a device to report its status over AWS IoT (the real-time connection), once or repeatedly for a while. Needs the account login. Spends no cloud API requests.",
+      "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The device to ask. Accepts a Home Assistant device or a Govee device ID."
+        },
+        "duration": {
+          "name": "Duration",
+          "description": "Keep asking for this many seconds (up to 120). 0 asks once."
+        },
+        "interval": {
+          "name": "Interval",
+          "description": "Seconds between queries while repeating (at least 3)."
+        }
+      }
     }
   },
   "exceptions": {
@@ -552,6 +663,15 @@
     },
     "ptreal_unavailable": {
       "message": "Could not send the raw ptReal frame to {device}. This requires the account (email/password) login with AWS IoT connected, and the device must not be a group."
+    },
+    "kettle_manual_no_target": {
+      "message": "{device} has no target temperature yet, so Manual cannot be selected."
+    },
+    "kettle_target_with_mode": {
+      "message": "Setting a target temperature puts {device} in Manual, so it cannot be combined with the {mode} mode."
+    },
+    "status_query_unavailable": {
+      "message": "Cannot ask {device} for its status: this needs the account (email/password) login with AWS IoT connected, and the device must have a topic and not be quarantined."
     }
   },
   "issues": {

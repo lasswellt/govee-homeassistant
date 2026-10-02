@@ -38,6 +38,7 @@ from .const import (
 )
 from .coordinator import GoveeConfigEntry, GoveeCoordinator
 from .entity import GoveeEntity
+from .kettle.entities import kettle_binary_sensors
 from .models import TransportKind
 from .models.transport import TRANSPORT_KINDS
 from .models.device import GoveeLeakSensor, leak_sensor_device_info
@@ -120,6 +121,8 @@ async def async_setup_entry(
                 )
     else:
         _LOGGER.debug("Transport connectivity entities disabled via options; skipping")
+
+    entities.extend(kettle_binary_sensors(coordinator))
 
     # Leak sensor entities — always exposed when leak sensors are discovered.
     # Register hub devices first so leak sensors' `via_device` link resolves
