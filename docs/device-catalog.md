@@ -1814,6 +1814,19 @@ Not returned by the Developer API; seen in #181.
 
 Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `pactCode`, `pactType`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
 
+## H7175
+
+Developer API type `devices.types.kettle` (gooseneck kettle); see docs/_research/2026-09-30_h7175-kettle.md.
+
+Capabilities:
+
+- `on_off/powerSwitch` — options on=1, off=0
+- `temperature_setting/sliderTemperature` — field temperature range 40–100; field unit options Celsius=Celsius, Fahrenheit=Fahrenheit
+- `property/sensorTemperature`
+- `work_mode/workMode` — field workMode options Custom=1, Green Tea=2, Oolong Tea=3, Coffee=4, Black Tea/Boil=5; field modeValue: Custom has nested values 1–4, the others defaultValue 0
+
+AWS IoT push: `sta` (`setTem`, `curTem`, ×100 in the display unit) plus BLE-format status frames in `op.command` (decoded by `kettle/frames.py`).
+
 ## H717A
 
 Developer API type `devices.types.kettle`; seen in #63.

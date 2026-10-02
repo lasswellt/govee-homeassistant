@@ -64,6 +64,7 @@ custom_components/govee/
 ├── transport_health.py  # Per-device, per-transport health tracker
 ├── ble_advertisement.py # BLE advertisement correlation and enrolment
 ├── ble_passthrough.py   # BLE frames tunnelled over AWS IoT
+├── kettle/              # H7175 kettle (frames.py decoder, manager.py coordinator helper)
 ├── const.py             # Constants
 ├── icons.json           # Entity icons by translation key
 ├── strings.json         # UI strings (mirrored in translations/en.json)

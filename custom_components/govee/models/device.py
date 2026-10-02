@@ -39,6 +39,12 @@ PRESENCE_SENSOR_SKUS = frozenset({"H5127"})
 # therefore SKU-locked, issue #114 follow-up.
 PUMP_DEHUMIDIFIER_SKUS = frozenset({"H7152"})
 
+# Kettles whose AWS IoT push (``sta`` temperatures and BLE-format status
+# frames, see kettle/frames.py) is decoded. Verified on the H7175 only: other
+# kettles (H717A, H7170) share the capability family but their frames are
+# unknown, so their pushes are handled as before.
+KETTLE_FRAME_SKUS = frozenset({"H7175"})
+
 # Smart outlets that report live voltage/current/power/energy over AWS IoT
 # push frames rather than any capability (issue #200). Detection is
 # SKU-locked like PUMP_DEHUMIDIFIER_SKUS, for the same reason: nothing in the
@@ -164,6 +170,9 @@ INSTANCE_MUSIC_MODE = "musicMode"
 INSTANCE_DREAMVIEW = "dreamViewToggle"
 INSTANCE_MOVIE_MODE = "movieMode"
 INSTANCE_TARGET_TEMPERATURE = "targetTemperature"
+# Kettle target temperature (H7175, H717A, H7170): the temperature_setting
+# STRUCT without autoStop, fields ``temperature`` and ``unit``.
+INSTANCE_SLIDER_TEMPERATURE = "sliderTemperature"
 # Ceiling-fan-with-light combo instances (e.g. H1310, reported as
 # devices.types.light with an integrated fan). Distinct from the standalone
 # fan shape (workMode / fanSpeed / oscillationToggle) — issue #74.
@@ -599,6 +608,11 @@ class GoveeDevice:
     def is_kettle(self) -> bool:
         """Check if device is a smart kettle (e.g. H717A Smart Kettle Pro)."""
         return self.device_type == DEVICE_TYPE_KETTLE
+
+    @property
+    def decodes_kettle_frames(self) -> bool:
+        """Whether this kettle's AWS IoT push is decoded (KETTLE_FRAME_SKUS)."""
+        return self.is_kettle and self.sku.upper() in KETTLE_FRAME_SKUS
 
     @property
     def is_aroma_diffuser(self) -> bool:
