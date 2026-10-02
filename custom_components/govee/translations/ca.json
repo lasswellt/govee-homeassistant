@@ -82,6 +82,13 @@
     "step": {
       "init": {
         "title": "Opcions de Govee",
+        "menu_options": {
+          "general": "Configuració general",
+          "kettle_slots": "Etiquetes de les ranures del bullidor"
+        }
+      },
+      "general": {
+        "title": "Opcions de Govee",
         "description": "Si tens dispositius RGBIC, els ajustos de segments per dispositiu apareixeran en enviar.",
         "data": {
           "poll_interval": "Interval de sondeig (segons)",
@@ -100,6 +107,16 @@
           "enable_groups": "Mostra els grups de dispositius que has creat a l'aplicació de Govee com a entitats de llum úniques. Una ordre a un grup s'envia una sola vegada i el núvol de Govee la sincronitza amb tots els membres, de manera que es sincronitza millor que agrupar les llums amb helpers de Home Assistant. L'estat és aproximat (els grups no es poden sondejar) i les llums en grup només admeten encesa, brillantor i color.",
           "enable_mqtt_control": "Envia les ordres d'encesa, brillantor i color pel canal MQTT de Govee en lloc de l'API REST al núvol, cosa que redueix la latència i evita els límits de freqüència de REST. Requereix inici de sessió amb correu i contrasenya (credencials MQTT). Si MQTT no està disponible, torna automàticament a REST. Experimental: utilitza un canal no documentat; desactiva'l si les ordres es comporten de manera inesperada.",
           "lan_targets": "Només cal quan els dispositius Govee compatibles amb LAN estan en una subxarxa o VLAN diferent de la de Home Assistant, de manera que l'escaneig de descoberta local no hi arriba. Introdueix una llista separada per comes amb adreces IP de dispositius (10.20.0.51), adreces de difusió (10.20.0.255) o subxarxes en CIDR (10.20.0.0/24, /24 o més específic). Les subxarxes s'escanegen dispositiu per dispositiu, ja que la majoria dels encaminadors descarten els broadcasts entre VLAN. Deixa-ho en blanc si tots els dispositius comparteixen la xarxa de Home Assistant. Avançat: si un dispositiu segueix sense trobar-se perquè la seva resposta d'escaneig no pot creuar la VLAN, fixa'l amb device_id=ip (AA:BB:CC:DD:EE:FF:00:11=10.20.0.51) per ometre el descobriment per a aquest dispositiu. Afegeix un ! al final (=10.20.0.51!) només per a firmware que accepta ordres LAN però mai respon a una lectura d'estat — això desactiva totes les comprovacions d'estat LAN del dispositiu, de manera que una IP incorrecta semblarà que funciona mentre el dispositiu mai respon. Introdueix off per desactivar completament la descoberta LAN i el control local."
+        }
+      },
+      "kettle_slots": {
+        "title": "Etiquetes de les ranures del bullidor: {device_name}",
+        "description": "Etiquetes opcionals per a les ranures personalitzades del bullidor, per exemple els noms que els vas donar a l'app de Govee. El mode continua sent Personalitzat 1-4 (custom_1-custom_4 a les automatitzacions); les etiquetes apareixen a l'atribut labels de les entitats. Deixa un camp en blanc per no posar etiqueta. Una etiqueta no pot repetir una altra, un mode integrat, Manual ni Apagat.",
+        "data": {
+          "slot_1": "Personalitzat 1",
+          "slot_2": "Personalitzat 2",
+          "slot_3": "Personalitzat 3",
+          "slot_4": "Personalitzat 4"
         }
       },
       "select_segment_devices": {
@@ -122,7 +139,13 @@
     },
     "error": {
       "invalid_lan_targets": "Una de les adreces LAN no és una IP, una adreça de difusió, una subxarxa (/24 o més específica) ni una substitució device_id=ip vàlides. Exemple: 10.20.0.51, 10.20.0.255, 10.20.0.0/24, AA:BB:CC:DD:EE:FF:00:11=10.20.0.51",
-      "unknown_lan_device": "Una substitució device_id=ip indica un dispositiu que no pertany a aquest compte de Govee. Copia l'ID del dispositiu exactament com apareix al diagnòstic del dispositiu (per exemple, AA:BB:CC:DD:EE:FF:00:11)."
+      "unknown_lan_device": "Una substitució device_id=ip indica un dispositiu que no pertany a aquest compte de Govee. Copia l'ID del dispositiu exactament com apareix al diagnòstic del dispositiu (per exemple, AA:BB:CC:DD:EE:FF:00:11).",
+      "duplicate_slot_label": "Dues ranures tenen la mateixa etiqueta.",
+      "reserved_slot_label": "Aquesta etiqueta és un mode integrat, Manual o Apagat.",
+      "slot_label_too_long": "Fes servir com a màxim 40 caràcters."
+    },
+    "abort": {
+      "kettle_unavailable": "El bullidor ja no està disponible. Torna a obrir les opcions."
     }
   },
   "entity": {
@@ -163,6 +186,20 @@
       },
       "govee_nightlight_scene_select": {
         "name": "Escena de llum nocturna"
+      },
+      "kettle_brew_mode": {
+        "name": "Mode de preparació",
+        "state": {
+          "custom_1": "Personalitzat 1",
+          "custom_2": "Personalitzat 2",
+          "custom_3": "Personalitzat 3",
+          "custom_4": "Personalitzat 4",
+          "green_tea": "Te verd",
+          "oolong_tea": "Te oolong",
+          "coffee": "Cafè",
+          "black_tea_boil": "Te negre / bullir",
+          "manual": "Manual"
+        }
       }
     },
     "switch": {
@@ -182,7 +219,7 @@
         "name": "Aturada automàtica"
       },
       "govee_appliance_power": {
-        "name": "{device_name}"
+        "name": "Alimentació"
       },
       "govee_light_zone": {
         "name": "Zona de llum {zone}"
@@ -260,6 +297,31 @@
       },
       "sensor_temperature_2": {
         "name": "Temperatura de la sonda 2"
+      },
+      "kettle_heating_status": {
+        "name": "Estat d'escalfament",
+        "state": {
+          "idle": "En repòs",
+          "heating": "Escalfant",
+          "keeping_warm": "Mantenint calent",
+          "reached_target": "Temperatura assolida",
+          "scheduled": "Programat"
+        }
+      },
+      "kettle_keep_warm_minutes": {
+        "name": "Durada de mantenir calent"
+      },
+      "kettle_diy_slot": {
+        "name": "Ranura DIY",
+        "state": {
+          "custom_1": "Personalitzat 1",
+          "custom_2": "Personalitzat 2",
+          "custom_3": "Personalitzat 3",
+          "custom_4": "Personalitzat 4"
+        }
+      },
+      "kettle_keep_warm_remaining": {
+        "name": "Temps restant de mantenir calent"
       }
     },
     "binary_sensor": {
@@ -292,6 +354,9 @@
       },
       "leak_hub_online": {
         "name": "Internet"
+      },
+      "kettle_keep_warm": {
+        "name": "Mantenir calent"
       }
     },
     "fan": {
@@ -344,6 +409,21 @@
               "press": "Polsada"
             }
           }
+        }
+      }
+    },
+    "water_heater": {
+      "kettle": {
+        "state": {
+          "custom_1": "Personalitzat 1",
+          "custom_2": "Personalitzat 2",
+          "custom_3": "Personalitzat 3",
+          "custom_4": "Personalitzat 4",
+          "green_tea": "Te verd",
+          "oolong_tea": "Te oolong",
+          "coffee": "Cafè",
+          "black_tea_boil": "Te negre / bullir",
+          "manual": "Manual"
         }
       }
     }

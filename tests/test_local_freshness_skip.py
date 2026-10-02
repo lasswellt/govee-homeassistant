@@ -91,7 +91,7 @@ def _coordinator(*, ages: dict[str, float | None], has_state: bool = True) -> An
 
 
 def _pollable(ages: dict[str, float | None]) -> dict[str, Any]:
-    return {device_id: object() for device_id in ages}
+    return {device_id: SimpleNamespace(decodes_kettle_frames=False) for device_id in ages}
 
 
 def test_poll_skips_the_device_with_a_fresh_lan_reading_only() -> None:
@@ -184,7 +184,10 @@ def test_a_send_or_a_discarded_reply_is_not_a_reading() -> None:
     )
 
     assert GoveeCoordinator._local_last_updated(coordinator, "dev") is None
-    assert GoveeCoordinator._locally_fresh_devices(coordinator, {"dev": object()}) == set()
+    assert (
+        GoveeCoordinator._locally_fresh_devices(coordinator, {"dev": SimpleNamespace(decodes_kettle_frames=False)})
+        == set()
+    )
 
 
 class _FakeRegistryEntry:

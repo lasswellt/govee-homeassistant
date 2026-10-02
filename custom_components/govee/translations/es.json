@@ -82,6 +82,13 @@
     "step": {
       "init": {
         "title": "Opciones de Govee",
+        "menu_options": {
+          "general": "Ajustes generales",
+          "kettle_slots": "Etiquetas de las ranuras del hervidor"
+        }
+      },
+      "general": {
+        "title": "Opciones de Govee",
         "description": "Si tienes dispositivos RGBIC, los ajustes de segmentos por dispositivo aparecerán al enviar.",
         "data": {
           "poll_interval": "Intervalo de sondeo (segundos)",
@@ -100,6 +107,16 @@
           "enable_groups": "Muestra los grupos de dispositivos que creaste en la app de Govee como entidades de luz únicas. Un comando al grupo se envía una sola vez y la nube de Govee lo sincroniza con todos los miembros, así que se sincroniza mejor que agrupar las luces con helpers de Home Assistant. El estado es aproximado (los grupos no se pueden sondear) y las luces en grupo solo admiten encendido, brillo y color.",
           "enable_mqtt_control": "Envía los comandos de encendido, brillo y color por el canal MQTT de Govee en lugar de la API REST en la nube, lo que reduce la latencia y evita los límites de velocidad de REST. Requiere inicio de sesión con correo y contraseña (credenciales MQTT). Si MQTT no está disponible, vuelve automáticamente a REST. Experimental: usa un canal no documentado; desactívalo si los comandos se comportan de forma inesperada.",
           "lan_targets": "Solo es necesario cuando los dispositivos Govee compatibles con LAN están en una subred o VLAN distinta a la de Home Assistant, de modo que el escaneo de descubrimiento local no llega a ellos. Introduce una lista separada por comas con IPs de dispositivos (10.20.0.51), direcciones de difusión (10.20.0.255) o subredes en CIDR (10.20.0.0/24, /24 o más específico). Las subredes se escanean dispositivo por dispositivo, ya que la mayoría de los routers descartan los broadcasts entre VLAN. Déjalo en blanco si todos los dispositivos comparten la red de Home Assistant. Avanzado: si un dispositivo sigue sin encontrarse porque su respuesta de escaneo no puede cruzar la VLAN, fíjalo con device_id=ip (AA:BB:CC:DD:EE:FF:00:11=10.20.0.51) para omitir el descubrimiento para ese dispositivo. Añade un ! final (=10.20.0.51!) solo para firmware que acepta comandos LAN pero nunca responde a una lectura de estado — esto desactiva todas las comprobaciones de estado LAN del dispositivo, de modo que una IP incorrecta parecerá que funciona mientras el dispositivo nunca responde. Introduce off para desactivar por completo la detección LAN y el control local."
+        }
+      },
+      "kettle_slots": {
+        "title": "Etiquetas de las ranuras del hervidor: {device_name}",
+        "description": "Etiquetas opcionales para las ranuras personalizadas del hervidor, por ejemplo los nombres que les diste en la app de Govee. El modo sigue siendo Personalizado 1-4 (custom_1-custom_4 en automatizaciones); las etiquetas aparecen en el atributo labels de las entidades. Deja un campo vacío para no poner etiqueta. Una etiqueta no puede repetir otra, un modo integrado, Manual ni Apagado.",
+        "data": {
+          "slot_1": "Personalizado 1",
+          "slot_2": "Personalizado 2",
+          "slot_3": "Personalizado 3",
+          "slot_4": "Personalizado 4"
         }
       },
       "select_segment_devices": {
@@ -122,7 +139,13 @@
     },
     "error": {
       "invalid_lan_targets": "Una de las direcciones LAN no es una IP, una dirección de difusión, una subred (/24 o más específica) ni una anulación device_id=ip válidas. Ejemplo: 10.20.0.51, 10.20.0.255, 10.20.0.0/24, AA:BB:CC:DD:EE:FF:00:11=10.20.0.51",
-      "unknown_lan_device": "Una anulación device_id=ip indica un dispositivo que no pertenece a esta cuenta de Govee. Copia el ID del dispositivo exactamente como aparece en el diagnóstico del dispositivo (por ejemplo, AA:BB:CC:DD:EE:FF:00:11)."
+      "unknown_lan_device": "Una anulación device_id=ip indica un dispositivo que no pertenece a esta cuenta de Govee. Copia el ID del dispositivo exactamente como aparece en el diagnóstico del dispositivo (por ejemplo, AA:BB:CC:DD:EE:FF:00:11).",
+      "duplicate_slot_label": "Dos ranuras tienen la misma etiqueta.",
+      "reserved_slot_label": "Esta etiqueta es un modo integrado, Manual o Apagado.",
+      "slot_label_too_long": "Usa como máximo 40 caracteres."
+    },
+    "abort": {
+      "kettle_unavailable": "El hervidor ya no está disponible. Vuelve a abrir las opciones."
     }
   },
   "entity": {
@@ -163,6 +186,20 @@
       },
       "govee_nightlight_scene_select": {
         "name": "Escena de luz nocturna"
+      },
+      "kettle_brew_mode": {
+        "name": "Modo de preparación",
+        "state": {
+          "custom_1": "Personalizado 1",
+          "custom_2": "Personalizado 2",
+          "custom_3": "Personalizado 3",
+          "custom_4": "Personalizado 4",
+          "green_tea": "Té verde",
+          "oolong_tea": "Té oolong",
+          "coffee": "Café",
+          "black_tea_boil": "Té negro / hervir",
+          "manual": "Manual"
+        }
       }
     },
     "switch": {
@@ -182,7 +219,7 @@
         "name": "Apagado automático"
       },
       "govee_appliance_power": {
-        "name": "{device_name}"
+        "name": "Alimentación"
       },
       "govee_light_zone": {
         "name": "Zona de luz {zone}"
@@ -260,6 +297,31 @@
       },
       "sensor_temperature_2": {
         "name": "Temperatura de la sonda 2"
+      },
+      "kettle_heating_status": {
+        "name": "Estado de calentamiento",
+        "state": {
+          "idle": "En reposo",
+          "heating": "Calentando",
+          "keeping_warm": "Manteniendo caliente",
+          "reached_target": "Temperatura alcanzada",
+          "scheduled": "Programado"
+        }
+      },
+      "kettle_keep_warm_minutes": {
+        "name": "Duración de mantener caliente"
+      },
+      "kettle_diy_slot": {
+        "name": "Ranura DIY",
+        "state": {
+          "custom_1": "Personalizado 1",
+          "custom_2": "Personalizado 2",
+          "custom_3": "Personalizado 3",
+          "custom_4": "Personalizado 4"
+        }
+      },
+      "kettle_keep_warm_remaining": {
+        "name": "Tiempo restante de mantener caliente"
       }
     },
     "binary_sensor": {
@@ -292,6 +354,9 @@
       },
       "leak_hub_online": {
         "name": "Internet"
+      },
+      "kettle_keep_warm": {
+        "name": "Mantener caliente"
       }
     },
     "fan": {
@@ -344,6 +409,21 @@
               "press": "Pulsación"
             }
           }
+        }
+      }
+    },
+    "water_heater": {
+      "kettle": {
+        "state": {
+          "custom_1": "Personalizado 1",
+          "custom_2": "Personalizado 2",
+          "custom_3": "Personalizado 3",
+          "custom_4": "Personalizado 4",
+          "green_tea": "Té verde",
+          "oolong_tea": "Té oolong",
+          "coffee": "Café",
+          "black_tea_boil": "Té negro / hervir",
+          "manual": "Manual"
         }
       }
     }

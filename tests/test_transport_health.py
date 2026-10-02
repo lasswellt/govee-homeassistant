@@ -138,7 +138,7 @@ class TestDirectionalSplit:
     async def test_cloud_api_control_stamps_both_directions(self):
         """A successful REST control sends and receives — stamp both."""
         coord = _bare_coordinator()
-        coord._devices["dev1"] = MagicMock(is_group=False, sku="H6072")
+        coord._devices["dev1"] = MagicMock(is_group=False, decodes_kettle_frames=False, sku="H6072")
         coord._pending_power_off = set()
         coord._enable_mqtt_control = False
         coord._api_client = MagicMock()
