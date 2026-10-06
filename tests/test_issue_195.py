@@ -297,3 +297,23 @@ class TestPermanentSkuExclusion:
         assert client.async_publish_status_query.await_args_list == [call("GD/a"), call("GD/c")]
         assert coord._status_query_strikes == {}
         assert coord.mqtt_status_query_strikes == []
+
+    @pytest.mark.asyncio
+    async def test_six_h5108_units_cost_no_strikes(self, sleeps):
+        """The H5108 report (issue #237): six units on one account on
+        v2026.10.0. Each query closed the session within ~5s, two strikes
+        apiece, about 35 minutes of churn after every restart, and the
+        account's MQTT-only plug readings were silent the whole time. None
+        of the six may be queried, so the plugs' session is never touched.
+        """
+        units = ("B", "C", "D", "E", "F", "G")
+        coord, client = _coord(
+            devices=("A",) + units,
+            skus={device_id: "H5108" for device_id in units},
+        )
+
+        await coord._poll_mqtt_status()
+
+        assert client.async_publish_status_query.await_args_list == [call("GD/a")]
+        assert coord._status_query_strikes == {}
+        assert coord.mqtt_status_query_strikes == []
