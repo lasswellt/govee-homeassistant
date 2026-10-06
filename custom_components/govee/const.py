@@ -360,7 +360,13 @@ MQTT_STATUS_QUERY_QUARANTINE_STRIKES: Final = 2
 #     query to it drops the session just as the H5075's did (issue #195).
 #     Not in FAHRENHEIT_REPORTING_SKUS: that list needs a reading showing
 #     which unit the model reports in.
-MQTT_STATUS_QUERY_EXCLUDED_SKUS: Final = frozenset({"H5110", "H5220", "H5111", "H5075", "H5074"})
+#   H5108 (thermo-hygrometer): same class. Confirmed on v2026.10.0 with six
+#     units on one account: a status query to any of them closed the session
+#     within ~5s, and the two strikes apiece added up to ~35 minutes of
+#     reconnect churn after every restart, during which the account's
+#     MQTT-only readings (H5086 plug power) stopped arriving (issue #237).
+#     Its readings still arrive through the cloud poll.
+MQTT_STATUS_QUERY_EXCLUDED_SKUS: Final = frozenset({"H5110", "H5220", "H5111", "H5075", "H5074", "H5108"})
 
 # Optimistic state handling
 # Grace window (seconds) during which API polls do NOT overwrite optimistic
