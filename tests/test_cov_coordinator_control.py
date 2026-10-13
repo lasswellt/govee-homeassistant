@@ -10,13 +10,14 @@ ever opened.
 
 from __future__ import annotations
 
+import base64
 import time
 from dataclasses import replace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 
 import custom_components.govee.coordinator as coord_mod
 from custom_components.govee.api.auth import GoveeIotCredentials
@@ -29,6 +30,7 @@ from custom_components.govee.api.ble_packet import (
 from custom_components.govee.api.exceptions import GoveeApiError, GoveeAuthError
 from custom_components.govee.api.lan_client import LanDevStatus, LanDeviceInfo
 from custom_components.govee.const import CONF_ENABLE_MQTT_CONTROL
+from custom_components.govee.ble_passthrough import BlePassthroughManager
 from custom_components.govee.coordinator import GoveeCoordinator
 from custom_components.govee.models import (
     BrightnessCommand,
@@ -1276,6 +1278,219 @@ class TestReassertSegments:
         coord._api_client.rate_limit_remaining = coord_mod._REASSERT_RATE_LIMIT_RESERVE + 2
         await coord.async_reassert_segments(DEV)
         assert coord.async_control_device.await_count == 2
+
+
+def _h8057() -> GoveeDevice:
+    """Reported capability order: brightness has four indices, RGB has three."""
+
+    def capability(instance: str, max_index: int) -> GoveeCapability:
+        return GoveeCapability(
+            type=CAPABILITY_SEGMENT_COLOR,
+            instance=instance,
+            parameters={
+                "fields": [
+                    {
+                        "fieldName": "segment",
+                        "size": {"min": 1, "max": 4},
+                        "elementRange": {"min": 0, "max": max_index},
+                    }
+                ]
+            },
+        )
+
+    return _device(
+        sku="H8057",
+        caps=(
+            _POWER,
+            _RGB,
+            capability("segmentedBrightness", 3),
+            capability("segmentedColorRgb", 2),
+        ),
+    )
+
+
+class TestH8057SegmentColor:
+    """Only H8057's fourth RGB segment bypasses the public API."""
+
+    @pytest.mark.parametrize("rgb", [(0, 0, 255), (12, 34, 56), (0, 0, 0)])
+    @pytest.mark.asyncio
+    async def test_fourth_segment_packet_and_real_passthrough_publish(self, rgb):
+        coord = _coordinator()
+        _add(coord, _h8057())
+        client = _mqtt()
+        client.async_publish_ptreal = AsyncMock(return_value=True)
+        coord._ble_manager = BlePassthroughManager(lambda: client, {}, AsyncMock(return_value="GD/test"))
+        command = SegmentColorCommand(segment_indices=(3,), color=RGBColor(*rgb))
+
+        assert await coord.async_control_device(DEV, command) is True
+
+        args = client.async_publish_ptreal.await_args.args
+        assert args[:2] == (DEV, "H8057")
+        assert args[3] == "GD/test"
+        packet = base64.b64decode(args[2])
+        assert packet[:15] == bytes([0x33, 0x05, 0x15, 0x01, *rgb, 0, 0, 0, 0, 0, 8, 0, 0])
+        assert len(packet) == 20
+        checksum = 0
+        for byte in packet[:19]:
+            checksum ^= byte
+        assert packet[19] == checksum
+        coord._api_client.control_device.assert_not_awaited()
+        assert coord._segment_colors[DEV][3] == rgb
+        assert coord._transport.get(DEV, "mqtt").last_send_ts is not None
+        coord.async_set_updated_data.assert_called_once()
+
+    @pytest.mark.parametrize("indices", [(0,), (1,), (2,), (0, 1, 2)])
+    @pytest.mark.parametrize("available", [False, True])
+    @pytest.mark.asyncio
+    async def test_lower_segments_keep_rest(self, indices, available, monkeypatch):
+        monkeypatch.setattr(coord_mod, "SEGMENT_COMMAND_PACING_SECONDS", 0)
+        coord = _coordinator()
+        _add(coord, _h8057())
+        coord._ble_manager = _ble_manager(available=available)
+        command = SegmentColorCommand(segment_indices=indices, color=RGBColor(1, 2, 3))
+
+        assert await coord.async_control_device(DEV, command) is True
+        coord._api_client.control_device.assert_awaited_once_with(DEV, "H8057", command)
+        coord._ble_manager.async_send_ble_packet.assert_not_awaited()
+
+    @pytest.mark.parametrize("available", [False, True])
+    @pytest.mark.asyncio
+    async def test_missing_transport_or_failed_publish_never_falls_back(self, available):
+        coord = _coordinator()
+        _add(coord, _h8057())
+        coord._ble_manager = _ble_manager(available=available, result=False)
+
+        with pytest.raises(HomeAssistantError, match="H8057 Segment 4.*AWS IoT"):
+            await coord.async_control_device(DEV, SegmentColorCommand(segment_indices=(3,), color=RGBColor(1, 2, 3)))
+
+        coord._api_client.control_device.assert_not_awaited()
+        assert coord._ble_manager.async_send_ble_packet.await_count == int(available)
+        coord.async_set_updated_data.assert_not_called()
+        assert coord._transport.get(DEV, "mqtt").last_failure_reason == "h8057_segment_4_passthrough_failed"
+
+    @pytest.mark.parametrize("rest_ok,private_ok", [(True, True), (False, True), (True, False), (False, False)])
+    @pytest.mark.asyncio
+    async def test_mixed_request_splits_and_reports_partial_failure(self, rest_ok, private_ok, monkeypatch):
+        monkeypatch.setattr(coord_mod, "SEGMENT_COMMAND_PACING_SECONDS", 0)
+        coord = _coordinator()
+        _add(coord, _h8057())
+        coord._api_client.control_device.return_value = rest_ok
+        coord._ble_manager = _ble_manager(result=private_ok)
+        events = []
+
+        async def rest(*args):
+            events.append("rest")
+            return rest_ok
+
+        async def private(*args):
+            events.append("private")
+            return private_ok
+
+        coord._api_client.control_device.side_effect = rest
+        coord._ble_manager.async_send_ble_packet.side_effect = private
+        command = SegmentColorCommand(segment_indices=(0, 1, 2, 3), color=RGBColor(12, 34, 56))
+        if private_ok:
+            assert await coord.async_control_device(DEV, command) is rest_ok
+        else:
+            with pytest.raises(HomeAssistantError, match="Other requested segments may already have changed"):
+                await coord.async_control_device(DEV, command)
+
+        assert events == ["rest", "private"]
+        assert _sent(coord) == [SegmentColorCommand(segment_indices=(0, 1, 2), color=command.color)]
+        expected = encode_packet_base64(build_packet(build_segment_color_ptreal(command.color, 8)))
+        coord._ble_manager.async_send_ble_packet.assert_awaited_once_with(DEV, "H8057", expected)
+        assert coord.async_set_updated_data.call_count == int(rest_ok) + int(private_ok)
+
+    @pytest.mark.asyncio
+    async def test_mixed_request_still_sends_lower_segments_without_mqtt(self, monkeypatch):
+        monkeypatch.setattr(coord_mod, "SEGMENT_COMMAND_PACING_SECONDS", 0)
+        coord = _coordinator()
+        _add(coord, _h8057())
+        coord._ble_manager = _ble_manager(available=False)
+        command = SegmentColorCommand(segment_indices=(3, 1), color=RGBColor(1, 2, 3))
+        with pytest.raises(HomeAssistantError, match="AWS IoT"):
+            await coord.async_control_device(DEV, command)
+        assert _sent(coord) == [SegmentColorCommand(segment_indices=(1,), color=command.color)]
+        coord._ble_manager.async_send_ble_packet.assert_not_awaited()
+
+    def test_four_existing_entity_identities_and_segment_count(self):
+        from custom_components.govee.platforms.segment import GoveeSegmentEntity
+
+        device = _h8057()
+        coord = _coordinator()
+        _add(coord, device)
+        assert device.segment_count == 4
+        assert device.segment_count_resolution["override"] is None
+        entities = [GoveeSegmentEntity(coord, device, i) for i in range(device.segment_count)]
+        assert [entity.unique_id for entity in entities] == [f"{DEV}_segment_{i}" for i in range(4)]
+
+    @pytest.mark.asyncio
+    async def test_entity_off_and_on_use_masked_ptreal(self):
+        from custom_components.govee.platforms.segment import GoveeSegmentEntity
+
+        coord = _coordinator()
+        device = _h8057()
+        state = _add(coord, device)
+        state.power_state = True
+        coord._ble_manager = _ble_manager()
+        entity = GoveeSegmentEntity(coord, device, 3)
+        entity.async_write_ha_state = MagicMock()
+
+        await entity.async_turn_on(rgb_color=(12, 34, 56))
+        await entity.async_turn_off()
+        await entity.async_turn_on()
+
+        packets = [base64.b64decode(call.args[2]) for call in coord._ble_manager.async_send_ble_packet.await_args_list]
+        assert [packet[4:7] for packet in packets] == [bytes([12, 34, 56]), bytes(3), bytes([12, 34, 56])]
+        assert all(packet[12:15] == bytes([8, 0, 0]) for packet in packets)
+        coord._api_client.control_device.assert_not_awaited()
+        assert entity.is_on is True
+
+    @pytest.mark.asyncio
+    async def test_other_sku_fourth_segment_stays_on_rest(self, monkeypatch):
+        monkeypatch.setattr(coord_mod, "SEGMENT_COMMAND_PACING_SECONDS", 0)
+        coord = _coordinator()
+        _add(coord, _device(caps=(_POWER, _RGB, _SEGMENTS)))
+        coord._ble_manager = _ble_manager()
+        command = SegmentColorCommand(segment_indices=(3,), color=RGBColor(1, 2, 3))
+        assert await coord.async_control_device(DEV, command) is True
+        coord._api_client.control_device.assert_awaited_once_with(DEV, "H6072", command)
+        coord._ble_manager.async_send_ble_packet.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_grouped_entity_uses_split_routing(self, monkeypatch):
+        from custom_components.govee.platforms.grouped_segment import GoveeGroupedSegmentEntity
+        import custom_components.govee.platforms.grouped_segment as grouped_mod
+
+        monkeypatch.setattr(coord_mod, "SEGMENT_COMMAND_PACING_SECONDS", 0)
+        monkeypatch.setattr(grouped_mod, "async_dispatcher_send", MagicMock())
+        coord = _coordinator()
+        device = _h8057()
+        _add(coord, device)
+        coord._ble_manager = _ble_manager()
+        entity = GoveeGroupedSegmentEntity(coord, device)
+        entity.async_write_ha_state = MagicMock()
+
+        await entity.async_turn_on(rgb_color=(12, 34, 56))
+
+        assert _sent(coord) == [SegmentColorCommand(segment_indices=(0, 1, 2), color=RGBColor(12, 34, 56))]
+        coord._ble_manager.async_send_ble_packet.assert_awaited_once()
+        assert entity.is_on is True
+
+    @pytest.mark.asyncio
+    async def test_segment_service_uses_private_routing(self, monkeypatch):
+        import custom_components.govee.services as services_mod
+
+        coord = _coordinator()
+        _add(coord, _h8057())
+        coord._ble_manager = _ble_manager()
+        monkeypatch.setattr(services_mod, "_get_coordinator_for_device", lambda *args: (coord, DEV))
+        call = MagicMock(data={"device_id": DEV, "segments": [3], "rgb_color": [12, 34, 56]})
+
+        await services_mod.async_set_segment_color_handler(MagicMock(), call)
+
+        coord._ble_manager.async_send_ble_packet.assert_awaited_once()
+        coord._api_client.control_device.assert_not_awaited()
 
 
 class TestPtrealSegmentTier:

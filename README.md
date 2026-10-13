@@ -193,6 +193,19 @@ For RGBIC strips/bars you can control individual lighting segments. After saving
 
 Segment colors aren't reliably returned by the API, so segment entities keep optimistic state and restore it across restarts.
 
+**H8057 fourth segment:** the Platform API advertises brightness indices 0–3 but RGB indices 0–2;
+RGB writes to index 3 are rejected with application-level 400 "Parameter value out of range."
+The four existing segment entities keep their identities. Segment 4 color (including black for off)
+uses the existing AWS IoT `ptReal` passthrough with mask `0x000008`, so configure Govee account login
+and keep MQTT connected. Segments 1–3 retain their REST route; brightness routing is unchanged.
+For a mixed `govee.set_segment_color` or grouped-entity request, lower indices go to REST first,
+then index 3 goes to MQTT. Success requires both parts; a failure can leave a partially applied
+request. If passthrough is unavailable or publishing fails, Home Assistant reports an error with
+connection/retry guidance and never retries index 3 through REST. Lower-index writes remain usable.
+Only Segment 4 RGB has been verified on H8057 hardware: the masked blue command independently
+turned the fourth physical segment blue. This does not establish private support for other indices
+or segment brightness.
+
 There's also an action for automations. `device_id` accepts the Home Assistant device (what the device picker produces) or the Govee device ID:
 
 ```yaml

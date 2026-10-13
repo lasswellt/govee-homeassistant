@@ -17,7 +17,7 @@ from typing import Any, Final
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
-from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
@@ -4614,6 +4614,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
         Returns:
             True if command succeeded.
+
+        Raises:
+            HomeAssistantError: H8057 Segment 4 needs an AWS IoT passthrough
+                that is unavailable or failed to publish.
         """
         device = self._devices.get(device_id)
         if not device:
@@ -4636,6 +4640,16 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 self.record_segment_color(device_id, index, rgb)
 
         try:
+            # H8057 exposes four segments, but REST RGB accepts only 0-2.
+            # Only index 3 has been hardware-verified with masked ptReal;
+            # split mixed writes before the general transport tiers.
+            if (
+                isinstance(command, SegmentColorCommand)
+                and device.sku.upper() == "H8057"
+                and 3 in command.segment_indices
+            ):
+                return await self._control_h8057_segment_color(device_id, device, command)
+
             # BLE-first dispatch: if a BLE transport is available for this
             # device, try it before the cloud REST API. BLE is ~10x faster
             # (~50ms local vs ~500ms cloud) and works when internet is down.
@@ -4794,6 +4808,52 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             "mode_value": state.mode_value,
             "configured_humidity": state.configured_humidity,
         }
+
+    async def _control_h8057_segment_color(
+        self, device_id: str, device: GoveeDevice, command: SegmentColorCommand
+    ) -> bool:
+        """Split H8057 RGB writes: REST first, then index 3 via AWS IoT.
+
+        Each successful part updates listeners separately. A failed part
+        cannot undo the other: return success only when both succeed, and
+        never retry index 3 through the known-invalid REST endpoint.
+        """
+        rest_indices = tuple(index for index in command.segment_indices if index != 3)
+        rest_success = True
+        if rest_indices:
+            rest_command = SegmentColorCommand(segment_indices=rest_indices, color=command.color)
+            rest_success = await self._dispatch_segment_command(device_id, device.sku, rest_command)
+            if rest_success:
+                self._apply_optimistic_update(device_id, rest_command)
+                self.async_set_updated_data(self._states)
+
+        private_command = SegmentColorCommand(segment_indices=(3,), color=command.color)
+        sent = False
+        if self._ble_manager.available and not device.is_group:
+            packet = build_packet(build_segment_color_ptreal(command.color, 1 << 3))
+            # Share segment serialization with REST to avoid overlapping
+            # writes from frequent color-copy automations.
+            lock = self._segment_locks.setdefault(device_id, asyncio.Lock())
+            async with lock:
+                sent = await self._ble_manager.async_send_ble_packet(
+                    device_id, device.sku, encode_packet_base64(packet)
+                )
+
+        self._record_local_command(
+            device_id, device.sku, "mqtt", private_command, delivered=sent, detail="ptReal segment mask=0x000008"
+        )
+        if not sent:
+            self._record_transport_failure(device_id, "mqtt", "h8057_segment_4_passthrough_failed")
+            raise HomeAssistantError(
+                "H8057 Segment 4 color requires a connected AWS IoT session and a successful MQTT passthrough publish. "
+                "Check the integration's Govee account login and MQTT connection, then retry. "
+                "Other requested segments may already have changed."
+            )
+
+        self._record_transport_send(device_id, "mqtt")
+        self._apply_optimistic_update(device_id, private_command)
+        self.async_set_updated_data(self._states)
+        return rest_success
 
     async def _dispatch_segment_command(
         self,
