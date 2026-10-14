@@ -1725,7 +1725,7 @@ class TestClearSceneOnHdmiSyncBox:
         state.hdmi_source = 2
         coord._states[device.device_id] = state
 
-        await coord.async_clear_scene(device.device_id)
+        assert await coord.async_clear_scene(device.device_id) is True
 
         coord.async_control_device.assert_awaited_once()
         sent_id, sent_command = coord.async_control_device.await_args.args
@@ -1735,6 +1735,21 @@ class TestClearSceneOnHdmiSyncBox:
         assert sent_command.value == 2
         # And local scene state was cleared
         assert state.active_diy_scene is None
+
+    @pytest.mark.asyncio
+    async def test_clear_scene_rejected_hdmi_reselect_reports_failure(self):
+        """A rejected source re-select returns False and keeps the scene."""
+        device = self._make_sync_box()
+        coord = self._make_coord(device)
+        coord.async_control_device.return_value = False
+
+        state = GoveeDeviceState.create_empty(device.device_id)
+        state.active_diy_scene = "1234"
+        state.hdmi_source = 2
+        coord._states[device.device_id] = state
+
+        assert await coord.async_clear_scene(device.device_id) is False
+        assert state.active_diy_scene == "1234"
 
     @pytest.mark.asyncio
     async def test_clear_scene_falls_back_to_first_hdmi_option(self):

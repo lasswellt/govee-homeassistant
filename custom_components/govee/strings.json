@@ -429,7 +429,10 @@
               "sleep": "Sleep",
               "auto": "Auto",
               "custom": "Custom",
-              "turbo": "Turbo"
+              "turbo": "Turbo",
+              "low": "Low",
+              "medium": "Medium",
+              "high": "High"
             }
           }
         }

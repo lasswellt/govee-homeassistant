@@ -19,8 +19,10 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from custom_components.govee.entity import GoveeEntity
 from custom_components.govee.models import (
+    GoveeDevice,
     GoveeDeviceState,
     RGBColor,
+    SegmentBrightnessCommand,
     SegmentColorCommand,
 )
 from custom_components.govee.platforms.grouped_segment import (
@@ -63,6 +65,17 @@ def _grouped(mock_rgbic_device, coordinator: MagicMock | None = None) -> GoveeGr
     entity.hass = _hass()
     entity.async_write_ha_state = MagicMock()
     return entity
+
+
+def _sent(entity) -> list:
+    return [call.args[1] for call in entity.coordinator.async_control_device.await_args_list]
+
+
+def _without_segment_brightness(device: GoveeDevice) -> GoveeDevice:
+    caps = tuple(c for c in device.capabilities if c.instance != "segmentedBrightness")
+    return GoveeDevice(
+        device_id=device.device_id, sku=device.sku, name=device.name, device_type=device.device_type, capabilities=caps
+    )
 
 
 def _last_state(state: str, **attributes) -> State:
@@ -115,10 +128,43 @@ class TestSegmentTurnOn:
 
         await entity.async_turn_on(brightness=100, rgb_color=(10, 20, 30))
 
-        cmd = entity.coordinator.async_control_device.await_args[0][1]
-        assert cmd.color == RGBColor(r=10, g=20, b=30)
+        colour, brightness = _sent(entity)
+        assert colour == SegmentColorCommand(segment_indices=(2,), color=RGBColor(r=10, g=20, b=30))
+        # HA 100 of 255 on the device's 0-100 segmentedBrightness scale.
+        assert brightness == SegmentBrightnessCommand(segment_indices=(2,), brightness=39)
         assert entity.brightness == 100
         assert entity.rgb_color == (10, 20, 30)
+
+    async def test_brightness_only_on_a_lit_segment_sends_only_brightness(self, mock_rgbic_device):
+        entity = _segment(mock_rgbic_device, index=3)
+
+        await entity.async_turn_on(brightness=51)
+
+        assert _sent(entity) == [SegmentBrightnessCommand(segment_indices=(3,), brightness=20)]
+        assert entity.brightness == 51
+
+    async def test_brightness_on_an_off_segment_relights_it_first(self, mock_rgbic_device):
+        entity = _segment(mock_rgbic_device, index=3)
+        entity._is_on = False
+
+        await entity.async_turn_on(brightness=255)
+
+        assert _sent(entity) == [
+            SegmentColorCommand(segment_indices=(3,), color=RGBColor(r=255, g=255, b=255)),
+            SegmentBrightnessCommand(segment_indices=(3,), brightness=100),
+        ]
+        assert entity.is_on is True
+
+    async def test_without_segment_brightness_capability_brightness_is_not_claimed(self, mock_rgbic_device):
+        device = _without_segment_brightness(mock_rgbic_device)
+        entity = _segment(device, index=1)
+
+        await entity.async_turn_on(brightness=10)
+
+        # Nothing could send it, so nothing is reported or stored.
+        assert entity.brightness is None
+        assert entity._brightness == 255
+        assert _sent(entity) == [SegmentColorCommand(segment_indices=(1,), color=RGBColor(r=255, g=255, b=255))]
 
     async def test_turn_on_from_off_relights_with_remembered_colour(self, mock_rgbic_device):
         entity = _segment(mock_rgbic_device)
@@ -141,6 +187,18 @@ class TestSegmentTurnOn:
 
         assert entity.is_on is False
         entity.async_write_ha_state.assert_not_called()
+
+    async def test_rejected_turn_on_keeps_the_previous_colour_and_brightness(self, mock_rgbic_device):
+        # The unsent values must not reach HA on the next coordinator update,
+        # nor be persisted by RestoreEntity.
+        entity = _segment(mock_rgbic_device)
+        entity.coordinator.async_control_device = AsyncMock(return_value=False)
+
+        with pytest.raises(HomeAssistantError):
+            await entity.async_turn_on(brightness=10, rgb_color=(1, 2, 3))
+
+        assert entity.rgb_color == (255, 255, 255)
+        assert entity.brightness == 255
 
     async def test_turn_off_raises_when_rejected(self, mock_rgbic_device):
         entity = _segment(mock_rgbic_device)
@@ -254,6 +312,34 @@ class TestGroupedSegmentEntityInit:
 
         assert entity.is_on is False
         entity.async_write_ha_state.assert_not_called()
+
+    async def test_brightness_goes_to_every_segment(self, mock_rgbic_device):
+        entity = _grouped(mock_rgbic_device)
+
+        await entity.async_turn_on(brightness=128)
+
+        assert _sent(entity) == [
+            SegmentBrightnessCommand(segment_indices=tuple(range(mock_rgbic_device.segment_count)), brightness=50)
+        ]
+        assert entity.brightness == 128
+
+    async def test_without_segment_brightness_capability_brightness_is_not_claimed(self, mock_rgbic_device):
+        entity = _grouped(_without_segment_brightness(mock_rgbic_device))
+
+        await entity.async_turn_on(brightness=10)
+
+        assert entity.brightness is None
+        assert [type(c) for c in _sent(entity)] == [SegmentColorCommand]
+
+    async def test_rejected_turn_on_keeps_the_previous_colour_and_brightness(self, mock_rgbic_device):
+        entity = _grouped(mock_rgbic_device)
+        entity.coordinator.async_control_device = AsyncMock(return_value=False)
+
+        with pytest.raises(HomeAssistantError):
+            await entity.async_turn_on(brightness=10, rgb_color=(1, 2, 3))
+
+        assert entity.rgb_color == (255, 255, 255)
+        assert entity.brightness == 255
 
 
 class TestGroupedSegmentAddedToHass:

@@ -305,7 +305,10 @@
               "sleep": "Reposo",
               "auto": "Automático",
               "custom": "Personalizado",
-              "turbo": "Turbo"
+              "turbo": "Turbo",
+              "low": "Bajo",
+              "medium": "Medio",
+              "high": "Alto"
             }
           }
         }

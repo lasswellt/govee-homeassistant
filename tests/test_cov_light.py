@@ -144,6 +144,50 @@ class TestLightProperties:
         assert entity.brightness == 0
 
 
+def _ranged_light(low: int, high: int, device_brightness: int) -> GoveeLightEntity:
+    device = _device(
+        "AA:BB:CC:DD:EE:FF:01:02",
+        "H6000",
+        DEVICE_TYPE_LIGHT,
+        _POWER,
+        _cap(CAPABILITY_RANGE, INSTANCE_BRIGHTNESS, {"range": {"min": low, "max": high}}),
+    )
+    state = GoveeDeviceState(device_id=device.device_id, power_state=True, brightness=device_brightness)
+    entity = GoveeLightEntity(_coordinator(state, device), device)
+    entity.async_write_ha_state = MagicMock()
+    return entity
+
+
+class TestBrightnessConversion:
+    @pytest.mark.parametrize(("low", "high"), [(1, 100), (0, 100), (1, 254), (10, 100), (1, 10)])
+    def test_reapplying_the_reported_brightness_never_drifts(self, low, high):
+        entity = _ranged_light(low, high, high)
+        for device_value in range(max(low, 1), high + 1):
+            reported = entity._device_to_ha_brightness(device_value)
+            assert entity._ha_to_device_brightness(reported) == device_value
+
+    def test_half_brightness_reads_back_as_half(self):
+        entity = _ranged_light(1, 100, 100)
+        device_value = entity._ha_to_device_brightness(128)
+        assert device_value == 50
+        assert entity._device_to_ha_brightness(device_value) == 128
+
+    @pytest.mark.parametrize(("low", "high"), [(1, 100), (0, 100)])
+    def test_lowest_level_is_on_and_lowest_ha_level_is_not_dark(self, low, high):
+        entity = _ranged_light(low, high, max(low, 1))
+        # Device at its lowest lit level must not read as brightness 0.
+        assert entity.brightness is not None and entity.brightness >= 1
+        # A non-zero HA brightness must never send 0 (dark) to the device.
+        assert entity._ha_to_device_brightness(1) >= 1
+
+    def test_nightlight_uses_the_same_conversion(self):
+        device = _nightlight_device(_cap(CAPABILITY_RANGE, INSTANCE_BRIGHTNESS, {"range": {"min": 1, "max": 100}}))
+        entity = _nightlight(device, _nl_state(brightness=1))
+        assert entity.brightness >= 1
+        assert entity._ha_to_device_brightness(128) == 50
+        assert entity._device_to_ha_brightness(50) == 128
+
+
 class TestLightTurnOn:
     async def test_brightness_only_when_already_on(self, light):
         await light.async_turn_on(brightness=128)
@@ -234,6 +278,8 @@ class TestLightGroupRestore:
         entity.coordinator.restore_group_state.assert_not_called()
 
     async def test_regular_light_never_touches_group_restore(self, light):
+        light.hass = MagicMock()
+        light.hass.data = {}
         await self._add(light, State("light.living_room_light", "on", {"brightness": 255}))
 
         light.coordinator.restore_group_state.assert_not_called()
@@ -290,6 +336,20 @@ class TestMainLightConstruction:
         assert entity._last_on_rgb is None
         # Inherits the device's brightness scaling.
         assert entity._ha_to_device_brightness(255) == 100
+
+    def test_name_comes_from_translation_not_device_name(self):
+        # The master light uses the bare device name; the panel must not, or
+        # both entities show up as just "<Device>".
+        entity = _main_light()
+        # Older HA reads the translation key's prefix from platform, newer
+        # from platform_data; set both so the test runs on either.
+        entity.platform = entity.platform_data = MagicMock(platform_name="govee", domain="light")
+        translations = {"component.govee.entity.light.govee_main_light_panel.name": "Main light"}
+
+        assert entity._name_internal(None, translations) == "Main light"
+        # HA returns _attr_name before the translation; use_device_name, which
+        # also read it, is gone in newer HA.
+        assert not hasattr(entity, "_attr_name")
 
     def test_is_on_reads_black_as_off(self):
         assert _main_light(color=(0, 0, 0)).is_on is False
@@ -483,7 +543,7 @@ class TestNightLightProperties:
         state = _nl_state(color=RGBColor(r=9, g=8, b=7), color_temp_kelvin=None)
         entity = _nightlight(_nightlight_device(_BRIGHTNESS, _RGB, _CT), state)
         assert entity.is_on is True
-        assert entity.brightness == 127
+        assert entity.brightness == 128
         assert entity.rgb_color == (9, 8, 7)
         assert entity.color_temp_kelvin is None
 
@@ -714,6 +774,23 @@ class TestMainPanelControl:
         )
         assert entity.rgb_color == (10, 20, 30)
         assert entity.brightness == 128
+
+    async def test_lowest_brightness_never_sends_a_dark_panel(self):
+        entity = _panel(toggled=True)
+
+        await entity.async_turn_on(brightness=1)
+
+        entity.coordinator.async_set_main_panel.assert_awaited_once_with(H1232_ID, rgb=None, brightness=1)
+
+    async def test_ptreal_failure_keeps_the_previous_colour_and_brightness(self):
+        entity = _panel(toggled=True)
+        entity.coordinator.async_set_main_panel = AsyncMock(return_value=False)
+
+        with pytest.raises(HomeAssistantError):
+            await entity.async_turn_on(rgb_color=(1, 2, 3), brightness=10)
+
+        assert entity.rgb_color == (255, 255, 255)
+        assert entity.brightness == 255
 
     async def test_ptreal_failure_raises(self):
         entity = _panel(toggled=True)
