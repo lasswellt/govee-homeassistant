@@ -82,6 +82,7 @@ class TestUpdatePowerMonitoringFromFrames:
         assert state.current == pytest.approx(0.01)
         assert state.power_draw == pytest.approx(0.82)
         assert state.power_factor == 49
+        assert state.on_time == 17082
 
     def test_outlet_2_matches_the_app(self):
         """A second, independent unit — proves the offsets, not one lucky frame."""
@@ -103,6 +104,16 @@ class TestUpdatePowerMonitoringFromFrames:
         short = bytes([0xAA, 0x19, 0x00])
         assert state.update_power_monitoring_from_frames([short]) is False
         assert state.voltage is None
+
+    def test_reply_to_the_govee_app_is_ignored(self):
+        """Captured at 22:25:55: 354 s of on-time and 7.2 Wh, while the plug
+        had been on for 80749 s and used 772.1 Wh that day."""
+        state = GoveeDeviceState.create_empty(DEVICE_ID)
+        state.update_power_monitoring_from_frames([FRAME_OUTLET_1], {"stc": "19_0_70_325070_1"})
+        bogus = bytes.fromhex("aa190001620000482fd400860020fd3400000000")
+        assert state.update_power_monitoring_from_frames([bogus], {"stc": "0_0_70_325070_1"}) is False
+        assert state.energy_total == pytest.approx(0.0033)
+        assert state.on_time == 17082
 
     def test_picks_the_right_frame_out_of_a_full_push(self):
         state = GoveeDeviceState.create_empty(DEVICE_ID)
@@ -131,11 +142,14 @@ class TestCoordinatorAppliesPowerMonitoringFromAnMqttPush:
     def test_h5086_gets_its_readings_applied(self):
         coordinator = _coordinator_for_mqtt_push(_h5086())
 
-        coordinator._on_mqtt_state_update(DEVICE_ID, {"onOff": 1, "_op_frames": [FRAME_OUTLET_1.hex()]})
+        coordinator._on_mqtt_state_update(
+            DEVICE_ID, {"onOff": 1, "sta": {"stc": "19_0_77_40_1"}, "_op_frames": [FRAME_OUTLET_1.hex()]}
+        )
 
         state = coordinator._states[DEVICE_ID]
         assert state.voltage == pytest.approx(120.27)
         assert state.power_draw == pytest.approx(0.82)
+        assert state.uptime == 40
         coordinator.async_set_updated_data.assert_called_once()
 
     def test_non_monitoring_device_is_left_untouched(self):
@@ -264,7 +278,13 @@ class TestPowerMonitoringSensors:
         assert GoveeVoltageSensor(coord, device).native_value == 120.27
         assert GoveeCurrentSensor(coord, device).native_value == 0.01
         assert GoveePowerSensor(coord, device).native_value == 0.82
-        assert GoveeEnergySensor(coord, device).native_value == 0.0033
+        # Energy goes through the sensor's reset tracking, see test_energy_counter.py
+        state.on_time = 17082
+        state.uptime = 17000
+        energy = GoveeEnergySensor(coord, device)
+        energy.async_write_ha_state = MagicMock()
+        energy._handle_coordinator_update()
+        assert energy.native_value == 0.0033
         assert GoveePowerFactorSensor(coord, device).native_value == 49
 
     def test_readings_keep_the_precision_the_device_reports(self):
@@ -360,3 +380,58 @@ class TestSensorSetupRegistersPowerMonitoring:
             GoveePowerFactorSensor,
         ):
             assert not any(isinstance(e, cls) for e in added)
+
+
+class TestStatusQueriesEveryMinute:
+    """H5086 readings only arrive in answer to a status query, so the plugs
+    are queried every minute, while the other devices keep the configured
+    interval."""
+
+    def _coord(self, devices=()):
+        import custom_components.govee.coordinator as coord_mod
+
+        config_entry = MagicMock()
+        config_entry.entry_id = "test_entry"
+        config_entry.options = {}
+        coord = coord_mod.GoveeCoordinator(
+            hass=MagicMock(),
+            config_entry=config_entry,
+            api_client=MagicMock(),
+            iot_credentials=MagicMock(token="tok"),
+            poll_interval=60,
+        )
+        coord._devices = {device.device_id: device for device in devices}
+        coord._device_topics = {device.device_id: f"GD/{device.device_id}" for device in devices}
+        return coord
+
+    def test_tick(self):
+        assert self._coord(devices=[_plain_outlet()])._status_poll_tick == 300
+        assert self._coord(devices=[_h5086(), _plain_outlet()])._status_poll_tick == 60
+
+    @pytest.mark.asyncio
+    async def test_other_devices_keep_the_configured_interval(self, monkeypatch):
+        import custom_components.govee.coordinator as coord_mod
+
+        plug, other = _h5086(), _plain_outlet()
+        coord = self._coord(devices=[plug, other])
+        client = MagicMock(connected=True)
+        client.async_publish_status_query = AsyncMock(return_value=True)
+        coord._mqtt_client = client
+        delays = []
+        monkeypatch.setattr(coord_mod, "async_call_later", lambda hass, delay, cb: delays.append(delay) or MagicMock())
+        monkeypatch.setattr(coord_mod.asyncio, "sleep", AsyncMock())
+        clock = [1000.0]
+        monkeypatch.setattr(coord_mod.time, "monotonic", lambda: clock[0])
+
+        queried = []
+        for _ in range(6):
+            client.async_publish_status_query.reset_mock()
+            await coord._status_poll_callback()
+            queried.append([call.args[0] for call in client.async_publish_status_query.await_args_list])
+            # The timer may fire a little early
+            clock[0] += 59
+
+        both = [f"GD/{plug.device_id}", f"GD/{other.device_id}"]
+        plug_only = [f"GD/{plug.device_id}"]
+        assert queried == [both, plug_only, plug_only, plug_only, plug_only, both]
+        assert delays == [60] * 6

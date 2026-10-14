@@ -115,6 +115,7 @@ from .const import (
     MQTT_STATUS_QUERY_QUARANTINE_STRIKES,
     MQTT_STATUS_QUERY_SPACING,
     OPTIMISTIC_GRACE_CAP_SECONDS,
+    POWER_MONITORING_STATUS_INTERVAL,
     PTREAL_DREAMVIEW_SKUS,
     PTREAL_MAIN_PANEL_BIT,
     PTREAL_SEGMENT_SKUS,
@@ -296,6 +297,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
     # coordinators that skip __init__ working.
     _budget_pacing_announced = False
     _header_deferred = False
+    # Monotonic time from which the status timer's next tick queries every
+    # device, not just the power-monitoring ones (see _status_poll_callback).
+    _next_full_status_sweep = 0.0
 
     def __init__(
         self,
@@ -3150,6 +3154,17 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         return interval
 
     @property
+    def _status_poll_tick(self) -> int:
+        """Seconds between two ticks of the status timer.
+
+        POWER_MONITORING_STATUS_INTERVAL if there is a power-monitoring
+        outlet to query, else the configured interval.
+        """
+        if any(device.supports_power_monitoring for device in self._devices.values()):
+            return POWER_MONITORING_STATUS_INTERVAL
+        return self._mqtt_status_poll_interval
+
+    @property
     def _mqtt_status_poll_enabled(self) -> bool:
         """False when the user set the re-query interval to 0 (off)."""
         return self._mqtt_status_poll_interval != MQTT_STATUS_POLL_OFF
@@ -3207,16 +3222,21 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             self._status_poll_unsub = None
         if not self._mqtt_status_poll_enabled:
             return
-        self._status_poll_unsub = async_call_later(
-            self.hass, self._mqtt_status_poll_interval, self._status_poll_callback
-        )
+        self._status_poll_unsub = async_call_later(self.hass, self._status_poll_tick, self._status_poll_callback)
 
     async def _status_poll_callback(self, _now: Any = None) -> None:
-        """Periodic callback: re-query every eligible device, then re-arm."""
-        await self._poll_mqtt_status()
+        """Periodic callback: re-query the devices that are due, then re-arm.
+
+        Every device once per configured interval; power-monitoring outlets
+        on every tick in between.
+        """
+        if time.monotonic() >= self._next_full_status_sweep:
+            await self._poll_mqtt_status()
+        else:
+            await self._poll_mqtt_status(power_monitoring_only=True)
         self._schedule_status_poll()
 
-    async def _poll_mqtt_status(self) -> None:
+    async def _poll_mqtt_status(self, power_monitoring_only: bool = False) -> None:
         """Publish a status query to every device's own MQTT topic.
 
         See ``GoveeAwsIotClient.async_publish_status_query`` for why this
@@ -3231,7 +3251,8 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         on every reconnect (issue #195). They are fire-and-forget (QoS 0), so
         the loop never waits on a broker acknowledgement. The sweep stops as
         soon as the session is gone: the reconnect runs its own. A no-op when
-        the option is 0 (off) or another sweep is still in progress.
+        the option is 0 (off) or another sweep is still in progress. With
+        ``power_monitoring_only``, only power-monitoring outlets are queried.
         """
         if not self._mqtt_status_poll_enabled:
             return
@@ -3243,8 +3264,17 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             return
 
         self._status_sweep_running = True
+        targets = self._mqtt_status_poll_targets
+        if power_monitoring_only:
+            targets = [device_id for device_id in targets if self._devices[device_id].supports_power_monitoring]
+        else:
+            # Half a tick early, so that timer jitter doesn't push the next
+            # full sweep out by a whole tick
+            self._next_full_status_sweep = (
+                time.monotonic() + self._mqtt_status_poll_interval - self._status_poll_tick / 2
+            )
         try:
-            for device_id in self._mqtt_status_poll_targets:
+            for device_id in targets:
                 # mypy narrowed ``connected`` to True at the guard above and
                 # does not see the awaits in between invalidating that.
                 if not client.connected:
@@ -3490,7 +3520,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # Smart outlets (H5086) carry live voltage/current/power/energy the
         # same way — no capability exists for any of it (issue #200).
         if device is not None and device.supports_power_monitoring:
-            state.update_power_monitoring_from_frames(self._op_frames_from(state_data))
+            state.update_power_monitoring_from_frames(self._op_frames_from(state_data), state_data.get("sta"))
         # AQI monitors (H5106) carry live PM2.5 and a fresher temp/humidity
         # pair the same way — no Developer API field for PM2.5 at all
         # (issue #200).

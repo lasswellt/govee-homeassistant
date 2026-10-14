@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from collections.abc import Iterable
 from typing import Any, Protocol
 
+from .energy_counter import answers_other_client, uptime_from_sta
+
 # Candidate keys a thermometer/hygrometer reading may hide behind. The Govee
 # state shape varies by SKU and transport: REST returns either a plain number
 # under ``value`` or a STRUCT; AWS IoT pushes use flat keys whose naming is not
@@ -299,6 +301,8 @@ class GoveeDeviceState:
     power_draw: float | None = None  # Watts
     energy_total: float | None = None  # kWh used today; the device resets it at midnight
     power_factor: int | None = None  # Percent, 0-100
+    on_time: int | None = None  # Seconds the outlet was on today; resets with energy_total
+    uptime: int | None = None  # Seconds since the plug booted, from the push's ``sta``
 
     # Standalone water-leak detector trip (H5054, issue #62). True when water
     # is detected. Arrives via the bodyAppearedEvent event capability — the
@@ -1051,7 +1055,7 @@ class GoveeDeviceState:
                 return True
         return False
 
-    def update_power_monitoring_from_frames(self, frames: Iterable[bytes]) -> bool:
+    def update_power_monitoring_from_frames(self, frames: Iterable[bytes], sta: Any = None) -> bool:
         """Apply live power-monitoring readings from a smart outlet's (H5086)
         AWS IoT ``aa 19`` status frame.
 
@@ -1077,14 +1081,25 @@ class GoveeDeviceState:
         thermometer's convention (byte 19 was ``0x00`` in both captures), so
         none is checked here.
 
+        The plug's uptime comes along in the push's ``sta`` field, which
+        lets the energy sensor tell a reboot from a reset (see
+        :mod:`.energy_counter`). Replies to another client's status query
+        are ignored, as they can carry a bogus energy counter; our next
+        query gets the real readings.
+
         Args:
             frames: Decoded (not base64) frames from ``op.command``.
+            sta: The push's ``sta`` field.
 
         Returns:
             True if the frame was recognised.
         """
+        if answers_other_client(sta):
+            return False
         for raw in frames:
             if len(raw) >= 16 and raw[0] == 0xAA and raw[1] == 0x19:
+                self.on_time = int.from_bytes(raw[2:5], "big")
+                self.uptime = uptime_from_sta(sta)
                 self.energy_total = round(int.from_bytes(raw[5:8], "big") / 10000.0, 4)
                 self.voltage = round(int.from_bytes(raw[8:10], "big") / 100.0, 2)
                 self.current = round(int.from_bytes(raw[10:12], "big") / 100.0, 2)

@@ -255,6 +255,11 @@ DEFAULT_PROBE_POLL_INTERVAL: Final = 30  # seconds
 # is currently on screen), so a lower default would multiply request volume
 # with device count. 5 minutes keeps most devices fresh without that.
 DEFAULT_MQTT_STATUS_INTERVAL: Final = 300  # seconds (5 minutes)
+# Power-monitoring outlets (H5086) only send their readings in answer to a
+# status query, and their energy counter resets at midnight: whatever they
+# used since the last reading before then is lost. So they are queried at the
+# app's own cadence, whatever the interval for the other devices (issue #200).
+POWER_MONITORING_STATUS_INTERVAL: Final = 60  # seconds
 
 # Bounds for the configurable water-detector poll interval (seconds). The lower
 # bound keeps the unverified account-API rate limit at arm's length; the upper
