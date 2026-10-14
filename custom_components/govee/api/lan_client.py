@@ -47,6 +47,9 @@ from .lan import (
     _build_socket,
     _drop_group,
     _join_group,
+    _ScanProtocol,
+    _send_scan,
+    _send_targets,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -90,7 +93,7 @@ def _coerce_int(value: Any) -> int | None:
         return None
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
@@ -100,7 +103,7 @@ def _parse_color(value: Any) -> RGBColor | None:
         return None
     try:
         return RGBColor.from_dict(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
@@ -313,13 +316,17 @@ class _RealtimeProtocol(asyncio.DatagramProtocol):
     def __init__(self, on_datagram: Callable[[str, bytes], None]) -> None:
         """Store the callback invoked for every inbound datagram."""
         self._on_datagram = on_datagram
+        # The most recent socket error. asyncio's datagram ``sendto`` never
+        # raises OSError; it reports it here instead, usually before returning.
+        self.last_error: Exception | None = None
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         """Forward the raw datagram to the callback keyed by its source IP."""
         self._on_datagram(addr[0], data)
 
-    def error_received(self, exc: Exception) -> None:  # pragma: no cover - rare
-        """Log a transient socket error; the persistent socket stays open."""
+    def error_received(self, exc: Exception) -> None:
+        """Record and log a transient socket error; the socket stays open."""
+        self.last_error = exc
         _LOGGER.debug("LAN realtime socket error: %s", exc)
 
 
@@ -413,11 +420,14 @@ class GoveeLanClient:
         self._send_sock: socket.socket | None = None
         self._recv_transport: asyncio.DatagramTransport | None = None
         self._send_transport: asyncio.DatagramTransport | None = None
+        self._send_protocol: _RealtimeProtocol | None = None
         self._joined: list[str] = []
         # Solicited reads in flight, keyed by queried source IP. A list per IP
         # tolerates a batch read and a one-off read overlapping on the same IP;
         # both collectors receive the reply. Empty when no read is outstanding.
         self._pending_reads: dict[str, list[_ReadCollector]] = {}
+        # Collects scan replies while :meth:`async_scan` is running.
+        self._scan_collector: _ScanProtocol | None = None
 
     @property
     def available(self) -> bool:
@@ -474,16 +484,20 @@ class GoveeLanClient:
 
         joined = _join_group(recv_sock, interfaces)
 
+        recv_transport: asyncio.DatagramTransport | None = None
         try:
             recv_transport, _ = await loop.create_datagram_endpoint(
                 lambda: _RealtimeProtocol(self._handle_datagram), sock=recv_sock
             )
-            send_transport, _ = await loop.create_datagram_endpoint(
+            send_transport, send_protocol = await loop.create_datagram_endpoint(
                 lambda: _RealtimeProtocol(self._handle_datagram), sock=send_sock
             )
         except OSError as err:
             _LOGGER.warning("Govee LAN transport disabled: could not attach datagram endpoint: %s", err)
             _drop_group(recv_sock, joined)
+            if recv_transport is not None:
+                # Unregister it from the loop; closing it also closes recv_sock.
+                recv_transport.close()
             recv_sock.close()
             send_sock.close()
             return
@@ -492,6 +506,7 @@ class GoveeLanClient:
         self._send_sock = send_sock
         self._recv_transport = recv_transport
         self._send_transport = send_transport
+        self._send_protocol = send_protocol if isinstance(send_protocol, _RealtimeProtocol) else None
         self._joined = joined
         self._available = True
         _LOGGER.debug(
@@ -520,6 +535,7 @@ class GoveeLanClient:
         if self._send_transport is not None:
             self._send_transport.close()
             self._send_transport = None
+        self._send_protocol = None
 
         self._recv_sock = None
         self._send_sock = None
@@ -548,10 +564,14 @@ class GoveeLanClient:
             src_ip: The datagram's source IP address.
             raw: The raw datagram bytes.
         """
+        if self._scan_collector is not None:
+            # A rescan is running on this socket; its collector keeps only
+            # well-formed scan replies and ignores everything else.
+            self._scan_collector.datagram_received(raw, (src_ip, LAN_RESPONSE_PORT))
         try:
             payload = json.loads(raw.decode("utf-8", errors="replace"))
-        except ValueError:
-            return  # undecodable bytes — not a devStatus, ignore
+        except (ValueError, RecursionError):
+            return  # undecodable or absurdly nested bytes — not a devStatus, ignore
         status = parse_dev_status(payload)
         if status is None:
             return  # scan/status/garbage/partial — never fabricate state
@@ -601,17 +621,66 @@ class GoveeLanClient:
         Returns:
             ``True`` iff the datagram was handed to the socket without an
             ``OSError``; ``False`` (logged at debug) when the client is
-            unavailable or ``sendto`` raised ``OSError``.
+            unavailable or the send failed, whether ``sendto`` raised or (as
+            asyncio does) reported it through ``error_received``.
         """
         if not self._available or self._send_transport is None:
             return False
         message = json.dumps({"msg": {"cmd": cmd, "data": data}}).encode("utf-8")
+        protocol = self._send_protocol
+        if protocol is not None:
+            protocol.last_error = None
         try:
             self._send_transport.sendto(message, (ip, LAN_COMMAND_PORT))
         except OSError as err:
             _LOGGER.debug("LAN send %s to %s:%d failed: %s", cmd, ip, LAN_COMMAND_PORT, err)
             return False
+        # asyncio reports an immediate send failure through error_received
+        # instead of raising, so check what it recorded during this send.
+        if protocol is not None and protocol.last_error is not None:
+            _LOGGER.debug("LAN send %s to %s:%d failed: %s", cmd, ip, LAN_COMMAND_PORT, protocol.last_error)
+            return False
         return True
+
+    async def async_scan(
+        self,
+        *,
+        interface_ips: list[str],
+        extra_targets: list[str],
+        broadcast_targets: list[str],
+        timeout: float = 2.0,
+    ) -> list[dict[str, Any]]:
+        """Run a discovery scan through this client's own :4002 socket.
+
+        Same request, targets and result shape as
+        :func:`~.lan.async_scan_lan_devices`, but without binding a second
+        :4002 socket beside the persistent one. With two of our sockets in the
+        same ``SO_REUSEPORT`` group, Linux hashes each unicast reply to one of
+        them, so cross-VLAN scan replies could land on the persistent socket
+        and be dropped, and devStatus replies could land on the scan socket.
+
+        An overlapping call while a scan is running returns an empty list.
+
+        Raises:
+            OSError: The client is not running (callers treat it as no data).
+        """
+        if not self._available or self._recv_sock is None or self._recv_transport is None:
+            raise OSError("Govee LAN client is not running")
+        if self._scan_collector is not None:
+            # One scan at a time: a second would replace the running scan's
+            # collector and that scan would lose its later replies.
+            _LOGGER.debug("Govee LAN scan already running; skipping overlapping scan")
+            return []
+        collector = _ScanProtocol()
+        self._scan_collector = collector
+        try:
+            _send_scan(self._recv_sock, self._recv_transport, list(interface_ips))
+            _send_targets(self._recv_transport, list(extra_targets))
+            _send_targets(self._recv_transport, list(broadcast_targets))
+            await asyncio.sleep(timeout)
+        finally:
+            self._scan_collector = None
+        return list(collector.responses.values())
 
     async def async_read_one(self, ip: str, timeout: float = LAN_WRITE_CONFIRM_TIMEOUT) -> LanDevStatus | None:
         """Send one devStatus query to ``ip`` and await a parsed reply from it.

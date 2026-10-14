@@ -393,6 +393,11 @@ LAN_WRITE_CONFIRM_TIMEOUT: Final = 0.5
 # MACs to device_ids. Re-promotes demoted devices and picks up new ones / IP
 # reassignments. Mirrors DEVICE_REDISCOVERY_INTERVAL throttling.
 LAN_RESCAN_INTERVAL: Final = 300
+# While setup found no LAN device, the poll retries LAN setup starting at
+# LAN_RESCAN_INTERVAL and doubling after each empty attempt up to this cap, so
+# cloud-only installs don't scan every five minutes forever. An options change
+# reloads the entry, which starts the backoff over.
+LAN_SETUP_RETRY_MAX_INTERVAL: Final = 3600
 # Consecutive solicited-read misses before a device is demoted out of the LAN
 # device map so both reads and writes fall back to MQTT/REST.
 LAN_READ_MISS_DEMOTE_THRESHOLD: Final = 3
