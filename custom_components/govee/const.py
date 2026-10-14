@@ -467,9 +467,18 @@ GOVEE_BLE_MANUFACTURER_IDS: Final = (0x8803,)  # 34819
 # Options key holding the per-device segment mode map ({device_id: mode}).
 CONF_SEGMENT_MODE_BY_DEVICE: Final = "segment_mode_by_device"
 
-# Identifier of the integration-level "Govee Integration" device that carries
-# the hub-wide diagnostics (rate limit, MQTT status).
-HUB_DEVICE_IDENTIFIER: Final = "hub"
+# The integration-level "Govee Integration" device that carries the hub-wide
+# diagnostics (rate limit, MQTT status) is identified per config entry, so two
+# accounts get two devices. Older installs used one shared identifier for every
+# entry; setup migrates that device to the per-entry one.
+LEGACY_HUB_DEVICE_IDENTIFIER: Final = "hub"
+HUB_DEVICE_IDENTIFIER_SUFFIX: Final = "_hub"
+
+
+def hub_device_identifier(entry_id: str) -> str:
+    """Identifier of the diagnostics device that belongs to ``entry_id``."""
+    return f"{entry_id}{HUB_DEVICE_IDENTIFIER_SUFFIX}"
+
 
 # Segment mode options
 SEGMENT_MODE_DISABLED: Final = "disabled"

@@ -21,7 +21,7 @@ from typing import Any
 # monkeypatch). It is the same shared module object the hoisted helper calls, so
 # patches applied here still take effect there.
 from homeassistant.components import network  # noqa: F401
-from homeassistant.components.diagnostics import async_redact_data
+from homeassistant.components.diagnostics import REDACTED, async_redact_data
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntry
@@ -39,6 +39,7 @@ from .const import (
     CONF_EMAIL,
     CONF_LAN_TARGETS,
     CONF_PASSWORD,
+    CONF_SEGMENT_MODE_BY_DEVICE,
     DOMAIN,
 )
 from .coordinator import GoveeCoordinator
@@ -210,7 +211,8 @@ def _device_diag(
     """
     return {
         "sku": device.sku,
-        "name": device.name,
+        # The user's chosen name, redacted like "deviceName" in the raw payloads.
+        "name": REDACTED,
         "device_type": device.device_type,
         "is_group": device.is_group,
         "capabilities": [
@@ -246,10 +248,15 @@ def _leak_diag(coordinator: GoveeCoordinator) -> dict[str, Any]:
     for device_id, sensor in coordinator.leak_sensors.items():
         state = states.get(device_id)
         out[device_id] = {
-            "sensor": dataclasses.asdict(sensor),
+            "sensor": _leak_sensor_diag(sensor),
             "state": dataclasses.asdict(state) if state else None,
         }
     return out
+
+
+def _leak_sensor_diag(sensor: Any) -> dict[str, Any]:
+    """Leak sensor record with its user-assigned name redacted."""
+    return {**dataclasses.asdict(sensor), "name": REDACTED}
 
 
 def _runtime_diag(coordinator: GoveeCoordinator) -> dict[str, Any]:
@@ -493,6 +500,10 @@ def _redact(data: dict[str, Any]) -> dict[str, Any]:
     for key in ("devices", "leak_sensors"):
         if isinstance(redacted.get(key), dict):
             redacted[key] = _anonymize_device_keys(redacted[key])
+    # The per-device segment-mode option is keyed by device id too.
+    options = redacted.get("config_entry", {}).get("options")
+    if isinstance(options, dict) and isinstance(options.get(CONF_SEGMENT_MODE_BY_DEVICE), dict):
+        options[CONF_SEGMENT_MODE_BY_DEVICE] = _anonymize_device_keys(options[CONF_SEGMENT_MODE_BY_DEVICE])
     # The LAN reality probe captures unknown keys, so additionally scrub the whole
     # lan_discovery subtree by value shape (catches a MAC/IP under any key name).
     if isinstance(redacted.get("lan_discovery"), dict):
@@ -575,7 +586,7 @@ async def async_get_device_diagnostics(
             if leak_id == govee_id or sensor.hub_device_id == govee_id:
                 state = coordinator.leak_states.get(leak_id)
                 leak_info[leak_id] = {
-                    "sensor": dataclasses.asdict(sensor),
+                    "sensor": _leak_sensor_diag(sensor),
                     "state": dataclasses.asdict(state) if state else None,
                 }
 

@@ -4550,6 +4550,57 @@ class TestPerDeviceFetchIsolation:
         assert result[self.DEVICE_A].source == "api"
         assert result[self.DEVICE_B].source == "api"
 
+    @pytest.mark.asyncio
+    async def test_bounded_fetch_commits_a_first_state(self, monkeypatch):
+        """A device with no held state yet gets the polled one, with no change stamp."""
+        coord, _ = self._coord([self.DEVICE_A])
+        del coord._states[self.DEVICE_A]
+        fresh = GoveeDeviceState.create_empty(self.DEVICE_A)
+
+        async def _ok(device_id, device):
+            return fresh
+
+        monkeypatch.setattr(coord, "_fetch_device_state", _ok)
+
+        await coord._fetch_device_state_bounded(self.DEVICE_A, coord._devices[self.DEVICE_A])
+
+        assert coord._states[self.DEVICE_A] is fresh
+        assert self.DEVICE_A not in coord._state_changed_at
+
+    @pytest.mark.asyncio
+    async def test_push_landing_while_a_slower_device_is_read_is_kept(self, monkeypatch):
+        """A's poll answers first; a push for A during B's read must survive the merge."""
+        coord, _ = self._coord([self.DEVICE_A, self.DEVICE_B])
+        self._quieten(coord, monkeypatch)
+        a_read = asyncio.Event()
+        release_b = asyncio.Event()
+
+        async def _fetch(device_id, device):
+            fresh = GoveeDeviceState.create_empty(device_id)
+            fresh.power_state = False
+            fresh.source = "api"
+            if device_id == self.DEVICE_B:
+                await release_b.wait()
+            else:
+                a_read.set()
+            return fresh
+
+        monkeypatch.setattr(coord, "_fetch_device_state", _fetch)
+
+        poll = asyncio.ensure_future(coord._async_update_data())
+        await a_read.wait()
+        await asyncio.sleep(0)
+        # An MQTT push (or an optimistic command update) mutates the held object in place.
+        held = coord._states[self.DEVICE_A]
+        held.power_state = True
+        held.source = "mqtt"
+        release_b.set()
+        result = await poll
+
+        assert result[self.DEVICE_A].power_state is True
+        assert result[self.DEVICE_A].source == "mqtt"
+        assert result[self.DEVICE_B].source == "api"
+
 
 class _FakeRegistryEntry:
     """Minimal stand-in for an entity registry entry."""

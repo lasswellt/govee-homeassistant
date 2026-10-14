@@ -586,3 +586,69 @@ async def test_options_flow_walks_every_selected_device(hass: HomeAssistant, moc
         mock_rgbic_device.device_id: SEGMENT_MODE_GROUPED,
         second.device_id: SEGMENT_MODE_INDIVIDUAL,
     }
+
+
+def _entry_with_saved_modes(hass: HomeAssistant, saved: dict[str, str]) -> MockConfigEntry:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_API_KEY: API_KEY},
+        options={CONF_SEGMENT_MODE_BY_DEVICE: saved},
+        version=2,
+    )
+    entry.add_to_hass(hass)
+    return entry
+
+
+async def test_options_flow_on_unloaded_entry_keeps_saved_segment_modes(hass: HomeAssistant) -> None:
+    """Saving options while the entry has no device list must not drop the per-device modes."""
+    saved = {"AA:BB:CC:DD:EE:FF:00:01": SEGMENT_MODE_GROUPED}
+    entry = _entry_with_saved_modes(hass, saved)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {CONF_POLL_INTERVAL: 90})
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_POLL_INTERVAL] == 90
+    assert entry.options[CONF_SEGMENT_MODE_BY_DEVICE] == saved
+
+
+async def test_options_flow_no_device_selected_keeps_saved_segment_modes(
+    hass: HomeAssistant, mock_rgbic_device
+) -> None:
+    """Unticking every device leaves the modes already saved for them untouched."""
+    saved = {mock_rgbic_device.device_id: SEGMENT_MODE_GROUPED}
+    entry = _entry_with_saved_modes(hass, saved)
+    entry.runtime_data = SimpleNamespace(devices={mock_rgbic_device.device_id: mock_rgbic_device})
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {CONF_POLL_INTERVAL: 90})
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"devices": []})
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_SEGMENT_MODE_BY_DEVICE] == saved
+
+
+async def test_options_flow_merges_edited_device_into_saved_segment_modes(
+    hass: HomeAssistant, mock_rgbic_device
+) -> None:
+    """Editing one device keeps the saved mode of a device that was not ticked."""
+    second = replace(mock_rgbic_device, device_id="AA:BB:CC:DD:EE:FF:00:99", name="Second strip")
+    entry = _entry_with_saved_modes(hass, {second.device_id: SEGMENT_MODE_GROUPED})
+    entry.runtime_data = SimpleNamespace(
+        devices={mock_rgbic_device.device_id: mock_rgbic_device, second.device_id: second}
+    )
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {CONF_POLL_INTERVAL: 60})
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"devices": [mock_rgbic_device.device_id]}
+    )
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"segment_mode": SEGMENT_MODE_INDIVIDUAL}
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options[CONF_SEGMENT_MODE_BY_DEVICE] == {
+        second.device_id: SEGMENT_MODE_GROUPED,
+        mock_rgbic_device.device_id: SEGMENT_MODE_INDIVIDUAL,
+    }

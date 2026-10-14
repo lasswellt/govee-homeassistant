@@ -1015,3 +1015,58 @@ async def test_mqtt_inbound_counters_are_in_the_mqtt_block() -> None:
     assert mqtt_info["inbound_messages"] == 5
     assert mqtt_info["last_inbound_at"] == "2026-09-26T19:11:00+00:00"
     assert mqtt_info["last_device_message_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_segment_mode_option_keys_are_anonymized() -> None:
+    """The per-device segment-mode option is keyed by device MAC; it must not leak."""
+    mac_id = "03:9C:DC:06:75:4B:10:7C"
+    entry = _entry_stub(_coordinator_stub())
+    entry.options = {"segment_mode_by_device": {mac_id: "grouped", "11825917": "disabled"}}
+
+    out = await async_get_config_entry_diagnostics(MagicMock(), entry)
+
+    modes = out["config_entry"]["options"]["segment_mode_by_device"]
+    assert modes == {_anonymize_device_id(mac_id): "grouped", "11825917": "disabled"}
+    assert mac_id not in json.dumps(out, default=str)
+    # The saved options themselves are untouched.
+    assert entry.options["segment_mode_by_device"][mac_id] == "grouped"
+
+
+@pytest.mark.asyncio
+async def test_user_chosen_names_are_redacted_everywhere() -> None:
+    """Device, registry and leak-sensor names are redacted like the raw deviceName."""
+    mac_id = "03:9C:DC:06:75:4B:10:7C"
+    sensor_mac = "01:32:7A:C4:06:03:0D:0C"
+    device = MagicMock(
+        sku="H6601",
+        device_type="devices.types.light",
+        is_group=False,
+        capabilities=[],
+    )
+    device.name = "Living Room Lamp"
+    sensor = GoveeLeakSensor(
+        device_id=sensor_mac, name="Kitchen Sink Sensor", sku="H5058", hub_device_id=mac_id, sno=1
+    )
+    coordinator = _coordinator_stub(devices={mac_id: device}, leak_sensors={sensor_mac: sensor})
+
+    entry_out = await async_get_config_entry_diagnostics(MagicMock(), _entry_stub(coordinator))
+
+    device_entry = MagicMock()
+    device_entry.id = "ha_dev_1"
+    device_entry.name = "Living Room Lamp"
+    device_entry.name_by_user = "Reading Lamp"
+    device_entry.identifiers = {("govee", mac_id)}
+    device_entry.model = "H6601"
+    device_entry.sw_version = None
+    device_entry.hw_version = None
+    device_out = await async_get_device_diagnostics(MagicMock(), _entry_stub(coordinator), device_entry)
+
+    for out in (entry_out, device_out):
+        rendered = json.dumps(out, default=str)
+        assert "Living Room Lamp" not in rendered
+        assert "Reading Lamp" not in rendered
+        assert "Kitchen Sink Sensor" not in rendered
+    (leak,) = entry_out["leak_sensors"].values()
+    assert leak["sensor"]["name"] == "**REDACTED**"
+    assert leak["sensor"]["sku"] == "H5058"

@@ -21,18 +21,20 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.govee import (
     _async_cleanup_orphaned_entities,
+    _async_migrate_hub_device,
     async_remove_config_entry_device,
 )
 from custom_components.govee.const import (
     CONF_API_KEY,
     CONF_SEGMENT_MODE_BY_DEVICE,
     DOMAIN,
-    HUB_DEVICE_IDENTIFIER,
+    LEGACY_HUB_DEVICE_IDENTIFIER,
     SEGMENT_MODE_BOTH,
     SEGMENT_MODE_GROUPED,
     SUFFIX_DIY_STYLE_SELECT,
     SUFFIX_GROUPED_SEGMENT,
     SUFFIX_SEGMENT,
+    hub_device_identifier,
 )
 
 API_KEY = "12345678-1234-1234-1234-123456789abc"
@@ -173,9 +175,14 @@ def _seed(registry: er.EntityRegistry, entry: MockConfigEntry, *specs: tuple[str
     }
 
 
-def _coordinator(device_ids, *, leak_ids=(), hub_ids=(), incomplete=False) -> SimpleNamespace:
+def _coordinator(
+    device_ids, *, leak_ids=(), hub_ids=(), incomplete=False, segment_count=15, segment_source="override"
+) -> SimpleNamespace:
     return SimpleNamespace(
-        devices={did: object() for did in device_ids},
+        devices={
+            did: SimpleNamespace(segment_count=segment_count, segment_count_resolution={"source": segment_source})
+            for did in device_ids
+        },
         leak_sensors={lid: object() for lid in leak_ids},
         hub_device_ids=set(hub_ids),
         discovery_incomplete=incomplete,
@@ -267,6 +274,70 @@ async def test_cleanup_applies_feature_toggles(hass: HomeAssistant, mock_light_d
     assert registry.async_get(ids[f"{device_id}{SUFFIX_GROUPED_SEGMENT}"]) is not None
 
 
+@pytest.mark.parametrize("segment_source", ["override", "size_max"])
+async def test_cleanup_removes_segments_beyond_the_segment_count(
+    hass: HomeAssistant, mock_light_device, segment_source
+) -> None:
+    """Segment entities left over from a higher count (before a SKU override) are removed."""
+    device_id = mock_light_device.device_id
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_API_KEY: API_KEY}, options={})
+    entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    ids = _seed(
+        registry,
+        entry,
+        *(("light", f"{device_id}{SUFFIX_SEGMENT}{index}") for index in range(5)),
+        ("binary_sensor", f"{LEAK_ID}_leak"),
+        ("binary_sensor", f"{HUB_ID}_hub_online"),
+    )
+
+    await _async_cleanup_orphaned_entities(
+        hass,
+        entry,
+        _coordinator(
+            [device_id], leak_ids=[LEAK_ID], hub_ids=[HUB_ID], segment_count=3, segment_source=segment_source
+        ),
+    )
+
+    survived = {uid for uid, eid in ids.items() if registry.async_get(eid) is not None}
+    assert survived == {
+        f"{device_id}{SUFFIX_SEGMENT}0",
+        f"{device_id}{SUFFIX_SEGMENT}1",
+        f"{device_id}{SUFFIX_SEGMENT}2",
+        f"{LEAK_ID}_leak",
+        f"{HUB_ID}_hub_online",
+    }
+
+
+@pytest.mark.parametrize(
+    ("segment_count", "segment_source", "incomplete"),
+    [
+        (0, "override", False),  # a zero count is never trusted
+        (3, "api", False),  # a parser-only count may be a bad API response
+        (3, None, False),  # no resolution recorded at all
+        (3, "override", True),  # a startup discovery step failed
+    ],
+)
+async def test_cleanup_keeps_segments_when_the_count_is_not_trusted(
+    hass: HomeAssistant, mock_light_device, segment_count, segment_source, incomplete
+) -> None:
+    """High-index segment entities stay unless the lower count came from an override or clamp."""
+    device_id = mock_light_device.device_id
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_API_KEY: API_KEY}, options={})
+    entry.add_to_hass(hass)
+    registry = er.async_get(hass)
+    ids = _seed(registry, entry, *(("light", f"{device_id}{SUFFIX_SEGMENT}{index}") for index in range(5)))
+    coordinator = _coordinator(
+        [device_id], segment_count=segment_count, segment_source=segment_source, incomplete=incomplete
+    )
+    if segment_source is None:
+        coordinator.devices[device_id].segment_count_resolution = None
+
+    await _async_cleanup_orphaned_entities(hass, entry, coordinator)
+
+    assert all(registry.async_get(eid) is not None for eid in ids.values())
+
+
 async def test_cleanup_keeps_owned_devices_without_entities(hass: HomeAssistant, mock_light_device) -> None:
     """A hub registered before its first entity exists is not removed."""
     entry = MockConfigEntry(domain=DOMAIN, data={CONF_API_KEY: API_KEY}, options={})
@@ -280,7 +351,7 @@ async def test_cleanup_keeps_owned_devices_without_entities(hass: HomeAssistant,
     )
     integration = device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
-        identifiers={(DOMAIN, HUB_DEVICE_IDENTIFIER)},
+        identifiers={(DOMAIN, hub_device_identifier(entry.entry_id))},
         name="Govee Integration",
     )
 
@@ -307,3 +378,141 @@ async def test_remove_config_entry_device(hass: HomeAssistant, mock_light_device
     assert await async_remove_config_entry_device(hass, entry, live) is False
     assert await async_remove_config_entry_device(hass, entry, hub) is False
     assert await async_remove_config_entry_device(hass, entry, stale) is True
+
+
+# --------------------------------------------------------------------------- #
+# Per-entry diagnostics device (migration off the shared "hub" identifier)
+# --------------------------------------------------------------------------- #
+
+
+def _legacy_hub(hass: HomeAssistant, *entries: MockConfigEntry) -> tuple[dr.DeviceEntry, dict[str, str]]:
+    """The old shared diagnostics device with each entry's rate-limit sensor on it."""
+    device_registry = dr.async_get(hass)
+    entity_registry = er.async_get(hass)
+    device = None
+    entity_ids = {}
+    for entry in entries:
+        device = device_registry.async_get_or_create(
+            config_entry_id=entry.entry_id,
+            identifiers={(DOMAIN, LEGACY_HUB_DEVICE_IDENTIFIER)},
+            name="Govee Integration",
+            manufacturer="Govee",
+            model="Cloud API",
+        )
+        entity_ids[entry.entry_id] = entity_registry.async_get_or_create(
+            "sensor", DOMAIN, f"{entry.entry_id}_rate_limit", config_entry=entry, device_id=device.id
+        ).entity_id
+    assert device is not None
+    return device, entity_ids
+
+
+def _add_entry(hass: HomeAssistant, key: str = API_KEY) -> MockConfigEntry:
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_API_KEY: key}, options={}, version=2)
+    entry.add_to_hass(hass)
+    return entry
+
+
+async def test_hub_device_migrates_in_place_for_a_single_entry(hass: HomeAssistant) -> None:
+    """One account: the same device is re-identified, keeping its id, area, name and entities."""
+    entry = _add_entry(hass)
+    legacy, entity_ids = _legacy_hub(hass, entry)
+    device_registry = dr.async_get(hass)
+    device_registry.async_update_device(legacy.id, area_id="living_room", name_by_user="Govee Cloud")
+
+    _async_migrate_hub_device(hass, entry)
+
+    device = device_registry.async_get(legacy.id)
+    assert device is not None
+    assert device.identifiers == {(DOMAIN, hub_device_identifier(entry.entry_id))}
+    assert device.area_id == "living_room"
+    assert device.name_by_user == "Govee Cloud"
+    entity = er.async_get(hass).async_get(entity_ids[entry.entry_id])
+    assert entity is not None
+    assert entity.device_id == legacy.id
+    assert device_registry.async_get_device(identifiers={(DOMAIN, LEGACY_HUB_DEVICE_IDENTIFIER)}) is None
+
+
+async def test_hub_device_splits_when_two_entries_share_it(hass: HomeAssistant) -> None:
+    """Two accounts: each ends with its own device and keeps its entity id."""
+    first = _add_entry(hass)
+    second = _add_entry(hass, "abcdefab-abcd-abcd-abcd-abcdefabcdef")
+    legacy, entity_ids = _legacy_hub(hass, first, second)
+    device_registry = dr.async_get(hass)
+    entity_registry = er.async_get(hass)
+    device_registry.async_update_device(legacy.id, area_id="living_room", name_by_user="Govee Cloud")
+
+    _async_migrate_hub_device(hass, first)
+
+    first_device = device_registry.async_get_device(identifiers={(DOMAIN, hub_device_identifier(first.entry_id))})
+    assert first_device is not None
+    assert first_device.id != legacy.id
+    assert first_device.config_entries == {first.entry_id}
+    # The user's area and rename follow the entry onto its own device.
+    assert first_device.area_id == "living_room"
+    assert first_device.name_by_user == "Govee Cloud"
+    first_entity = entity_registry.async_get(entity_ids[first.entry_id])
+    assert first_entity is not None
+    assert first_entity.device_id == first_device.id
+    shared = device_registry.async_get(legacy.id)
+    assert shared is not None
+    assert shared.config_entries == {second.entry_id}
+    second_entity = entity_registry.async_get(entity_ids[second.entry_id])
+    assert second_entity is not None
+    assert second_entity.device_id == legacy.id
+
+    # The last owner then takes the original device over in place.
+    _async_migrate_hub_device(hass, second)
+
+    second_device = device_registry.async_get(legacy.id)
+    assert second_device is not None
+    assert second_device.identifiers == {(DOMAIN, hub_device_identifier(second.entry_id))}
+    assert entity_registry.async_get(entity_ids[second.entry_id]) is not None
+
+
+async def test_hub_device_migration_reuses_an_existing_per_entry_device(hass: HomeAssistant) -> None:
+    """If the per-entry device already exists, the entities move to it and the entry leaves the old one."""
+    entry = _add_entry(hass)
+    legacy, entity_ids = _legacy_hub(hass, entry)
+    device_registry = dr.async_get(hass)
+    existing = device_registry.async_get_or_create(
+        config_entry_id=entry.entry_id, identifiers={(DOMAIN, hub_device_identifier(entry.entry_id))}
+    )
+
+    _async_migrate_hub_device(hass, entry)
+
+    entity = er.async_get(hass).async_get(entity_ids[entry.entry_id])
+    assert entity is not None
+    assert entity.device_id == existing.id
+    assert device_registry.async_get(legacy.id) is None
+
+
+async def test_hub_device_migration_is_a_no_op_without_the_legacy_device(hass: HomeAssistant) -> None:
+    entry = _add_entry(hass)
+    other = _add_entry(hass, "abcdefab-abcd-abcd-abcd-abcdefabcdef")
+    legacy, _ = _legacy_hub(hass, other)
+
+    _async_migrate_hub_device(hass, entry)
+    _async_migrate_hub_device(hass, _add_entry(hass, "00000000-0000-0000-0000-000000000000"))
+
+    device = dr.async_get(hass).async_get(legacy.id)
+    assert device is not None
+    assert device.identifiers == {(DOMAIN, LEGACY_HUB_DEVICE_IDENTIFIER)}
+
+
+async def test_setup_attaches_hub_sensors_to_a_per_entry_device(
+    hass: HomeAssistant, mock_light_device, mock_device_state
+) -> None:
+    """A real setup puts the rate-limit sensor on this entry's own diagnostics device."""
+    entry = await _setup_entry(hass, mock_light_device, mock_device_state)
+
+    entity_registry = er.async_get(hass)
+    entity_id = entity_registry.async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_rate_limit")
+    assert entity_id is not None
+    entity = entity_registry.async_get(entity_id)
+    assert entity is not None
+    device = dr.async_get(hass).async_get(entity.device_id)
+    assert device is not None
+    assert device.identifiers == {(DOMAIN, hub_device_identifier(entry.entry_id))}
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()

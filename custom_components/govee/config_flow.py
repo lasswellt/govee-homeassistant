@@ -764,6 +764,18 @@ class GoveeOptionsFlow(OptionsFlow):
             return set()
         return {device_id for device_id in overrides if device_id not in known}
 
+    def _options_with_segment_modes(self, data: dict[str, Any], edits: dict[str, str]) -> dict[str, Any]:
+        """Return ``data`` with the saved per-device segment modes plus ``edits``.
+
+        Options are replaced wholesale on save, so the stored map must be carried
+        over: a device not walked through in this run (unticked, or the entry is
+        not loaded and no device list exists) keeps the mode it already had.
+        """
+        modes = {**self.config_entry.options.get(CONF_SEGMENT_MODE_BY_DEVICE, {}), **edits}
+        if not modes:
+            return dict(data)
+        return {**data, CONF_SEGMENT_MODE_BY_DEVICE: modes}
+
     async def async_step_init(
         self,
         user_input: dict[str, Any] | None = None,
@@ -809,7 +821,7 @@ class GoveeOptionsFlow(OptionsFlow):
                     )
                     return await self.async_step_select_segment_devices()
                 _LOGGER.debug("No RGBIC devices found, saving options")
-                return self.async_create_entry(title="", data=user_input)
+                return self.async_create_entry(title="", data=self._options_with_segment_modes(user_input, {}))
 
         # On a validation error, re-show the form with the user's entries kept;
         # otherwise seed it from the saved options.
@@ -945,7 +957,9 @@ class GoveeOptionsFlow(OptionsFlow):
             else:
                 # No devices selected, save global options only
                 _LOGGER.debug("No devices selected, saving global options only")
-                return self.async_create_entry(title="", data=self._global_options)
+                return self.async_create_entry(
+                    title="", data=self._options_with_segment_modes(self._global_options, {})
+                )
 
         # Show device selector
         all_device_ids = list(rgbic_devices.keys())
@@ -978,10 +992,7 @@ class GoveeOptionsFlow(OptionsFlow):
                 return await self.async_step_configure_device_mode()
 
             # Done — build final data and save
-            new_data = {
-                **self._global_options,
-                CONF_SEGMENT_MODE_BY_DEVICE: self._device_modes,
-            }
+            new_data = self._options_with_segment_modes(self._global_options, self._device_modes)
             _LOGGER.debug("Options saved: %s", new_data)
             return self.async_create_entry(title="", data=new_data)
 
