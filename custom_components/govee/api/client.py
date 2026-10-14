@@ -9,8 +9,10 @@ import logging
 import time
 import uuid
 from collections import deque
+from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from email.utils import parsedate_to_datetime
+from typing import TYPE_CHECKING, Any, TypeGuard
 
 import aiohttp
 from aiohttp_retry import ExponentialRetry, RetryClient
@@ -55,6 +57,11 @@ RETRY_FACTOR = 2.0  # Exponential factor
 # Retryable server error status codes
 RETRY_STATUSES = {500, 502, 503, 504}
 
+# Control commands are sent exactly once. A timeout or 5xx does not mean the
+# command was not applied, and resending it spends the quota again and holds
+# the service call for up to three request timeouts.
+SINGLE_ATTEMPT = ExponentialRetry(attempts=1)
+
 # Per-request deadline. Home Assistant's shared session has no default
 # timeout, so without this a stalled connection would hold a service call for
 # aiohttp's default of five minutes.
@@ -62,6 +69,32 @@ REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=30)
 
 # Ring-buffer size for the control-command history kept for diagnostics.
 COMMAND_BUFFER_SIZE = 30
+
+
+def _is_count(value: Any) -> TypeGuard[int]:
+    """True for a plain non-negative int (bool is an int subclass, so excluded)."""
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _parse_retry_after(value: str | None) -> float | None:
+    """Seconds to wait from a ``Retry-After`` header, or None if unusable.
+
+    The header is either a number of seconds or an HTTP date; anything else,
+    or a date already past, gives None (the caller's default back-off).
+    """
+    if not value:
+        return None
+    try:
+        seconds = float(value)
+    except ValueError:
+        try:
+            when = parsedate_to_datetime(value)
+        except (TypeError, ValueError):
+            return None
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        seconds = (when - datetime.now(timezone.utc)).total_seconds()
+    return seconds if seconds > 0 else None
 
 
 class GoveeApiClient:
@@ -115,6 +148,9 @@ class GoveeApiClient:
         self._request_buckets: deque[list[int]] = deque()
         self._request_day: int = 0
         self._requests_today: int = 0
+        # Told of every counted request, so the owner can persist the counts
+        # (see export_request_counts).
+        self._request_listener: Callable[[], None] | None = None
 
         # Last raw API responses, retained for diagnostics (redacted at dump
         # time). Lets a diagnostics download include exactly what the device
@@ -227,6 +263,57 @@ class GoveeApiClient:
         while self._request_buckets and self._request_buckets[0][0] < cutoff:
             self._request_buckets.popleft()
 
+        if self._request_listener is not None:
+            self._request_listener()
+
+    def set_request_listener(self, listener: Callable[[], None] | None) -> None:
+        """Register a callback run after every counted request."""
+        self._request_listener = listener
+
+    def export_request_counts(self) -> dict[str, Any]:
+        """The request counters as JSON-friendly data, for persistence.
+
+        The client is rebuilt on every config-entry reload; without carrying
+        these across, budget pacing would see a fresh, unspent day each time.
+        """
+        return {
+            "day": self._request_day,
+            "today": self._requests_today,
+            "buckets": [list(bucket) for bucket in self._request_buckets],
+        }
+
+    def import_request_counts(self, data: Any) -> None:
+        """Add counts saved by :meth:`export_request_counts` to this client's.
+
+        Anything malformed, from an earlier UTC day, or older than the 24-hour
+        window is ignored, so a bad file can only ever under-count.
+        """
+        if not isinstance(data, dict):
+            return
+        now = time.time()
+        day = int(now // 86400)
+        cutoff = int(now // 3600) - (REQUEST_HISTORY_HOURS - 1)
+
+        saved_day = data.get("day")
+        saved_today = data.get("today")
+        if _is_count(saved_day) and _is_count(saved_today) and saved_day == day:
+            if self._request_day != day:
+                self._request_day = day
+                self._requests_today = 0
+            self._requests_today += saved_today
+
+        saved_buckets = data.get("buckets")
+        if not isinstance(saved_buckets, list):
+            return
+        merged: dict[int, int] = {hour: count for hour, count in self._request_buckets}
+        for bucket in saved_buckets:
+            if not isinstance(bucket, list) or len(bucket) != 2:
+                continue
+            hour, count = bucket
+            if _is_count(hour) and _is_count(count) and hour >= cutoff:
+                merged[hour] = merged.get(hour, 0) + count
+        self._request_buckets = deque([hour, count] for hour, count in sorted(merged.items()))
+
     @property
     def requests_last_24h(self) -> int:
         """Requests spent in the trailing 24 hours, to hourly resolution."""
@@ -331,22 +418,28 @@ class GoveeApiClient:
         self._note_request()
         self._update_rate_limits(response.headers)
 
-        try:
-            data: dict[str, Any] = await response.json()
-        except aiohttp.ContentTypeError as err:
-            text = await response.text()
-            raise GoveeApiError(f"Invalid JSON response: {text[:200]}") from err
-
-        # Check HTTP status
+        # Status first: a 401 or 429 means the same thing whatever body (a
+        # proxy's HTML page, nothing at all) came with it.
         if response.status == 401:
             raise GoveeAuthError("Invalid API key")
 
         if response.status == 429:
-            retry_after = response.headers.get("Retry-After")
             raise GoveeRateLimitError(
                 "Rate limit exceeded",
-                retry_after=float(retry_after) if retry_after else None,
+                retry_after=_parse_retry_after(response.headers.get("Retry-After")),
             )
+
+        error_code = response.status if response.status >= 400 else None
+        try:
+            decoded: Any = await response.json(content_type=None)
+        except (aiohttp.ContentTypeError, ValueError) as err:
+            text = await response.text()
+            raise GoveeApiError(f"Invalid JSON response: {text[:200]}", code=error_code) from err
+        if not isinstance(decoded, dict):
+            if error_code is None:
+                raise GoveeApiError(f"Invalid JSON response: {str(decoded)[:200]}")
+            decoded = {}
+        data: dict[str, Any] = decoded
 
         if response.status == 400:
             # Govee API uses both "message" and "msg" for errors
@@ -593,6 +686,7 @@ class GoveeApiClient:
         try:
             async with client.post(
                 ENDPOINT_CONTROL,
+                retry_options=SINGLE_ATTEMPT,
                 headers=self._get_headers(),
                 timeout=REQUEST_TIMEOUT,
                 json=payload,

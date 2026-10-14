@@ -261,6 +261,10 @@ def _is_outage_error(err: Exception) -> bool:
 # poll cycle isn't correlated in time with the write under test).
 HUMIDITY_VERIFICATION_DELAY_SECONDS = 8
 
+# Minimum seconds between topic refetches triggered by one device whose MQTT
+# topic is missing from the account's lists.
+TOPIC_REFRESH_MIN_INTERVAL = 600
+
 
 @dataclasses.dataclass
 class _LanReadOverlay:
@@ -296,6 +300,11 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
     # coordinators that skip __init__ working.
     _budget_pacing_announced = False
     _header_deferred = False
+    # Per poll cycle: devices whose "read" handed back held state instead of a
+    # fresh cloud answer, and whether any device answered 429. Reset at the
+    # start of every cycle; class defaults for the same reason as above.
+    _cycle_cached_ids: frozenset[str] = frozenset()
+    _cycle_rate_limited = False
 
     def __init__(
         self,
@@ -377,6 +386,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # Device-specific MQTT topics from undocumented API
         # Maps device_id -> MQTT topic for publishing commands
         self._device_topics: dict[str, str] = {}
+        # device_id -> monotonic time of the last topic refetch made because
+        # that device's topic was missing (see _ensure_device_topic).
+        self._topic_refresh_at: dict[str, float] = {}
         # device_id -> its gateway's {device, sku, topic}. Gateway-attached BLE
         # devices (e.g. an H5901 behind an H5044) ignore anything published to
         # their own topic; commands have to be relayed through the gateway
@@ -3709,6 +3721,12 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # skip: the skip changes from cycle to cycle as devices' runs come due,
         # and sizing on it would swing the interval with them.
         pacing_size = len(pollable)
+        # Whether any device left could ever make a fresh cloud read. If none
+        # can (the device that drew a 429 was removed and only groups, H5054s or
+        # BFF thermometers remain), nothing would ever clear a 429 back-off.
+        has_cloud_readable = any(
+            not self._makes_no_cloud_read(device_id, device) for device_id, device in pollable.items()
+        )
         locally_fresh = self._locally_fresh_devices(pollable)
         if locally_fresh:
             _LOGGER.debug(
@@ -3736,7 +3754,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # the requests that would earn a 429. A deferred cycle is an empty one:
         # it still runs the tail below, and does not re-pace over the interval
         # the deferral just chose.
-        deferred = bool(pollable) and self._defer_for_rate_limit_headers(len(pollable))
+        # While a 429 back-off is in force it owns the interval: the headers
+        # it came with are stale by the time it has been waited out, and
+        # deferring on them would double the wait.
+        deferred = bool(pollable) and not self._rate_limited and self._defer_for_rate_limit_headers(len(pollable))
         if deferred:
             pollable = {}
 
@@ -3748,16 +3769,22 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # the rest of the cycle (transport health, LAN rescan, pacing) still runs.
         tasks = [self._fetch_device_state_bounded(device_id, device) for device_id, device in pollable.items()]
 
+        self._cycle_cached_ids = frozenset()
+        self._cycle_rate_limited = False
         results = await asyncio.gather(*tasks, return_exceptions=True)
+        cached_ids = self._cycle_cached_ids
 
-        # Process results
+        # Process results. Held state handed back without a fresh cloud read
+        # (a 429, a group, ...) is kept but is not a successful update: it
+        # says nothing about whether the cloud is answering.
         successful_updates = 0
         outage_errors: list[Exception] = []
         for device_id, result in zip(pollable.keys(), results):
             if isinstance(result, GoveeDeviceState):
                 self._note_state_change(device_id, result)
                 self._states[device_id] = result
-                successful_updates += 1
+                if device_id not in cached_ids:
+                    successful_updates += 1
             elif isinstance(result, GoveeAuthError):
                 raise ConfigEntryAuthFailed("Invalid API key") from result
             elif isinstance(result, Exception):
@@ -3770,8 +3797,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 if _is_outage_error(result):
                     outage_errors.append(result)
 
-        # Clear rate limit issue and restore poll interval if we got successful updates
-        if successful_updates > 0 and self._rate_limited:
+        # Clear rate limit issue and restore poll interval once real reads
+        # succeed in a cycle where no device was refused with a 429, or once
+        # no device is left that reads from the cloud at all.
+        if self._rate_limited and not self._cycle_rate_limited and (successful_updates > 0 or not has_cloud_readable):
             self._rate_limited = False
             self.update_interval = self._original_update_interval
             _LOGGER.info(
@@ -3806,14 +3835,23 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # Report a total cloud outage only AFTER local reads and health checks.
         # Cloud-dependent entities still follow coordinator failure; a main
         # light can use its independently refreshed LAN availability.
-        if results and successful_updates == 0 and len(outage_errors) == len(results):
+        # Devices answered from held state (groups, H5054, BFF thermometers,
+        # not-found) say nothing either way and are left out of the count; a
+        # 429 proves the cloud answered, so it is never an outage.
+        cloud_results = sum(1 for device_id in pollable if device_id not in cached_ids)
+        if (
+            cloud_results
+            and successful_updates == 0
+            and not self._cycle_rate_limited
+            and len(outage_errors) == cloud_results
+        ):
             if not self.last_update_success:
                 # HA notifies on the first failed refresh, but suppresses
                 # listeners on consecutive failures. Publish local state and
                 # health changes without declaring the cloud recovered.
                 self.async_update_listeners()
             raise UpdateFailed(
-                f"Govee cloud API unreachable for all {len(results)} device(s): " f"{outage_errors[0]}"
+                f"Govee cloud API unreachable for all {cloud_results} device(s): " f"{outage_errors[0]}"
             ) from outage_errors[0]
 
         return self._states
@@ -4133,6 +4171,17 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             )
             self.update_interval = paced
 
+    def _makes_no_cloud_read(self, device_id: str, device: GoveeDevice) -> bool:
+        """True for a device whose poll is always answered from held state.
+
+        Mirrors the shortcuts at the top of :meth:`_fetch_device_state`.
+        """
+        return device.is_group or device.supports_water_leak_event or device_id in self._bff_thermometer_ids
+
+    def _mark_cached_result(self, device_id: str) -> None:
+        """Note that this cycle's state for a device is held state, not a fresh read."""
+        self._cycle_cached_ids = self._cycle_cached_ids | {device_id}
+
     async def _fetch_device_state_bounded(
         self,
         device_id: str,
@@ -4184,6 +4233,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         """
         # Skip API call for group devices - state fetch always fails with 400
         if device.is_group:
+            self._mark_cached_result(device_id)
             existing = self._states.get(device_id)
             if existing:
                 # Group devices are always "available"; return a new instance
@@ -4199,12 +4249,14 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # (_poll_water_detectors); a developer poll here would clobber it every
         # cycle. Preserve the BFF-managed state and skip the call (issue #62).
         if device.supports_water_leak_event:
+            self._mark_cached_result(device_id)
             return self._states.get(device_id) or GoveeDeviceState.create_empty(device_id)
 
         # BFF-discovered thermo-hygrometers (H5301) are absent from the Developer
         # API, so /device/state would 400/return empty and clobber the
         # BFF-managed reading. State is owned by _refresh_bff_thermometers (#86).
         if device_id in self._bff_thermometer_ids:
+            self._mark_cached_result(device_id)
             return self._states.get(device_id) or GoveeDeviceState.create_empty(device_id)
 
         try:
@@ -4387,6 +4439,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         except GoveeDeviceNotFoundError:
             # Expected for group devices - use existing/optimistic state
             _LOGGER.debug("State query failed for group device %s [expected]", device_id)
+            self._mark_cached_result(device_id)
             existing = self._states.get(device_id)
             if existing:
                 existing.online = True  # Group devices are always "available"
@@ -4395,12 +4448,18 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
         except GoveeRateLimitError as err:
             _LOGGER.warning("Rate limit hit, keeping previous state")
+            self._cycle_rate_limited = True
+            self._mark_cached_result(device_id)
             # Create rate limit repair issue and back off (only once)
             if not self._rate_limited:
                 self._rate_limited = True
                 reset_time = "unknown"
-                # Back off: increase poll interval to retry_after or 120s
+                # Back off: increase poll interval to retry_after or 120s, but
+                # never below the current one. Budget pacing may already have
+                # stretched it further, and a 429 is no reason to poll faster.
                 backoff_seconds = int(err.retry_after) if err.retry_after else 120
+                if self.update_interval is not None:
+                    backoff_seconds = max(backoff_seconds, int(self.update_interval.total_seconds()))
                 self.update_interval = timedelta(seconds=backoff_seconds)
                 _LOGGER.warning(
                     "Rate limited, increasing poll interval to %ds",
@@ -5181,8 +5240,15 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if topic is not None:
             return topic
 
-        # Topic missing - try one refresh
+        # Topic missing - try one refresh, at most once per window per device.
+        # A device the account's topic lists simply do not contain would
+        # otherwise cost two account-API calls on every command or probe packet.
+        now = time.monotonic()
+        last = self._topic_refresh_at.get(device_id)
+        if last is not None and now - last < TOPIC_REFRESH_MIN_INTERVAL:
+            return None
         if self._iot_credentials:
+            self._topic_refresh_at[device_id] = now
             _LOGGER.debug("Device topic missing for %s, refreshing from API", device_id)
             await self._fetch_device_topics()
             topic = self._device_topics.get(device_id)

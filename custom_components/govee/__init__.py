@@ -11,7 +11,7 @@ from dataclasses import asdict
 from typing import Any
 
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import (
     config_validation as cv,
@@ -20,6 +20,7 @@ from homeassistant.helpers import (
     issue_registry as ir,
 )
 from homeassistant.helpers.device_registry import DeviceEntry
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
 from .api import (
@@ -65,6 +66,10 @@ from .services import async_setup_services
 __all__ = ["GoveeConfigEntry"]
 
 _LOGGER = logging.getLogger(__name__)
+
+# Saved cloud request counters (see _async_attach_request_counts_store).
+REQUEST_COUNTS_STORAGE_VERSION = 1
+REQUEST_COUNTS_SAVE_DELAY = 60  # seconds; coalesces the saves of a busy poll
 
 # Configuration is UI-only; reject any YAML under the ``govee:`` key.
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -140,6 +145,43 @@ def _persist_iot_credentials(
     hass.config_entries.async_update_entry(entry, data=new_data)
 
 
+def _request_counts_store(hass: HomeAssistant, entry: GoveeConfigEntry) -> Store[dict[str, Any]]:
+    """Per-entry storage for the cloud request counters."""
+    return Store(hass, REQUEST_COUNTS_STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}.request_counts")
+
+
+async def _async_attach_request_counts_store(
+    hass: HomeAssistant, entry: GoveeConfigEntry, api_client: GoveeApiClient
+) -> None:
+    """Carry the day's request count across reloads and restarts.
+
+    The client is rebuilt on every reload; budget pacing reads its daily
+    count, so a count that restarted at zero would let a reload mid-day push
+    the install past Govee's daily cap. Counts are saved shortly after each
+    request and flushed when the entry unloads.
+    """
+    store = _request_counts_store(hass, entry)
+    api_client.import_request_counts(await store.async_load())
+
+    @callback
+    def _schedule_save() -> None:
+        store.async_delay_save(api_client.export_request_counts, REQUEST_COUNTS_SAVE_DELAY)
+
+    async def _flush() -> None:
+        # Detach first: a late request on this unloaded client (an in-flight
+        # service call) must not schedule a save over the next client's counts.
+        api_client.set_request_listener(None)
+        await store.async_save(api_client.export_request_counts())
+
+    api_client.set_request_listener(_schedule_save)
+    entry.async_on_unload(_flush)
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: GoveeConfigEntry) -> None:
+    """Delete the entry's saved request counters when the entry is removed."""
+    await _request_counts_store(hass, entry).async_remove()
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: GoveeConfigEntry) -> bool:
     """Set up Govee from a config entry.
 
@@ -162,6 +204,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GoveeConfigEntry) -> boo
 
     # Create API client (uses HA-managed clientsession via hass=hass).
     api_client = GoveeApiClient(api_key, hass=hass)
+    await _async_attach_request_counts_store(hass, entry, api_client)
 
     # Optionally get IoT credentials for MQTT
     # Credentials are cached to avoid repeated login attempts on reload

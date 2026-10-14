@@ -78,6 +78,8 @@ def _api_client(device, state, *, devices_error: Exception | None = None) -> Mag
     client.last_raw_state = {}
     client.last_raw_devices = []
     client.recent_commands = []
+    # Persisted at unload; the store needs real data, not a mock.
+    client.export_request_counts = MagicMock(return_value={})
     return client
 
 
