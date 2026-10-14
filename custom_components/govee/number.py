@@ -12,11 +12,13 @@ from homeassistant.components.number import (
     NumberDeviceClass,
     NumberEntity,
     NumberMode,
+    RestoreNumber,
 )
 from homeassistant.const import EntityCategory, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .api.probe_thermometer import probes_for_sku
 from .const import SUFFIX_HEATER_TEMPERATURE, SUFFIX_MUSIC_SENSITIVITY
@@ -255,12 +257,14 @@ class GoveeMusicSensitivityNumber(GoveeEntity, RestoreEntity, NumberEntity):
         )
 
 
-class GoveeHeaterTemperatureNumber(GoveeEntity, RestoreEntity, NumberEntity):
+class GoveeHeaterTemperatureNumber(GoveeEntity, RestoreNumber):
     """Govee heater temperature control entity.
 
     Controls the target temperature for heater devices (typically 16-35°C).
-    Uses RestoreEntity to persist temperature across Home Assistant restarts
-    since the API may not reliably return the current temperature target.
+    The polled ``heater_temperature`` wins when the device reports it; the
+    API may not, so the last native (°C) value is restored with
+    ``RestoreNumber`` and seeded into the device state, where the auto-stop
+    switch reads it for the shared STRUCT write.
     """
 
     _attr_translation_key = "govee_heater_temperature"
@@ -294,25 +298,61 @@ class GoveeHeaterTemperatureNumber(GoveeEntity, RestoreEntity, NumberEntity):
         self._attr_unique_id = f"{device.device_id}{SUFFIX_HEATER_TEMPERATURE}"
 
     async def async_added_to_hass(self) -> None:
-        """Restore state when entity is added to Home Assistant."""
+        """Restore the last native (°C) target when the device has not reported one.
+
+        The restored value comes from ``RestoreNumber`` in the native unit;
+        the saved entity state is in the user's display unit (°F on imperial
+        installs) and must not be read back as Celsius.
+        """
         await super().async_added_to_hass()
 
-        # Restore previous state
-        if (last_state := await self.async_get_last_state()) is not None:
-            if last_state.state not in (None, "unknown", "unavailable"):
-                try:
-                    self._attr_native_value = float(last_state.state)
-                    _LOGGER.debug(
-                        "Restored heater temperature for %s: %s",
-                        self._device.name,
-                        self._attr_native_value,
-                    )
-                except ValueError:
-                    _LOGGER.warning(
-                        "Could not restore heater temperature for %s: invalid state '%s'",
-                        self._device.name,
-                        last_state.state,
-                    )
+        last = await self.async_get_last_number_data()
+        if last is not None and last.native_value is not None:
+            native: float | None = float(last.native_value)
+        else:
+            native = await self._async_last_state_in_celsius()
+        if native is None:
+            return
+        restored = min(max(native, self.native_min_value), self.native_max_value)
+        self._attr_native_value = restored
+        _LOGGER.debug("Restored heater temperature for %s: %s", self._device.name, restored)
+
+        # Seed the shared state so the auto-stop switch sends this target,
+        # not a guess, when the poll does not report one.
+        state = self.coordinator.get_state(self._device_id)
+        if state is not None and state.heater_temperature is None:
+            state.heater_temperature = round(restored)
+
+    async def _async_last_state_in_celsius(self) -> float | None:
+        """Read a saved state from before native restore data existed, converted to °C.
+
+        Older versions saved no native value, only the displayed state, which
+        is in the unit named by its ``unit_of_measurement`` attribute.
+        """
+        last_state = await self.async_get_last_state()
+        if last_state is None:
+            return None
+        unit = last_state.attributes.get("unit_of_measurement")
+        if unit not in (UnitOfTemperature.CELSIUS, UnitOfTemperature.FAHRENHEIT):
+            return None
+        try:
+            value = float(last_state.state)
+        except ValueError:
+            return None
+        celsius = float(TemperatureConverter.convert(value, unit, UnitOfTemperature.CELSIUS))
+        # Out of range can only come from the old restore bug (display value
+        # read back as °C); discard it rather than clamp it into a real target.
+        if not self.native_min_value <= celsius <= self.native_max_value:
+            return None
+        return celsius
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the device-reported target, else the last set or restored one."""
+        state = self.device_state
+        if state is not None and state.heater_temperature is not None:
+            return float(state.heater_temperature)
+        return self._attr_native_value
 
     async def async_set_native_value(self, value: float) -> None:
         """Set the heater target temperature.
@@ -322,7 +362,9 @@ class GoveeHeaterTemperatureNumber(GoveeEntity, RestoreEntity, NumberEntity):
         """
         temperature = int(value)
 
-        # Preserve the current auto_stop setting so the API doesn't ignore the command
+        # Preserve the current auto_stop setting so the API doesn't ignore the
+        # command: polled, or the switch's restored/last set value (both live
+        # in state); 0 only when nothing is known at all.
         auto_stop = 0
         state = self.coordinator.get_state(self._device_id)
         if state and state.heater_auto_stop is not None:

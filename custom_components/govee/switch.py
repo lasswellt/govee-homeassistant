@@ -810,6 +810,11 @@ class GoveeAutoStopSwitchEntity(GoveeEntity, SwitchEntity, RestoreEntity):
         last_state = await self.async_get_last_state()
         if last_state:
             self._is_on = last_state.state == "on"
+            # Seed the shared state so the target-temperature number sends
+            # this auto-stop, not a guess, when the poll does not report one.
+            state = self.coordinator.get_state(self._device_id)
+            if last_state.state in ("on", "off") and state is not None and state.heater_auto_stop is None:
+                state.heater_auto_stop = 1 if self._is_on else 0
 
     @property
     def is_on(self) -> bool:
@@ -834,6 +839,8 @@ class GoveeAutoStopSwitchEntity(GoveeEntity, SwitchEntity, RestoreEntity):
                 ToggleCommand(toggle_instance=INSTANCE_THERMOSTAT_TOGGLE, enabled=enabled),
             )
 
+        # The target comes from the poll, or the number's restored/last set
+        # value (both live in state); 20 °C only when nothing is known at all.
         state = self.coordinator.get_state(self._device_id)
         current_temp = state.heater_temperature if state and state.heater_temperature is not None else 20
         return await self.coordinator.async_control_device(
