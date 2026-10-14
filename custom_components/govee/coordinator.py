@@ -22,6 +22,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -230,6 +231,24 @@ LAN_COLOR_TEMP_CONFIRM_TOLERANCE = 150
 
 # BFF polling interval for leak sensor state (seconds)
 BFF_POLL_INTERVAL = 300  # 5 minutes
+
+# When MQTT last reported each leak sensor wet and dry (epoch seconds, our
+# clock), as {sensor_id: {"wet": t, "dry": t}}. The BFF fallback in
+# _poll_bff_leak_state must not force a sensor wet for a leak that MQTT both
+# reported and saw end, and per-sensor state is rebuilt on every entry reload,
+# so the stamps are kept in hass.data (survives a reload) backed by a Store
+# (survives a Home Assistant restart).
+LEAK_MQTT_STORE_KEY: Final = f"{DOMAIN}.leak_mqtt_stamps"
+LEAK_MQTT_STORE_VERSION: Final = 1
+LEAK_MQTT_SAVE_DELAY: Final = 1  # seconds
+_LEAK_MQTT_DATA_KEY: Final = f"{DOMAIN}_leak_mqtt_stamps"
+# The MQTT wet stamp counts as "MQTT reported this leak" when it is no more
+# than this long before the BFF's last_wet_time. That time comes from Govee's
+# clock and the stamp from ours, so the margin absorbs our clock running behind
+# Govee's. It errs toward a false alarm: with a larger skew the fallback fires
+# as it did before. A dry report alone never cancels the fallback, so a leak
+# MQTT never reported wet is still forced wet even if its dry frame arrived.
+LEAK_MQTT_SKEW_MARGIN: Final = 60  # seconds
 
 # Field names a probe frame may carry. Derived from the dataclass so a new
 # channel cannot be silently dropped by the merge.
@@ -461,6 +480,11 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # Leak sensor subsystem
         self._leak_sensors: dict[str, GoveeLeakSensor] = {}
         self._leak_states: dict[str, GoveeLeakSensorState] = {}
+        # Per-sensor "MQTT reported wet/dry at" stamps, shared across entry
+        # reloads once _async_load_leak_mqtt_stamps has run (see
+        # LEAK_MQTT_STORE_KEY).
+        self._leak_mqtt_at: dict[str, dict[str, float]] = {}
+        self._leak_mqtt_store: Store[dict[str, dict[str, float]]] | None = None
         # BFF-discovered thermo-hygrometers (H5301, issue #86): synthesized into
         # self._devices but absent from the Developer API, so their state is
         # owned by the BFF poll, not /device/state. Tracked here so
@@ -1201,6 +1225,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # login), so it runs regardless of IoT credentials. Failure-isolated:
         # a broker hiccup must never fail setup (the client retries forever).
         await self._start_openapi_events()
+
+        if self._iot_credentials:
+            await self._async_load_leak_mqtt_stamps()
 
         # Discover leak sensors via BFF API (requires email/password). Bounded so
         # a hung BFF call degrades to polling instead of cancelling setup (#146).
@@ -2688,6 +2715,46 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 name=meta.get("sku") or "Govee Gateway",
             )
 
+    async def _async_load_leak_mqtt_stamps(self) -> None:
+        """Attach the leak MQTT stamps shared by every load of this integration.
+
+        Loaded from disk once per Home Assistant run, then kept in hass.data so
+        an entry reload reuses the live dict (including a delayed save that has
+        not reached disk yet). A storage failure only loses the stamps, which
+        falls back to the pre-fix behaviour (a possible false wet), never a
+        failed setup.
+        """
+        try:
+            cached = self.hass.data.get(_LEAK_MQTT_DATA_KEY)
+            if cached is None:
+                store: Store[dict[str, dict[str, float]]] = Store(
+                    self.hass, LEAK_MQTT_STORE_VERSION, LEAK_MQTT_STORE_KEY
+                )
+                raw = await store.async_load()
+                stamps = {
+                    str(sensor_id): {
+                        kind: float(at)
+                        for kind, at in entry.items()
+                        if kind in ("wet", "dry") and isinstance(at, (int, float)) and not isinstance(at, bool)
+                    }
+                    for sensor_id, entry in (raw or {}).items()
+                    if isinstance(entry, dict)
+                }
+                cached = self.hass.data.setdefault(_LEAK_MQTT_DATA_KEY, (store, stamps))
+            self._leak_mqtt_store, self._leak_mqtt_at = cached
+        except Exception as err:  # noqa: BLE001 - never fail setup over this
+            _LOGGER.debug("Could not load leak MQTT stamps: %s", err)
+
+    @callback
+    def _record_leak_mqtt(self, sensor_id: str, is_wet: bool) -> None:
+        """Stamp an MQTT wet or dry report for the BFF fallback (see LEAK_MQTT_STORE_KEY)."""
+        self._leak_mqtt_at.setdefault(sensor_id, {})["wet" if is_wet else "dry"] = time.time()
+        if self._leak_mqtt_store is not None:
+            stamps = self._leak_mqtt_at
+            self._leak_mqtt_store.async_delay_save(
+                lambda: {k: dict(v) for k, v in stamps.items()}, LEAK_MQTT_SAVE_DELAY
+            )
+
     def _schedule_bff_poll(self) -> None:
         """Schedule the next BFF poll in 5 minutes."""
         if self._bff_poll_unsub:
@@ -2775,17 +2842,26 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             # Fallback wet detection: if BFF shows a recent leak event
             # within the poll window but MQTT never reported wet during that
             # period, force it on. This covers MQTT disconnects or lost packets.
+            # Skip it only when MQTT itself reported this leak wet (no earlier
+            # than LEAK_MQTT_SKEW_MARGIN before the cloud's time) and later
+            # reported it dry: the leak was already shown and has ended. The
+            # stamps outlive an entry reload, which resets last_mqtt_wet_at. A
+            # dry report alone never skips it, nor does an older MQTT leak.
             last_wet = sensor.get("last_wet_time") or 0
             age_ms = now_ms - last_wet if last_wet > 0 else float("inf")
             poll_window_ms = BFF_POLL_INTERVAL * 1000
             mqtt_wet_age = now_s - state.last_mqtt_wet_at
+            mqtt_at = self._leak_mqtt_at.get(device_id, {})
+            mqtt_wet_ms = mqtt_at.get("wet", 0.0) * 1000
+            mqtt_dry_ms = mqtt_at.get("dry", 0.0) * 1000
+            mqtt_saw_it_end = mqtt_wet_ms >= last_wet - LEAK_MQTT_SKEW_MARGIN * 1000 and mqtt_dry_ms > mqtt_wet_ms
 
-            if age_ms < poll_window_ms and mqtt_wet_age > BFF_POLL_INTERVAL:
+            if age_ms < poll_window_ms and mqtt_wet_age > BFF_POLL_INTERVAL and not mqtt_saw_it_end:
                 sensor_obj = self._leak_sensors.get(device_id)
                 sensor_name = sensor_obj.name if sensor_obj else device_id
                 _LOGGER.warning(
-                    "BFF fallback: '%s' has unread leak from %ds ago "
-                    "but MQTT didn't report wet in the last %ds — forcing wet",
+                    "BFF fallback: Govee cloud reports a leak on '%s' %ds ago "
+                    "that MQTT never reported (no wet in the last %ds and none it saw end) — forcing wet",
                     sensor_name,
                     int(age_ms / 1000),
                     BFF_POLL_INTERVAL,
@@ -2991,6 +3067,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if is_wet:
             state.last_mqtt_wet_at = time.time()
             state.last_wet_time = int(time.time() * 1000)
+        self._record_leak_mqtt(sensor_id, is_wet)
 
         sensor = self._leak_sensors.get(sensor_id)
         if sensor is not None and sensor.sku.upper() in LEAK_DUAL_PROBE_SKUS:
