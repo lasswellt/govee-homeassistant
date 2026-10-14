@@ -783,10 +783,12 @@ class GoveeAwsIotClient:
             # debug capture shows exactly what arrives — used to determine
             # whether standalone water detectors (H5054, issue #62) ever push a
             # trip on the account topic, since they have no per-device topic.
-            topic = getattr(message, "topic", "?")
+            # Truncated like every other topic in this module: the account
+            # topic is account-scoped and debug logs end up in public issues.
+            topic = str(getattr(message, "topic", "?"))
             _LOGGER.debug(
-                "AWS IoT inbound topic=%s payload=%s",
-                topic,
+                "AWS IoT inbound topic=%s... payload=%s",
+                topic[:30],
                 payload_str[:500],
             )
 

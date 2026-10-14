@@ -26,10 +26,13 @@ import asyncio
 import json
 import logging
 import ssl
+import time
 from collections import deque
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
+
+from .mqtt import STABLE_SESSION_SECONDS, _subscription_refused
 
 try:
     import aiomqtt
@@ -127,6 +130,7 @@ class GoveeOpenApiEventClient:
         reconnect_interval = RECONNECT_BASE
 
         while self._running:
+            session_started: float | None = None
             try:
                 loop = asyncio.get_running_loop()
                 ssl_context = await loop.run_in_executor(None, self._create_ssl_context_sync)
@@ -150,17 +154,22 @@ class GoveeOpenApiEventClient:
                     # refused topic would otherwise leave the client looking
                     # healthy while it receives nothing.
                     topic = f"GA/{self._api_key}"
-                    await client.subscribe(topic, qos=1)
+                    granted = await client.subscribe(topic, qos=1)
+                    if _subscription_refused(granted):
+                        raise aiomqtt.MqttError(f"event topic subscription refused (SUBACK {granted!r})")
                     self._connected = True
-                    if self._failure_logged:
-                        _LOGGER.info("Govee OpenAPI event channel reconnected")
-                    self._failure_logged = False
-                    reconnect_interval = RECONNECT_BASE
+                    session_started = time.monotonic()
                     _LOGGER.debug("Subscribed to Govee OpenAPI event channel")
+                    # Backoff and the failure streak reset only once the
+                    # session has proven stable: a broker that accepts and
+                    # then drops at once must keep backing off, not be
+                    # hammered every RECONNECT_BASE seconds.
 
                     async for message in client.messages:
                         if not self._running:
                             break  # type: ignore[unreachable]
+                        if reconnect_interval != RECONNECT_BASE or self._failure_logged:
+                            reconnect_interval = self._after_stable_session(session_started, reconnect_interval)
                         self._handle_message(message)
 
             except asyncio.CancelledError:
@@ -169,6 +178,9 @@ class GoveeOpenApiEventClient:
 
             except Exception as err:  # noqa: BLE001 - keep the listener alive
                 self._connected = False
+                if session_started is not None:
+                    # A healthy session that was lost is not part of a streak.
+                    reconnect_interval = self._after_stable_session(session_started, reconnect_interval)
                 if self._running:
                     log = _LOGGER.debug if self._failure_logged else _LOGGER.warning
                     self._failure_logged = True
@@ -182,6 +194,18 @@ class GoveeOpenApiEventClient:
                     reconnect_interval = min(reconnect_interval * 2, RECONNECT_MAX)
 
         self._connected = False
+
+    def _after_stable_session(self, session_started: float, reconnect_interval: int) -> int:
+        """Reset the failure streak once a session has lived STABLE_SESSION_SECONDS.
+
+        Returns the reconnect interval to use from here on.
+        """
+        if time.monotonic() - session_started < STABLE_SESSION_SECONDS:
+            return reconnect_interval
+        if self._failure_logged:
+            _LOGGER.info("Govee OpenAPI event channel reconnected")
+            self._failure_logged = False
+        return RECONNECT_BASE
 
     def _handle_message(self, message: Any) -> None:
         """Record an inbound event push and fan out its event capabilities.

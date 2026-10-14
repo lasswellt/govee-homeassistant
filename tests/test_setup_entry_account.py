@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
@@ -19,9 +20,11 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.govee.api import (
     Govee2FARequiredError,
+    GoveeApiError,
     GoveeAuthError,
     GoveeConnectionError,
     GoveeIotCredentials,
+    GoveeLoginRejectedError,
 )
 from custom_components.govee.const import (
     CONF_API_KEY,
@@ -53,6 +56,13 @@ def _custom_integrations(hass: HomeAssistant, enable_custom_integrations: None) 
     """Let Home Assistant load the integration without starting Bluetooth."""
     hass.config.components.add("bluetooth_adapters")
     hass.config.components.add("network")
+
+
+def _network_error() -> GoveeApiError:
+    """What login() raises when DNS/connect fails: chained to the aiohttp error."""
+    err = GoveeApiError("Connection error during login: Cannot connect to host")
+    err.__cause__ = aiohttp.ClientConnectionError("dns")
+    return err
 
 
 def _api_client(device, state, *, devices_error: Exception | None = None) -> MagicMock:
@@ -198,6 +208,21 @@ async def test_login_failure_marker_skips_login(hass, mock_light_device, mock_de
 
     auth.login.assert_not_awaited()
     assert entry.runtime_data.has_iot_credentials is False
+    # Repairs do not survive a restart; the skip must raise it again so the
+    # user can see why real-time updates are off and retry with one click.
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, f"mqtt_disconnected_{entry.entry_id}")
+    assert issue is not None
+    assert issue.is_fixable is True
+
+
+async def test_two_factor_marker_skips_login_and_reraises_issue(hass, mock_light_device, mock_device_state) -> None:
+    entry = _entry(hass, **{KEY_IOT_LOGIN_FAILED: "2FA verification required"})
+    auth = _auth_client(login=CREDS)
+
+    assert await _setup(hass, entry, _api_client(mock_light_device, mock_device_state), auth)
+
+    auth.login.assert_not_awaited()
+    assert ir.async_get(hass).async_get_issue(DOMAIN, f"mqtt_2fa_required_{entry.entry_id}") is not None
 
 
 async def test_two_factor_required_creates_issue_and_marker(hass, mock_light_device, mock_device_state) -> None:
@@ -212,7 +237,16 @@ async def test_two_factor_required_creates_issue_and_marker(hass, mock_light_dev
     assert entry.state is ConfigEntryState.LOADED
 
 
-@pytest.mark.parametrize("error", [GoveeAuthError("wrong password"), RuntimeError("boom")])
+@pytest.mark.parametrize(
+    "error",
+    [
+        GoveeAuthError("wrong password"),
+        GoveeLoginRejectedError("Login rejected (status 400): no"),
+        # Got past the network: would fail the same way on every retry.
+        GoveeApiError("No token in login response"),
+        RuntimeError("boom"),
+    ],
+)
 async def test_rejected_login_creates_mqtt_issue(hass, mock_light_device, mock_device_state, error) -> None:
     entry = _entry(hass)
 
@@ -223,6 +257,57 @@ async def test_rejected_login_creates_mqtt_issue(hass, mock_light_device, mock_d
     assert issue is not None
     assert issue.is_fixable is True
     assert entry.state is ConfigEntryState.LOADED
+    assert entry.runtime_data._login_retry_unsub is None
+
+
+@pytest.mark.parametrize("error", [_network_error(), TimeoutError()])
+async def test_transient_login_failure_stores_no_marker_and_retries(
+    hass, mock_light_device, mock_device_state, error
+) -> None:
+    """A network/DNS error at boot must not switch real-time updates off for good."""
+    entry = _entry(hass)
+    auth = _auth_client(login=error)
+
+    assert await _setup(hass, entry, _api_client(mock_light_device, mock_device_state), auth)
+
+    assert KEY_IOT_LOGIN_FAILED not in entry.data
+    assert ir.async_get(hass).async_get_issue(DOMAIN, f"mqtt_disconnected_{entry.entry_id}") is not None
+    assert entry.state is ConfigEntryState.LOADED
+    # The coordinator keeps retrying in the background.
+    assert entry.runtime_data._login_retry_unsub is not None
+
+    # And the next setup (restart / reload) tries the login again.
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    auth.login.reset_mock()
+    auth.login.side_effect = None
+    auth.login.return_value = CREDS
+    assert await _setup(hass, entry, _api_client(mock_light_device, mock_device_state), auth)
+    auth.login.assert_awaited_once()
+    assert entry.data[KEY_IOT_CREDENTIALS]["token"] == "tok"
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_network_down_at_boot_retries_login_with_setup(hass, mock_light_device, mock_device_state) -> None:
+    """The not-ready retry in the same boot logs in again instead of skipping it."""
+    entry = _entry(hass)
+    auth = _auth_client(login=_network_error())
+    api = _api_client(mock_light_device, mock_device_state, devices_error=GoveeConnectionError("dns"))
+
+    assert not await _setup(hass, entry, api, auth)
+
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+    assert KEY_IOT_LOGIN_FAILED not in entry.data
+
+    auth.login.reset_mock()
+    auth.login.side_effect = None
+    auth.login.return_value = CREDS
+    with _Stubs(_api_client(mock_light_device, mock_device_state), auth):
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+    auth.login.assert_awaited_once()
+    assert entry.state is ConfigEntryState.LOADED
+    assert entry.runtime_data.has_iot_credentials is True
+    assert await hass.config_entries.async_unload(entry.entry_id)
 
 
 async def test_cloud_unreachable_retries_setup(hass, mock_light_device, mock_device_state) -> None:
