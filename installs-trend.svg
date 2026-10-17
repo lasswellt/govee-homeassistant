@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="192" viewBox="0 0 480 192" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
+<rect x="0.5" y="0.5" width="479" height="191" rx="12" fill="#161b22" stroke="#30363d"/>
+<text x="20" y="34" font-size="11" fill="#8b949e" font-weight="600" text-anchor="start" letter-spacing="1.5">ACTIVE INSTALLS</text>
+<text x="20" y="88" font-size="46" fill="#41BDF5" font-weight="700" text-anchor="start">6.1k</text>
+<text x="24" y="116" font-size="12" fill="#3fb950" font-weight="600" text-anchor="start">▲ +255 / 7d</text>
+<defs><linearGradient id="ig" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#41BDF5" stop-opacity="0.45"/><stop offset="1" stop-color="#41BDF5" stop-opacity="0"/></linearGradient></defs>
+<path d="M190,162 L190.0,162.0 L196.9,158.4 L203.8,155.4 L210.8,152.8 L217.7,152.8 L224.6,147.3 L231.5,142.0 L238.5,142.0 L245.4,136.9 L252.3,134.4 L259.2,132.1 L266.2,128.8 L273.1,126.2 L280.0,122.9 L286.9,121.2 L293.8,119.5 L300.8,117.8 L307.7,115.2 L314.6,111.8 L321.5,109.1 L328.5,105.5 L335.4,102.7 L342.3,100.2 L349.2,98.1 L356.2,96.1 L363.1,92.4 L370.0,90.0 L376.9,86.7 L383.8,83.6 L390.8,79.8 L397.7,76.7 L404.6,73.1 L411.5,70.0 L418.5,64.1 L425.4,59.3 L432.3,53.9 L439.2,49.6 L446.2,46.4 L453.1,42.9 L460.0,40.0 L460.0,162 Z" fill="url(#ig)"/>
+<polyline points="190.0,162.0 196.9,158.4 203.8,155.4 210.8,152.8 217.7,152.8 224.6,147.3 231.5,142.0 238.5,142.0 245.4,136.9 252.3,134.4 259.2,132.1 266.2,128.8 273.1,126.2 280.0,122.9 286.9,121.2 293.8,119.5 300.8,117.8 307.7,115.2 314.6,111.8 321.5,109.1 328.5,105.5 335.4,102.7 342.3,100.2 349.2,98.1 356.2,96.1 363.1,92.4 370.0,90.0 376.9,86.7 383.8,83.6 390.8,79.8 397.7,76.7 404.6,73.1 411.5,70.0 418.5,64.1 425.4,59.3 432.3,53.9 439.2,49.6 446.2,46.4 453.1,42.9 460.0,40.0" fill="none" stroke="#41BDF5" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="460.0" cy="40.0" r="3.5" fill="#41BDF5"/>
+<text x="20" y="178" font-size="10.5" fill="#8b949e" font-weight="400" text-anchor="start">HA analytics · of 11k domain total</text>
+<text x="460" y="178" font-size="10.5" fill="#8b949e" font-weight="400" text-anchor="end">updated 2026-10-17 06:44 UTC</text>
+</svg>
