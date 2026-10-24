@@ -39,7 +39,7 @@ from .const import (
     DEFAULT_API_TEMPERATURE_UNIT,
     DOMAIN,
     GOVEE_DAILY_REQUEST_LIMIT,
-    HUB_DEVICE_IDENTIFIER,
+    hub_device_identifier,
     resolve_fahrenheit_conversion,
 )
 from .coordinator import GoveeConfigEntry, GoveeCoordinator
@@ -71,13 +71,15 @@ PARALLEL_UPDATES = 0
 
 _PRIORITY_ORDER: tuple[TransportKind, ...] = ("ble", "lan", "mqtt", "cloud_api")
 
-# Device info shared by the hub-level diagnostic sensors.
-_HUB_DEVICE_INFO = DeviceInfo(
-    identifiers={(DOMAIN, HUB_DEVICE_IDENTIFIER)},
-    name="Govee Integration",
-    manufacturer="Govee",
-    model="Cloud API",
-)
+
+def _hub_device_info(entry_id: str) -> DeviceInfo:
+    """Device info of the entry's own hub-level diagnostics device."""
+    return DeviceInfo(
+        identifiers={(DOMAIN, hub_device_identifier(entry_id))},
+        name="Govee Integration",
+        manufacturer="Govee",
+        model="Cloud API",
+    )
 
 
 def _is_delivering(
@@ -249,12 +251,13 @@ class GoveeRateLimitSensor(CoordinatorEntity["GoveeCoordinator"], SensorEntity):
         """Initialize the rate limit sensor."""
         super().__init__(coordinator)
 
+        self._entry_id = entry_id
         self._attr_unique_id = f"{entry_id}_rate_limit"
 
     @property
     def device_info(self) -> DeviceInfo:
         """Return device info for the integration hub."""
-        return _HUB_DEVICE_INFO
+        return _hub_device_info(self._entry_id)
 
     @property
     def native_value(self) -> int:
@@ -311,12 +314,13 @@ class GoveeMqttStatusSensor(CoordinatorEntity["GoveeCoordinator"], SensorEntity)
         """Initialize the MQTT status sensor."""
         super().__init__(coordinator)
 
+        self._entry_id = entry_id
         self._attr_unique_id = f"{entry_id}_mqtt_status"
 
     @property
     def device_info(self) -> DeviceInfo:
         """Return device info for the integration hub."""
-        return _HUB_DEVICE_INFO
+        return _hub_device_info(self._entry_id)
 
     @property
     def native_value(self) -> str:
@@ -347,12 +351,13 @@ class GoveeMqttLastReceivedSensor(CoordinatorEntity["GoveeCoordinator"], SensorE
     ) -> None:
         """Initialize the MQTT last-received timestamp sensor."""
         super().__init__(coordinator)
+        self._entry_id = entry_id
         self._attr_unique_id = f"{entry_id}_mqtt_last_received"
 
     @property
     def device_info(self) -> DeviceInfo:
         """Return device info for the integration hub."""
-        return _HUB_DEVICE_INFO
+        return _hub_device_info(self._entry_id)
 
     @property
     def native_value(self) -> datetime | None:

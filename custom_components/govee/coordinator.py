@@ -3793,8 +3793,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         outage_errors: list[Exception] = []
         for device_id, result in zip(pollable.keys(), results):
             if isinstance(result, GoveeDeviceState):
-                self._note_state_change(device_id, result)
-                self._states[device_id] = result
+                # Already committed by _fetch_device_state_bounded.
                 successful_updates += 1
             elif isinstance(result, GoveeAuthError):
                 raise ConfigEntryAuthFailed("Invalid API key") from result
@@ -4193,7 +4192,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         """
         try:
             async with asyncio.timeout(STATE_FETCH_TIMEOUT):
-                return await self._fetch_device_state(device_id, device)
+                result = await self._fetch_device_state(device_id, device)
         except TimeoutError as err:
             _LOGGER.debug(
                 "State fetch for %s timed out after %ds",
@@ -4205,6 +4204,14 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         except Exception as err:  # noqa: BLE001 - isolate one device's failure
             self._record_transport_failure(device_id, "cloud_api", str(err))
             return err
+        if isinstance(result, GoveeDeviceState):
+            # Commit as soon as this device's state is built, not after the
+            # whole gather: the new state was merged from the object held right
+            # now, and a command or MQTT push landing on that object while a
+            # slower device is still being read would otherwise be overwritten.
+            self._note_state_change(device_id, result)
+            self._states[device_id] = result
+        return result
 
     async def _fetch_device_state(
         self,

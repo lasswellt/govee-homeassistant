@@ -9,7 +9,7 @@ import pytest
 
 from custom_components.govee.api.exceptions import GoveeApiError
 from custom_components.govee.models.device import GoveeDevice
-from custom_components.govee.scene_cache import SceneCacheManager
+from custom_components.govee.scene_cache import SceneCacheManager, _forget_when_done
 
 
 @pytest.fixture
@@ -273,3 +273,77 @@ class TestErrorHandling:
 
         await manager.async_get_scenes(device.device_id, device)
         assert device.device_id not in manager._scene_inflight
+
+
+# ==============================================================================
+# Cancelled first caller
+# ==============================================================================
+
+
+async def _fail_slowly(*_args: object) -> list:
+    await asyncio.sleep(0.05)
+    raise GoveeApiError("boom")
+
+
+async def _cancel_first_caller(fetch) -> None:
+    caller = asyncio.ensure_future(fetch())
+    await asyncio.sleep(0.01)
+    caller.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await caller
+    # Let the shielded fetch finish on its own.
+    await asyncio.sleep(0.1)
+
+
+class TestCancelledFirstCaller:
+    """A cancelled first caller must not leave its fetch in the in-flight map."""
+
+    @pytest.mark.asyncio
+    async def test_refresh_after_cancelled_first_caller_fetches_again(
+        self, mock_api: AsyncMock, device: GoveeDevice
+    ) -> None:
+        """Refresh hits the API again instead of rejoining the finished, failed fetch."""
+        mock_api.get_dynamic_scenes = AsyncMock(side_effect=_fail_slowly)
+        manager = SceneCacheManager(mock_api)
+
+        await _cancel_first_caller(lambda: manager.async_get_scenes(device.device_id, device))
+        assert device.device_id not in manager._scene_inflight
+
+        fresh = [{"name": "Fresh", "value": {"id": 2}}]
+        mock_api.get_dynamic_scenes = AsyncMock(return_value=fresh)
+        result = await manager.async_get_scenes(device.device_id, device, refresh=True)
+
+        assert result == fresh
+        assert mock_api.get_dynamic_scenes.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_diy_refresh_after_cancelled_first_caller_fetches_again(
+        self, mock_api: AsyncMock, device: GoveeDevice
+    ) -> None:
+        """Same for DIY scenes."""
+        mock_api.get_diy_scenes = AsyncMock(side_effect=_fail_slowly)
+        manager = SceneCacheManager(mock_api)
+
+        await _cancel_first_caller(lambda: manager.async_get_diy_scenes(device.device_id, device))
+        assert device.device_id not in manager._diy_scene_inflight
+
+        fresh = [{"name": "Fresh DIY", "value": {"id": 200}}]
+        mock_api.get_diy_scenes = AsyncMock(return_value=fresh)
+        result = await manager.async_get_diy_scenes(device.device_id, device, refresh=True)
+
+        assert result == fresh
+        assert mock_api.get_diy_scenes.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_finished_task_does_not_evict_a_newer_one(self) -> None:
+        """The done callback removes only the task it was registered for."""
+        loop = asyncio.get_running_loop()
+        old: asyncio.Future = loop.create_future()
+        newer: asyncio.Future = loop.create_future()
+        inflight = {"dev": newer}
+        _forget_when_done(inflight, "dev", old)  # type: ignore[arg-type]
+
+        old.set_result([])
+        await asyncio.sleep(0)
+
+        assert inflight == {"dev": newer}

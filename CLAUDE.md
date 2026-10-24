@@ -187,7 +187,7 @@ About 3,250 tests across 92 files (`pytest --co -q | tail -1` for the current co
 - Coordinator manages all state - entities are `CoordinatorEntity` subscribers
 - MQTT is optional - polling is the fallback; a total cloud outage raises `UpdateFailed` (after the LAN reads and health refresh) so cloud-dependent entities go unavailable; a whole-device light whose LAN transport is healthy stays available (#226)
 - Rate limits: 100/min, 10,000/day
-- Orphan cleanup (`__init__.py`) only removes entities of devices missing from a complete discovery; leak sensors, hubs, and the `hub` diagnostics device are protected, and `async_remove_config_entry_device` covers manual deletion
+- Orphan cleanup (`__init__.py`) only removes entities of devices missing from a complete discovery; leak sensors, hubs, and the per-entry `<entry_id>_hub` diagnostics device are protected (setup migrates the old shared `hub` device first), and `async_remove_config_entry_device` covers manual deletion
 
 ## 2FA Authentication Flow
 

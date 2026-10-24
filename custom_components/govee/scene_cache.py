@@ -21,6 +21,26 @@ _LOGGER = logging.getLogger(__name__)
 SCENE_CACHE_TTL = 86400
 
 
+def _forget_when_done(
+    inflight: dict[str, asyncio.Task[list[dict[str, Any]]]],
+    device_id: str,
+    task: asyncio.Task[list[dict[str, Any]]],
+) -> None:
+    """Drop ``task`` from ``inflight`` once it finishes, whoever was awaiting it.
+
+    Popping in the creating caller's ``finally`` missed the case the shield
+    exists for: a cancelled first caller leaves before the fetch is done, and
+    the finished task then stayed in the map, so every later request (refresh
+    included) joined it and got its stale result.
+    """
+
+    def _forget(done: asyncio.Task[list[dict[str, Any]]]) -> None:
+        if inflight.get(device_id) is done:
+            del inflight[device_id]
+
+    task.add_done_callback(_forget)
+
+
 class SceneCacheManager:
     """Manages scene and DIY scene caches with TTL.
 
@@ -123,11 +143,8 @@ class SceneCacheManager:
 
         task = asyncio.ensure_future(self._fetch_and_cache_scenes(device_id, device))
         self._scene_inflight[device_id] = task
-        try:
-            return await asyncio.shield(task)
-        finally:
-            if task.done():
-                self._scene_inflight.pop(device_id, None)
+        _forget_when_done(self._scene_inflight, device_id, task)
+        return await asyncio.shield(task)
 
     async def _fetch_and_cache_scenes(self, device_id: str, device: GoveeDevice) -> list[dict[str, Any]]:
         """Fetch scenes from API and update cache.
@@ -220,11 +237,8 @@ class SceneCacheManager:
 
         task = asyncio.ensure_future(self._fetch_and_cache_diy_scenes(device_id, device))
         self._diy_scene_inflight[device_id] = task
-        try:
-            return await asyncio.shield(task)
-        finally:
-            if task.done():
-                self._diy_scene_inflight.pop(device_id, None)
+        _forget_when_done(self._diy_scene_inflight, device_id, task)
+        return await asyncio.shield(task)
 
     async def _fetch_and_cache_diy_scenes(self, device_id: str, device: GoveeDevice) -> list[dict[str, Any]]:
         """Fetch DIY scenes from API and update cache.

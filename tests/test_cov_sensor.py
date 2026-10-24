@@ -21,7 +21,7 @@ from homeassistant.const import EntityCategory, UnitOfTemperature
 from homeassistant.helpers.dispatcher import DATA_DISPATCHER
 
 from custom_components.govee.api.probe_thermometer import probes_for_sku
-from custom_components.govee.const import CONF_API_TEMPERATURE_UNIT, DOMAIN, HUB_DEVICE_IDENTIFIER
+from custom_components.govee.const import CONF_API_TEMPERATURE_UNIT, DOMAIN, hub_device_identifier
 from custom_components.govee.models import GoveeCapability, GoveeDevice, GoveeDeviceState, ProbeReading
 from custom_components.govee.models.device import (
     CAPABILITY_PROPERTY,
@@ -346,7 +346,7 @@ class TestMqttStatusSensor:
         entity = self._entity(None)
         assert entity.native_value == "unavailable"
         assert entity.unique_id == "entry1_mqtt_status"
-        assert entity.device_info["identifiers"] == {(DOMAIN, HUB_DEVICE_IDENTIFIER)}
+        assert entity.device_info["identifiers"] == {(DOMAIN, hub_device_identifier("entry1"))}
         assert entity.device_class == SensorDeviceClass.ENUM
         assert entity.entity_category == EntityCategory.DIAGNOSTIC
         assert entity.options == ["connected", "disconnected", "unavailable"]
@@ -368,7 +368,7 @@ class TestMqttLastReceivedSensor:
         assert entity.native_value == stamp
         assert entity.unique_id == "entry1_mqtt_last_received"
         assert entity.device_class == SensorDeviceClass.TIMESTAMP
-        assert entity.device_info["identifiers"] == {(DOMAIN, HUB_DEVICE_IDENTIFIER)}
+        assert entity.device_info["identifiers"] == {(DOMAIN, hub_device_identifier("entry1"))}
 
     def test_none_until_the_first_push(self):
         coordinator = MagicMock()
