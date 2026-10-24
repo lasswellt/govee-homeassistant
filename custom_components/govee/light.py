@@ -25,8 +25,9 @@ from homeassistant.components.light import (  # type: ignore[attr-defined]
     LightEntity,
     LightEntityFeature,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoredExtraData, RestoreEntity
 
@@ -44,6 +45,7 @@ from .const import (
     SUFFIX_MAIN_LIGHT_TOGGLE,
     SUFFIX_MAIN_PANEL,
 )
+from .brightness import device_to_ha_brightness, ha_to_device_brightness
 from .coordinator import GoveeConfigEntry, GoveeCoordinator
 from .entity import GoveeEntity
 from .models import (
@@ -59,18 +61,19 @@ from .models import (
 from .models.device import INSTANCE_MAIN_LIGHT_TOGGLE, INSTANCE_NIGHT_LIGHT
 from .platforms.grouped_segment import GoveeGroupedSegmentEntity
 from .platforms.segment import GoveeSegmentEntity
+from .scene_cache import scenes_refreshed_signal
 
 _LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 0
 
-# Home Assistant brightness range
-HA_BRIGHTNESS_MAX = 255
-
 # Colour temperature the main-panel entity falls back to when switched on with
 # nothing to go on — no service-call attributes and no restored previous value.
 # Mid-range neutral white rather than either extreme.
 MAIN_LIGHT_ON_KELVIN = 4000
+
+# The H1232 main panel takes a 1-100 brightness over ptReal.
+MAIN_PANEL_BRIGHTNESS_RANGE = (1, 100)
 
 
 async def async_setup_entry(
@@ -320,17 +323,11 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
 
     def _ha_to_device_brightness(self, ha_brightness: int) -> int:
         """Convert HA brightness (0-255) to device range, respecting min."""
-        ratio = ha_brightness / HA_BRIGHTNESS_MAX
-        result = int(self._brightness_min + ratio * (self._brightness_max - self._brightness_min))
-        return max(self._brightness_min, min(self._brightness_max, result))
+        return ha_to_device_brightness((self._brightness_min, self._brightness_max), ha_brightness)
 
     def _device_to_ha_brightness(self, device_brightness: int) -> int:
         """Convert device brightness to HA range (0-255), respecting min."""
-        device_range = self._brightness_max - self._brightness_min
-        if device_range <= 0:
-            return 0
-        result = int((device_brightness - self._brightness_min) / device_range * HA_BRIGHTNESS_MAX)
-        return max(0, min(HA_BRIGHTNESS_MAX, result))
+        return device_to_ha_brightness((self._brightness_min, self._brightness_max), device_brightness)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the light on with optional parameters."""
@@ -423,6 +420,22 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
             scenes = await self.coordinator.async_get_scenes(self._device_id)
             if scenes:
                 self._build_effect_mapping(scenes)
+            # A "Refresh scenes" press rebuilds the effect list too.
+            self.async_on_remove(
+                async_dispatcher_connect(
+                    self.hass,
+                    scenes_refreshed_signal(self._device_id),
+                    self._handle_scenes_refreshed,
+                )
+            )
+
+    @callback
+    def _handle_scenes_refreshed(self, scenes: list[dict[str, Any]], diy_scenes: list[dict[str, Any]]) -> None:
+        """Rebuild the effect list from a refreshed catalog; an empty one keeps it."""
+        if not scenes:
+            return
+        self._build_effect_mapping(scenes)
+        self.async_write_ha_state()
 
 
 class GoveeMainLightEntity(GoveeLightEntity):
@@ -460,6 +473,10 @@ class GoveeMainLightEntity(GoveeLightEntity):
     def __init__(self, coordinator: GoveeCoordinator, device: GoveeDevice) -> None:
         """Initialize the main-panel entity."""
         super().__init__(coordinator, device, enable_scenes=False)
+        # The parent names itself after the device (_attr_name = None), and HA
+        # returns _attr_name before it looks at the translation key — without
+        # this the panel would carry the bare device name too.
+        del self._attr_name
         self._attr_unique_id = f"{device.device_id}{SUFFIX_MAIN_LIGHT_TOGGLE}"
 
         # What to return to on turn_on. Only ever holds a non-black colour.
@@ -643,16 +660,10 @@ class GoveeNightLightEntity(GoveeEntity, LightEntity):
         self._brightness_min, self._brightness_max = device.brightness_range
 
     def _ha_to_device_brightness(self, ha_brightness: int) -> int:
-        ratio = ha_brightness / HA_BRIGHTNESS_MAX
-        result = int(self._brightness_min + ratio * (self._brightness_max - self._brightness_min))
-        return max(self._brightness_min, min(self._brightness_max, result))
+        return ha_to_device_brightness((self._brightness_min, self._brightness_max), ha_brightness)
 
     def _device_to_ha_brightness(self, device_brightness: int) -> int:
-        device_range = self._brightness_max - self._brightness_min
-        if device_range <= 0:
-            return 0
-        result = int((device_brightness - self._brightness_min) / device_range * HA_BRIGHTNESS_MAX)
-        return max(0, min(HA_BRIGHTNESS_MAX, result))
+        return device_to_ha_brightness((self._brightness_min, self._brightness_max), device_brightness)
 
     @property
     def color_mode(self) -> ColorMode:
@@ -798,17 +809,22 @@ class GoveeMainPanelLight(GoveeEntity, LightEntity, RestoreEntity):
         rgb: RGBColor | None = None
         if ATTR_RGB_COLOR in kwargs:
             r, g, b = kwargs[ATTR_RGB_COLOR]
-            self._rgb_color = (r, g, b)
             rgb = RGBColor(r=r, g=g, b=b)
 
+        ha_brightness: int | None = kwargs.get(ATTR_BRIGHTNESS)
         device_brightness: int | None = None
-        if ATTR_BRIGHTNESS in kwargs:
-            self._brightness = kwargs[ATTR_BRIGHTNESS]
-            device_brightness = round(self._brightness * 100 / HA_BRIGHTNESS_MAX)
+        if ha_brightness is not None:
+            device_brightness = ha_to_device_brightness(MAIN_PANEL_BRIGHTNESS_RANGE, ha_brightness)
 
         if rgb is not None or device_brightness is not None:
             if not await self.coordinator.async_set_main_panel(self._device_id, rgb=rgb, brightness=device_brightness):
                 raise self._command_failed()
+
+        # Only keep the optimistic values once the panel accepted them.
+        if rgb is not None:
+            self._rgb_color = rgb.as_tuple
+        if ha_brightness is not None:
+            self._brightness = ha_brightness
 
         self.async_write_ha_state()
 

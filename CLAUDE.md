@@ -64,6 +64,7 @@ custom_components/govee/
 ├── transport_health.py  # Per-device, per-transport health tracker
 ├── ble_advertisement.py # BLE advertisement correlation and enrolment
 ├── ble_passthrough.py   # BLE frames tunnelled over AWS IoT
+├── brightness.py        # HA <-> device brightness scaling (lights and segments)
 ├── const.py             # Constants
 ├── icons.json           # Entity icons by translation key
 ├── strings.json         # UI strings (mirrored in translations/en.json)

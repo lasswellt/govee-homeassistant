@@ -151,6 +151,7 @@ from .models.commands import (
     PowerCommand,
     RangeCommand,
     SceneCommand,
+    SegmentBrightnessCommand,
     SegmentColorCommand,
     TemperatureSettingCommand,
     ToggleCommand,
@@ -187,7 +188,7 @@ from .models.device import (
     PUMP_DEHUMIDIFIER_SKUS,
 )
 from .models.device import GoveeLeakSensor, GoveeLeakSensorState
-from .scene_cache import SceneCacheManager
+from .scene_cache import SceneCacheManager, scenes_refreshed_signal
 from .repairs import (
     async_create_mqtt_issue,
     async_create_rate_limit_issue,
@@ -4653,6 +4654,52 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         Returns:
             True if command succeeded.
         """
+        if not isinstance(command, SegmentColorCommand) or device_id not in self._devices:
+            return await self._async_control_device(device_id, command)
+
+        # Remember what the segments were last set to, before the first await,
+        # so a later whole-device write can faithfully restore them. Recorded
+        # here rather than in the REST branch so it captures the command
+        # whichever transport tier ends up carrying it.
+        rgb = command.color.as_tuple
+        tracked = self._segment_colors.get(device_id, {})
+        previous = {index: tracked.get(index) for index in command.segment_indices}
+        for index in command.segment_indices:
+            self.record_segment_color(device_id, index, rgb)
+
+        success = False
+        try:
+            success = await self._async_control_device(device_id, command)
+            return success
+        finally:
+            if not success:
+                # The colour never reached the device: put the tracking back so
+                # a later whole-device write does not replay it (#131). Leave a
+                # segment alone if a newer write has replaced the value since.
+                self._restore_segment_colors(device_id, previous, rgb)
+
+    def _restore_segment_colors(
+        self,
+        device_id: str,
+        previous: dict[int, tuple[int, int, int] | None],
+        written: tuple[int, int, int],
+    ) -> None:
+        """Undo a failed segment write's colour tracking."""
+        tracked = self._segment_colors.get(device_id, {})
+        for index, old in previous.items():
+            if tracked.get(index) != written:
+                continue
+            if old is None:
+                tracked.pop(index, None)
+            else:
+                tracked[index] = old
+
+    async def _async_control_device(
+        self,
+        device_id: str,
+        command: DeviceCommand,
+    ) -> bool:
+        """Dispatch a command over the best transport (see ``async_control_device``)."""
         device = self._devices.get(device_id)
         if not device:
             _LOGGER.error("Unknown device: %s", device_id)
@@ -4663,15 +4710,6 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         is_power_off = isinstance(command, PowerCommand) and not command.power_on
         if is_power_off:
             self._pending_power_off.add(device_id)
-
-        # Remember what the segments were last set to, before the first await,
-        # so a later whole-device write can faithfully restore them. Recorded
-        # here rather than in the REST branch so it captures the command
-        # whichever transport tier ends up carrying it.
-        if isinstance(command, SegmentColorCommand):
-            rgb = command.color.as_tuple
-            for index in command.segment_indices:
-                self.record_segment_color(device_id, index, rgb)
 
         try:
             # BLE-first dispatch: if a BLE transport is available for this
@@ -4760,6 +4798,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 self.async_set_updated_data(self._states)
                 success = await self._dispatch_segment_command(device_id, device.sku, command)
                 return success
+            # Segment brightness has no device-state field to update, but goes
+            # through the same per-device queue so a burst is not dropped.
+            if isinstance(command, SegmentBrightnessCommand):
+                return await self._dispatch_segment_command(device_id, device.sku, command)
 
             success = await self._api_client.control_device(
                 device_id,
@@ -4837,7 +4879,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         self,
         device_id: str,
         sku: str,
-        command: SegmentColorCommand,
+        command: SegmentColorCommand | SegmentBrightnessCommand,
     ) -> bool:
         """Send a single segment command under a per-device lock.
 
@@ -5677,6 +5719,19 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         device = self._devices.get(device_id)
         return await self._scene_cache.async_get_scenes(device_id, device, refresh)
 
+    async def async_refresh_scenes(self, device_id: str) -> None:
+        """Force-refresh a device's scene and DIY scene catalogs and tell the entities.
+
+        Backs the "Refresh scenes" button and ``govee.refresh_scenes``; the
+        selects and the light's effect list rebuild from the signal.
+        """
+        device = self._devices.get(device_id)
+        if device is None:
+            return
+        scenes = await self.async_get_scenes(device_id, refresh=True) if device.supports_scenes else []
+        diy_scenes = await self.async_get_diy_scenes(device_id, refresh=True) if device.supports_diy_scenes else []
+        async_dispatcher_send(self.hass, scenes_refreshed_signal(device_id), scenes, diy_scenes)
+
     async def async_get_diy_scenes(
         self,
         device_id: str,
@@ -5694,22 +5749,26 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         device = self._devices.get(device_id)
         return await self._scene_cache.async_get_diy_scenes(device_id, device, refresh)
 
-    async def async_clear_scene(self, device_id: str) -> None:
+    async def async_clear_scene(self, device_id: str) -> bool:
         """Clear active scene by sending a color/color_temp command to exit it on the device.
 
         Brightness commands don't exit scenes, so we must send a color or color_temp
         command. Restores the last known color/color_temp when available.
+
+        Returns:
+            False when Govee rejected the command that exits the scene; True
+            otherwise, including when there was nothing to clear.
         """
         state = self._states.get(device_id)
         device = self._devices.get(device_id)
         if not state or not device:
-            return
+            return True
 
         # Nothing to clear if no scene is active
         if not state.active_scene and not state.active_diy_scene:
             self.clear_scene(device_id)
             self.clear_diy_scene(device_id)
-            return
+            return True
 
         # HDMI sync boxes (e.g., H6604 AI Sync Box) have no meaningful "static
         # color" to restore — their default mode is video sync of the live HDMI
@@ -5729,7 +5788,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             if success:
                 self.clear_scene(device_id)
                 self.clear_diy_scene(device_id)
-            return
+            return success
 
         # Resolve the color to restore. Skip RGBColor(0,0,0) — the API returns
         # colorRgb=0 when a scene is running, which is not a meaningful restore target.
@@ -5741,15 +5800,17 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             color = None
         color_temp = state.color_temp_kelvin or state.last_color_temp_kelvin
 
-        success = False
+        # None means no command applies to this device (neither RGB nor colour
+        # temperature), which is not a rejection.
+        result: bool | None = None
         if color and device.supports_rgb:
-            success = await self.async_control_device(device_id, ColorCommand(color=color))
+            result = await self.async_control_device(device_id, ColorCommand(color=color))
         elif color_temp and device.supports_color_temp:
-            success = await self.async_control_device(device_id, ColorTempCommand(kelvin=color_temp))
+            result = await self.async_control_device(device_id, ColorTempCommand(kelvin=color_temp))
         elif device.supports_rgb:
             # Prefer RGB white — Govee API reflects this value reliably
             # (colorRgb=16777215), unlike color_temp which may return 0.
-            success = await self.async_control_device(device_id, ColorCommand(color=RGBColor(255, 255, 255)))
+            result = await self.async_control_device(device_id, ColorCommand(color=RGBColor(255, 255, 255)))
         elif device.supports_color_temp:
             # Fallback for color-temp-only devices
             ct_range = device.color_temp_range
@@ -5757,13 +5818,14 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 midpoint = (ct_range.min_kelvin + ct_range.max_kelvin) // 2
             else:
                 midpoint = 4000
-            success = await self.async_control_device(device_id, ColorTempCommand(kelvin=midpoint))
+            result = await self.async_control_device(device_id, ColorTempCommand(kelvin=midpoint))
 
-        if success:
+        if result:
             # ColorCommand/ColorTempCommand already clear active_scene via optimistic handlers,
             # but we also need to clear active_diy_scene explicitly.
             self.clear_scene(device_id)
             self.clear_diy_scene(device_id)
+        return result is not False
 
     def clear_scene(self, device_id: str) -> None:
         """Clear active scene for a device."""
