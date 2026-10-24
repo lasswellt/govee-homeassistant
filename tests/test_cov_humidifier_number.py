@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from homeassistant.components.number import NumberDeviceClass
+from homeassistant.components.number import NumberDeviceClass, NumberExtraStoredData
 from homeassistant.const import EntityCategory, UnitOfTemperature
 from homeassistant.core import State
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
@@ -379,6 +379,7 @@ class TestNumberSetup:
         (entity,) = added
         assert isinstance(entity, GoveeHeaterTemperatureNumber)
         assert (entity.native_min_value, entity.native_max_value) == (5.0, 30.0)
+        entity.coordinator.get_state = MagicMock(return_value=None)
         assert entity.native_value == 17.0  # midpoint until restored/set
 
 
@@ -468,21 +469,19 @@ class TestHeaterTemperatureRestore:
         device = _heater()
         return _attach(GoveeHeaterTemperatureNumber(_coordinator(device, None), device, temp_range=(5, 30)))
 
-    async def test_restores_the_previous_value(self):
+    async def test_restores_the_previous_native_value(self):
         entity = self._entity()
-        await _restore(entity, State("number.living_room_heater_temperature", "22"))
+        entity.async_get_last_number_data = AsyncMock(
+            return_value=NumberExtraStoredData(30.0, 5.0, 1.0, UnitOfTemperature.CELSIUS, 22.0)
+        )
+        await entity.async_added_to_hass()
         assert entity.native_value == 22.0
 
-    @pytest.mark.parametrize("previous", [None, "unknown", "unavailable"])
-    async def test_keeps_the_default_without_a_usable_state(self, previous):
+    @pytest.mark.parametrize(
+        "previous", [None, NumberExtraStoredData(30.0, 5.0, 1.0, UnitOfTemperature.CELSIUS, None)]
+    )
+    async def test_keeps_the_default_without_a_usable_value(self, previous):
         entity = self._entity()
-        last = State("number.living_room_heater_temperature", previous) if previous else None
-        await _restore(entity, last)
+        entity.async_get_last_number_data = AsyncMock(return_value=previous)
+        await entity.async_added_to_hass()
         assert entity.native_value == 17.0
-
-    async def test_invalid_state_is_reported_and_ignored(self, caplog):
-        entity = self._entity()
-        with caplog.at_level(logging.WARNING, logger="custom_components.govee.number"):
-            await _restore(entity, State("number.living_room_heater_temperature", "warm"))
-        assert entity.native_value == 17.0
-        assert "Could not restore heater temperature for Living Room Heater: invalid state 'warm'" in caplog.text

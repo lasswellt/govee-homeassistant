@@ -4320,10 +4320,12 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 if existing_state.last_scene_name is not None:
                     state.last_scene_name = existing_state.last_scene_name
 
-                # Heater state: preserve across polls (API doesn't reliably return these)
-                if existing_state.heater_temperature is not None:
+                # Heater state: keep the last known value only when the poll
+                # omits it (the API doesn't reliably return these); a polled
+                # value wins so changes made in the Govee app show up.
+                if existing_state.heater_temperature is not None and state.heater_temperature is None:
                     state.heater_temperature = existing_state.heater_temperature
-                if existing_state.heater_auto_stop is not None:
+                if existing_state.heater_auto_stop is not None and state.heater_auto_stop is None:
                     state.heater_auto_stop = existing_state.heater_auto_stop
                 if existing_state.device_temperature_unit is not None and state.device_temperature_unit is None:
                     state.device_temperature_unit = existing_state.device_temperature_unit
