@@ -579,6 +579,27 @@ class TestEnsureDeviceTopic:
         assert await coord._ensure_device_topic(DEV) is None
 
     @pytest.mark.asyncio
+    async def test_missing_topic_refetch_is_throttled_per_device(self):
+        """A device absent from the topic list does not cost two account calls per send."""
+        coord = _coordinator(iot=CREDS)
+        coord._fetch_device_topics = AsyncMock()
+
+        for _ in range(5):
+            assert await coord._ensure_device_topic(DEV) is None
+        coord._fetch_device_topics.assert_awaited_once()
+
+        # Another device is not held back by the first one's throttle.
+        assert await coord._ensure_device_topic("AA:BB:CC:DD:EE:FF:00:99") is None
+        assert coord._fetch_device_topics.await_count == 2
+
+        # Once the window has passed, the missing device is asked about again.
+        from custom_components.govee.coordinator import TOPIC_REFRESH_MIN_INTERVAL
+
+        coord._topic_refresh_at[DEV] -= TOPIC_REFRESH_MIN_INTERVAL + 1
+        assert await coord._ensure_device_topic(DEV) is None
+        assert coord._fetch_device_topics.await_count == 3
+
+    @pytest.mark.asyncio
     async def test_no_credentials_means_no_refresh(self):
         coord = _coordinator(iot=None)
         coord._fetch_device_topics = AsyncMock()

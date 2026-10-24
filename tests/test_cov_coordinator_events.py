@@ -829,7 +829,8 @@ class TestFetchDeviceStatePreservation:
 
         assert first is existing and second is existing
         assert coord._rate_limited is True
-        assert coord.update_interval == timedelta(seconds=45)
+        # A window shorter than the configured 60 s poll never speeds polling up.
+        assert coord.update_interval == timedelta(seconds=60)
         create_issue.assert_called_once_with(coord.hass, coord._config_entry, "45 seconds")
 
     @pytest.mark.asyncio
