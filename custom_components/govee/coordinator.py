@@ -36,7 +36,7 @@ from .api import (
     GoveeIotCredentials,
     GoveeRateLimitError,
 )
-from .api.auth import GoveeAuthClient, _derive_client_id
+from .api.auth import GoveeAuthClient, _derive_client_id, is_connection_error
 from .api.openapi_events import GoveeOpenApiEventClient
 from .ble_passthrough import BlePassthroughManager
 
@@ -70,6 +70,8 @@ from .api.lan_client import (
 )
 from .api.lan_control import command_to_lan, lan_brightness_to_device
 from .const import (
+    ACCOUNT_LOGIN_RETRY_INTERVAL,
+    ACCOUNT_LOGIN_RETRY_MAX_INTERVAL,
     CONF_API_TEMPERATURE_UNIT,
     CONF_EMAIL,
     CONF_ENABLE_MQTT_CONTROL,
@@ -101,6 +103,7 @@ from .const import (
     LAN_WRITE_SUPPRESS_THRESHOLD,
     LEAK_DUAL_PROBE_SKUS,
     LOCAL_READING_FRESHNESS_FACTOR,
+    LOGIN_FAILED_2FA,
     MAX_BUDGET_PACED_INTERVAL,
     MAX_LOCAL_FRESH_SKIPS,
     MAX_MQTT_STATUS_INTERVAL,
@@ -297,6 +300,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
     # coordinators that skip __init__ working.
     _budget_pacing_announced = False
     _header_deferred = False
+    # Set by async_shutdown. Timer callbacks run as untracked hass tasks, so
+    # one that was mid-await when the entry unloaded must not re-arm itself
+    # or open a second MQTT session on the dead coordinator.
+    _shut_down = False
 
     def __init__(
         self,
@@ -340,6 +347,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         self.options_snapshot: dict[str, Any] = dict(config_entry.options)
         self._api_client = api_client
         self._iot_credentials = iot_credentials
+        self._login_retry_unsub: CALLBACK_TYPE | None = None
+        # Delay before the next background login retry; doubles per failure.
+        self._login_retry_delay: float = ACCOUNT_LOGIN_RETRY_INTERVAL
         self._enable_groups = enable_groups
         # Opt-in: route power/brightness/color over MQTT instead of REST.
         self._enable_mqtt_control = config_entry.options.get(CONF_ENABLE_MQTT_CONTROL, DEFAULT_ENABLE_MQTT_CONTROL)
@@ -1768,7 +1778,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
     async def _start_mqtt(self) -> None:
         """Start MQTT client for real-time updates."""
-        if not self._iot_credentials:
+        if not self._iot_credentials or self._shut_down:
             return
 
         self._mqtt_client = GoveeAwsIotClient(
@@ -1951,6 +1961,95 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         state.water_full = is_full
         if changed_at is not None:
             self._water_full_changed_at.setdefault(device_id, changed_at)
+
+    def schedule_account_login_retry(self) -> None:
+        """Arm the next background retry of a setup login that failed transiently.
+
+        Called by the entry setup once the first refresh succeeded, so a setup
+        that ends in ConfigEntryNotReady never leaves a timer behind (the
+        retried setup logs in again itself).
+        """
+        if self._login_retry_unsub:
+            self._login_retry_unsub()
+            self._login_retry_unsub = None
+        if self._shut_down:
+            return
+        delay = self._login_retry_delay
+        self._login_retry_delay = min(delay * 2, ACCOUNT_LOGIN_RETRY_MAX_INTERVAL)
+        self._login_retry_unsub = async_call_later(self.hass, delay, self._account_login_retry_callback)
+
+    async def _account_login_retry_callback(self, _now: Any = None) -> None:
+        """Timer callback: retry the account login once."""
+        self._login_retry_unsub = None
+        await self._async_retry_account_login()
+
+    async def _async_retry_account_login(self) -> None:
+        """Retry an account login that failed at setup with a network error.
+
+        A network or DNS error at boot used to leave real-time updates off
+        until the next restart. This retries on a backing-off timer while the
+        failure stays network-level: success stores the credentials and
+        reloads the entry so MQTT, device topics and the account-only sensors
+        all start. Any other outcome (bad password, 2FA, login refused, a
+        malformed answer after the password was accepted) stores the failure
+        marker, raises the repair and stops retrying, since it would fail the
+        same way again and repeated logins trip Govee's 2FA hardening.
+        """
+        if self._iot_credentials:
+            return
+        email = self._config_entry.data.get(CONF_EMAIL)
+        password = self._config_entry.data.get(CONF_PASSWORD)
+        if not email or not password:
+            return
+
+        credentials: GoveeIotCredentials | None = None
+        error: Exception | None = None
+        try:
+            async with GoveeAuthClient(hass=self.hass) as auth_client:
+                credentials = await auth_client.login(
+                    email,
+                    password,
+                    client_id=_derive_client_id(email),
+                )
+        except Exception as err:  # noqa: BLE001 - classified below
+            error = err
+
+        if self._shut_down:
+            # The entry unloaded (reload, reconfigure, removal) while the login
+            # was in flight. Whatever came back belongs to a dead coordinator:
+            # writing a marker or a repair, or reloading, would act on the new
+            # entry with a stale result, or resurrect a removed one.
+            return
+        if isinstance(error, Govee2FARequiredError):
+            _LOGGER.warning(
+                "Govee account requires email verification (2FA). Use Reconfigure to "
+                "enter a verification code; continuing with polling-only mode"
+            )
+            self._persist_login_failed(LOGIN_FAILED_2FA)
+            self._async_create_iot_reauth_issue("mqtt_2fa_required")
+            # The setup-time "sign-in failed" repair offers a retry that would
+            # only hit 2FA again; the 2FA repair replaces it.
+            async_delete_mqtt_issue(self.hass, self._config_entry)
+            return
+        if error is not None and is_connection_error(error):
+            _LOGGER.debug("Account login retry failed, will try again in %ds: %s", int(self._login_retry_delay), error)
+            self.schedule_account_login_retry()
+            return
+        if error is not None or credentials is None:
+            _LOGGER.warning("Failed to get MQTT credentials: %s", error)
+            self._persist_login_failed(str(error))
+            async_create_mqtt_issue(self.hass, self._config_entry, f"account sign-in failed: {error}")
+            return
+
+        _LOGGER.debug("Account login succeeded on retry; reloading to start real-time updates")
+        self._persist_refreshed_credentials(credentials)
+        self.hass.config_entries.async_schedule_reload(self._config_entry.entry_id)
+
+    def _persist_login_failed(self, reason: str) -> None:
+        """Store the login-failure marker so later setups skip the login."""
+        new_data = dict(self._config_entry.data)
+        new_data[KEY_IOT_LOGIN_FAILED] = reason
+        self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
 
     async def _async_refresh_iot_credentials(self) -> bool:
         """Log in again to replace an account token the BFF has stopped accepting.
@@ -2699,6 +2798,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         """Schedule the next BFF poll in 5 minutes."""
         if self._bff_poll_unsub:
             self._bff_poll_unsub()
+            self._bff_poll_unsub = None
+        if self._shut_down:
+            return
         self._bff_poll_unsub = async_call_later(self.hass, BFF_POLL_INTERVAL, self._bff_poll_callback)
 
     async def _bff_poll_callback(self, _now: Any = None) -> None:
@@ -2842,6 +2944,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         """Schedule the next standalone water-detector leak poll."""
         if self._wd_poll_unsub:
             self._wd_poll_unsub()
+            self._wd_poll_unsub = None
+        if self._shut_down:
+            return
         self._wd_poll_unsub = async_call_later(
             self.hass,
             self._water_detector_poll_interval,
@@ -2866,59 +2971,63 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if not detectors or not self._iot_credentials:
             return
 
-        token = self._iot_credentials.token
         device_ids = {d.device_id for d in detectors}
         sku_by_id = {d.device_id: d.sku for d in detectors}
 
+        # Through _async_bff_call so an expired account token is replaced by a
+        # re-login (#132) instead of failing every tick in silence.
+        async def _op(auth_client: GoveeAuthClient, token: str) -> bool:
+            states = await auth_client.fetch_water_detector_states(token, device_ids)
+            changed = False
+            for device_id, info in states.items():
+                state = self._states.get(device_id)
+                if state is None:
+                    continue
+
+                clear_gen = self._water_leak_clear_gen.get(device_id, 0)
+                online = bool(info.get("online", True)) and bool(info.get("gateway_online", True))
+                last_time = info.get("last_time") or 0
+                prev_time = self._water_leak_last_time.get(device_id, 0)
+
+                # Only hit warnMessage when there's something new to learn:
+                # a fresh report, or a currently-wet sensor that may have
+                # been cleared in the app.
+                if last_time > prev_time or state.water_leak:
+                    try:
+                        is_wet = await auth_client.fetch_leak_warning(token, device_id, sku_by_id[device_id])
+                    except Exception as err:  # noqa: BLE001
+                        _LOGGER.debug("warnMessage poll failed for %s: %s", device_id, err)
+                        is_wet = bool(state.water_leak)
+                    # A clear that landed while warnMessage was in flight
+                    # wins; the next tick reads the alert again.
+                    if self._water_leak_clear_gen.get(device_id, 0) == clear_gen and state.water_leak != is_wet:
+                        state.water_leak = is_wet
+                        changed = True
+                if last_time and self._water_leak_clear_gen.get(device_id, 0) == clear_gen:
+                    self._water_leak_last_time[device_id] = last_time
+
+                if state.online != online:
+                    state.online = online
+                    changed = True
+                # Battery (%) rides along in the same BFF device/list poll —
+                # surface it so the H5054 gets a battery sensor (issue #145).
+                battery = info.get("battery")
+                if battery is not None and state.battery != battery:
+                    state.battery = battery
+                    changed = True
+                state.source = "api"
+                _LOGGER.debug(
+                    "Water-detector %s: online=%s water_leak=%s battery=%s " "last_time=%s",
+                    device_id,
+                    online,
+                    state.water_leak,
+                    state.battery,
+                    last_time,
+                )
+            return changed
+
         try:
-            async with GoveeAuthClient(hass=self.hass) as auth_client:
-                states = await auth_client.fetch_water_detector_states(token, device_ids)
-                changed = False
-                for device_id, info in states.items():
-                    state = self._states.get(device_id)
-                    if state is None:
-                        continue
-
-                    clear_gen = self._water_leak_clear_gen.get(device_id, 0)
-                    online = bool(info.get("online", True)) and bool(info.get("gateway_online", True))
-                    last_time = info.get("last_time") or 0
-                    prev_time = self._water_leak_last_time.get(device_id, 0)
-
-                    # Only hit warnMessage when there's something new to learn:
-                    # a fresh report, or a currently-wet sensor that may have
-                    # been cleared in the app.
-                    if last_time > prev_time or state.water_leak:
-                        try:
-                            is_wet = await auth_client.fetch_leak_warning(token, device_id, sku_by_id[device_id])
-                        except Exception as err:  # noqa: BLE001
-                            _LOGGER.debug("warnMessage poll failed for %s: %s", device_id, err)
-                            is_wet = bool(state.water_leak)
-                        # A clear that landed while warnMessage was in flight
-                        # wins; the next tick reads the alert again.
-                        if self._water_leak_clear_gen.get(device_id, 0) == clear_gen and state.water_leak != is_wet:
-                            state.water_leak = is_wet
-                            changed = True
-                    if last_time and self._water_leak_clear_gen.get(device_id, 0) == clear_gen:
-                        self._water_leak_last_time[device_id] = last_time
-
-                    if state.online != online:
-                        state.online = online
-                        changed = True
-                    # Battery (%) rides along in the same BFF device/list poll —
-                    # surface it so the H5054 gets a battery sensor (issue #145).
-                    battery = info.get("battery")
-                    if battery is not None and state.battery != battery:
-                        state.battery = battery
-                        changed = True
-                    state.source = "api"
-                    _LOGGER.debug(
-                        "Water-detector %s: online=%s water_leak=%s battery=%s " "last_time=%s",
-                        device_id,
-                        online,
-                        state.water_leak,
-                        state.battery,
-                        last_time,
-                    )
+            changed = bool(await self._async_bff_call(_op, "water-detector poll"))
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("Water-detector poll failed: %s", err)
             return
@@ -3104,6 +3213,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         """Schedule the next probe read, replacing any pending timer."""
         if self._probe_poll_unsub:
             self._probe_poll_unsub()
+            self._probe_poll_unsub = None
+        if self._shut_down:
+            return
         self._probe_poll_unsub = async_call_later(self.hass, self._probe_poll_interval, self._probe_poll_callback)
 
     async def _probe_poll_callback(self, _now: Any = None) -> None:
@@ -3222,7 +3334,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if self._status_poll_unsub:
             self._status_poll_unsub()
             self._status_poll_unsub = None
-        if not self._mqtt_status_poll_enabled:
+        if not self._mqtt_status_poll_enabled or self._shut_down:
             return
         self._status_poll_unsub = async_call_later(
             self.hass, self._mqtt_status_poll_interval, self._status_poll_callback
@@ -5798,6 +5910,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
     async def async_shutdown(self) -> None:
         """Shutdown coordinator and cleanup resources."""
+        self._shut_down = True
         # Cancel BFF polling
         if self._bff_poll_unsub:
             self._bff_poll_unsub()
@@ -5805,6 +5918,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if self._bff_poll_task and not self._bff_poll_task.done():
             self._bff_poll_task.cancel()
             self._bff_poll_task = None
+        if self._login_retry_unsub:
+            self._login_retry_unsub()
+            self._login_retry_unsub = None
         # Cancel standalone water-detector polling (issue #62)
         if self._wd_poll_unsub:
             self._wd_poll_unsub()
