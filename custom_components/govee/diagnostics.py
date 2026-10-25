@@ -41,6 +41,7 @@ from .const import (
     CONF_PASSWORD,
     CONF_SEGMENT_MODE_BY_DEVICE,
     DOMAIN,
+    H6104_BLE_BUILD,
 )
 from .coordinator import GoveeCoordinator
 from .models.transport import TRANSPORT_KINDS
@@ -240,6 +241,9 @@ def _device_diag(
         "segment_resolution": device.segment_count_resolution,
     }
     # H7175 kettles: recent distinct pushed frames, command echoes included.
+    ble_client = coordinator._ble_devices.get(device_id)
+    if device.sku == "H6104" and ble_client is not None and ble_client.supports_readback is True:
+        record["ble_readback"] = ble_client.readback_diagnostics
     if device.decodes_kettle_frames:
         record["recent_frames"] = coordinator.kettles.recent_frames(device_id)
     return record
@@ -321,6 +325,7 @@ def _runtime_diag(coordinator: GoveeCoordinator) -> dict[str, Any]:
         }
     return {
         "mqtt": mqtt_info,
+        "h6104_ble_build": H6104_BLE_BUILD,
         "openapi_events": openapi_info,
         "recent_multisync": recent_multisync,
         "recent_probe_frames": recent_probe_frames,

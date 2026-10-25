@@ -3,6 +3,7 @@
 from typing import Final
 
 DOMAIN: Final = "govee"
+H6104_BLE_BUILD: Final = "2026.10.25.10"
 
 # Config entry keys
 CONF_API_KEY: Final = "api_key"
@@ -17,6 +18,8 @@ CONF_ENABLE_SCENES: Final = "enable_scenes"
 CONF_ENABLE_DIY_SCENES: Final = "enable_diy_scenes"
 CONF_EXPOSE_TRANSPORT_ENTITIES: Final = "expose_transport_entities"
 CONF_ENABLE_MQTT_CONTROL: Final = "enable_mqtt_control"
+# H6104 advertises BLE, but its light command protocol is not hardware-verified.
+CONF_ENABLE_H6104_BLE: Final = "enable_h6104_ble"
 # Confirm light commands against the device's AWS IoT report and resend a
 # dropped one once (command_confirm.py, #245).
 CONF_CONFIRM_COMMANDS: Final = "confirm_commands"
@@ -268,6 +271,7 @@ DEFAULT_ENABLE_DIY_SCENES: Final = True
 DEFAULT_SEGMENT_MODE: Final = "individual"  # "disabled", "grouped", or "individual"
 DEFAULT_EXPOSE_TRANSPORT_ENTITIES: Final = False
 DEFAULT_ENABLE_MQTT_CONTROL: Final = False
+DEFAULT_ENABLE_H6104_BLE: Final = False
 DEFAULT_CONFIRM_COMMANDS: Final = False
 DEFAULT_API_TEMPERATURE_UNIT: Final = "auto"
 DEFAULT_LAN_TARGETS: Final = ""

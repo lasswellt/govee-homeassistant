@@ -22,6 +22,7 @@ import pytest
 
 from custom_components.govee import switch as switch_mod
 from custom_components.govee.const import (
+    CONF_ENABLE_H6104_BLE,
     SUFFIX_DREAMVIEW,
     SUFFIX_HEATER_AUTO_STOP,
     SUFFIX_MAIN_LIGHT,
@@ -301,6 +302,22 @@ def _names(entities) -> list[str]:
 
 
 class TestSetupEntry:
+    @pytest.mark.parametrize("enabled", [False, True])
+    async def test_h6104_tv_switch_requires_experimental_option(self, enabled):
+        device = _device(
+            "tv",
+            "H6104",
+            "TV",
+            DEVICE_TYPE_LIGHT,
+            _cap(CAPABILITY_ON_OFF, INSTANCE_POWER),
+        )
+        entry = MagicMock()
+        entry.runtime_data.devices = {"tv": device}
+        entry.options = {CONF_ENABLE_H6104_BLE: enabled}
+        added = []
+        await switch_mod.async_setup_entry(MagicMock(), entry, added.extend)
+        assert any(isinstance(entity, GoveeDreamViewSwitchEntity) for entity in added) is enabled
+
     async def _setup(self, *devices: GoveeDevice) -> list:
         coordinator = MagicMock()
         coordinator.devices = {d.device_id: d for d in devices}

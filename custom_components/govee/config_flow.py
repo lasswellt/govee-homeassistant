@@ -52,6 +52,7 @@ from .const import (
     CONF_ENABLE_GROUPS,
     CONF_CONFIRM_COMMANDS,
     CONF_ENABLE_MQTT_CONTROL,
+    CONF_ENABLE_H6104_BLE,
     CONF_ENABLE_SCENES,
     CONF_KETTLE_SLOT_LABELS,
     CONF_EXPOSE_TRANSPORT_ENTITIES,
@@ -70,6 +71,7 @@ from .const import (
     DEFAULT_ENABLE_GROUPS,
     DEFAULT_CONFIRM_COMMANDS,
     DEFAULT_ENABLE_MQTT_CONTROL,
+    DEFAULT_ENABLE_H6104_BLE,
     DEFAULT_ENABLE_SCENES,
     DEFAULT_EXPOSE_TRANSPORT_ENTITIES,
     DEFAULT_LAN_TARGETS,
@@ -934,6 +936,10 @@ class GoveeOptionsFlow(OptionsFlow):
                     vol.Optional(
                         CONF_CONFIRM_COMMANDS,
                         default=source.get(CONF_CONFIRM_COMMANDS, DEFAULT_CONFIRM_COMMANDS),
+                    ): bool,
+                    vol.Optional(
+                        CONF_ENABLE_H6104_BLE,
+                        default=source.get(CONF_ENABLE_H6104_BLE, DEFAULT_ENABLE_H6104_BLE),
                     ): bool,
                     vol.Optional(
                         CONF_API_TEMPERATURE_UNIT,

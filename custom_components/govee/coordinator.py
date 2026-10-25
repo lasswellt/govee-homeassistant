@@ -39,6 +39,7 @@ from .api import (
     GoveeIotCredentials,
     GoveeRateLimitError,
 )
+from .api.ble_status import H6104Report
 from .api.auth import GoveeAuthClient, _derive_client_id
 from .api.openapi_events import GoveeOpenApiEventClient
 from .ble_passthrough import BlePassthroughManager
@@ -437,6 +438,11 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         )
 
         self._config_entry = config_entry
+        self._h6104_tv_settings: dict[str, tuple[int, int]] = {}
+        self._h6104_tv_settings_locks: dict[str, asyncio.Lock] = {}
+        self._h6104_ble_fields: dict[str, dict[str, tuple[Any, datetime]]] = {}
+        self._h6104_last_write: dict[str, datetime] = {}
+        self._h6104_last_query: dict[str, float] = {}
         # The options this instance was built with. The entry's update listener
         # compares against this to tell an options change from a data-only
         # write, such as storing a refreshed account token (#132) — reloading
@@ -847,6 +853,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             health = self._transport.get(device_id, kind)
             if health is not None and health.is_available:
                 return True
+        device = self._devices.get(device_id)
+        if device is not None and device.sku == "H6104" and self._ble_write_eligible(device_id):
+            return True
         last = self.mqtt_last_receive_for(device_id)
         return last is not None and (dt_util.utcnow() - last).total_seconds() <= REACHABLE_PUSH_WINDOW
 
@@ -955,7 +964,11 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
     def _refresh_ble_staleness(self) -> None:
         """Mark BLE unavailable for devices whose last advertisement is stale."""
-        self._transport.refresh_ble_staleness(self._devices, set(self._ble_devices.keys()))
+        self._transport.refresh_ble_staleness(
+            self._devices,
+            set(self._ble_devices.keys()),
+            {did for did, client in self._ble_devices.items() if client.is_connected is True},
+        )
 
     def _refresh_lan_staleness(self) -> None:
         """Mark LAN unavailable for non-LAN or stale-read devices (issue #57).
@@ -3800,6 +3813,14 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 device.name if device else device_id,
             )
 
+        if device is not None and device.sku == "H6104":
+            # Newer device pushes win for fields they actually changed; keep
+            # BLE-only mode fields absent from this MQTT report.
+            fields = self._h6104_ble_fields.get(device_id, {})
+            for field in list(fields):
+                if getattr(state, field) != getattr(before, field):
+                    fields.pop(field)
+
         # Confirmed push — record transport health and end the optimistic
         # grace window for this device (state.update_from_mqtt also calls
         # clear_optimistic_window, but recording MQTT health is our job).
@@ -4177,6 +4198,12 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         skipped = len(self._devices) - len(pollable)
         if skipped:
             _LOGGER.debug("Skipping %d device(s) with all entities disabled", skipped)
+
+        # Local readback must still run when REST is skipped for budget or
+        # MQTT freshness. The fetch helper throttles duplicate UART queries.
+        await asyncio.gather(
+            *(self._async_refresh_h6104_ble_status(did) for did, dev in pollable.items() if dev.sku == "H6104")
+        )
 
         # Devices a local transport has already reported on more recently than
         # one poll interval need no cloud read this cycle (see
@@ -4734,6 +4761,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             self._mark_cached_result(device_id)
             return self._states.get(device_id) or GoveeDeviceState.create_empty(device_id)
 
+        await self._async_refresh_h6104_ble_status(device_id)
         try:
             state = await self._api_client.get_device_state(device_id, device.sku)
             self._record_transport_success(device_id, "cloud_api")
@@ -4913,6 +4941,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                             device_id,
                         )
 
+            self._merge_h6104_ble_fields(device_id, state)
             return state
 
         except GoveeDeviceNotFoundError:
@@ -4952,6 +4981,12 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
         except Exception as err:
             self._record_transport_failure(device_id, "cloud_api", str(err))
+            existing = self._states.get(device_id)
+            if device.sku == "H6104" and existing is not None:
+                refreshed = dataclasses.replace(existing)
+                if self._merge_h6104_ble_fields(device_id, refreshed):
+                    self._mark_cached_result(device_id)
+                    return refreshed
             return err
 
     def _raw_power_switch_value(self, device_id: str) -> Any:
@@ -5301,10 +5336,28 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             # (~50ms local vs ~500ms cloud) and works when internet is down.
             if HAS_BLUETOOTH and device_id in self._ble_devices and self._ble_write_eligible(device_id):
                 if await self._try_ble_command(device_id, command):
+                    if device.sku == "H6104":
+                        self._h6104_last_write[device_id] = dt_util.utcnow()
                     self._apply_optimistic_update(device_id, command)
                     self.async_set_updated_data(self._states)
+                    await self._async_refresh_h6104_ble_status(device_id, force=True)
                     return True
                 # BLE failed — fall through to LAN/MQTT/REST
+
+            if (
+                device.sku == "H6104"
+                and isinstance(command, ToggleCommand)
+                and command.toggle_instance == INSTANCE_DREAMVIEW
+            ):
+                # H6104 exposes this mode only on the legacy BLE transport.
+                # Cloud returns HTTP 200 with an embedded unsupported-instance
+                # error, obscuring why BLE was skipped or failed.
+                health = self._transport.get(device_id, "ble")
+                reason = health.last_failure_reason if health is not None else "not_enrolled"
+                raise HomeAssistantError(
+                    f"H6104 TV mode requires Bluetooth; BLE was unavailable or failed ({reason or 'unknown reason'}). "
+                    "Check the Bluetooth proxy and Govee diagnostics for the BLE failure."
+                )
 
             # LAN (UDP) control tier — sits between BLE and MQTT so precedence
             # is BLE > LAN > MQTT > REST. Unlike the BLE/MQTT blocks above,
@@ -5850,6 +5903,110 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         self._record_local_command(device_id, sku, "mqtt", command, delivered=True)
         return True
 
+    def _apply_h6104_ble_report(self, device_id: str, report: H6104Report) -> None:
+        """Apply received fields, never values inferred from a sent command."""
+        device = self._devices.get(device_id)
+        existing = self._states.get(device_id)
+        if device is None or device.sku != "H6104" or existing is None:
+            return
+        updates: dict[str, Any] = {"online": True}
+        if report.power is not None:
+            updates["power_state"] = report.power
+        if report.brightness is not None:
+            maximum = device.brightness_range[1]
+            updates["brightness"] = max(0, min(maximum, round(report.brightness * maximum / 254)))
+        if report.mode is not None:
+            updates.update(
+                dreamview_enabled=report.mode == "tv",
+                music_mode_enabled=report.mode == "music",
+            )
+            if report.mode != "music":
+                updates.update(music_mode_value=None, music_mode_name=None)
+            if report.mode in ("tv", "music", "scene", "diy", "color_temp"):
+                updates.update(color=None, color_temp_kelvin=None)
+            if report.mode not in ("scene", "diy"):
+                updates.update(active_scene=None, active_scene_name=None, active_diy_scene=None)
+            if report.mode == "music":
+                api_mode = (
+                    {0: 5, 1: 6, 2: 4, 3: 3}.get(report.music_effect) if report.music_effect is not None else None
+                )
+                name = next(
+                    (opt.get("name") for opt in device.get_music_mode_options() if opt.get("value") == api_mode), None
+                )
+                updates.update(music_mode_value=api_mode, music_mode_name=name)
+                if report.sensitivity is not None:
+                    updates["music_sensitivity"] = report.sensitivity
+        if report.rgb is not None:
+            updates.update(color=RGBColor(*report.rgb), color_temp_kelvin=None)
+        now = dt_util.utcnow()
+        self._h6104_ble_fields.setdefault(device_id, {}).update({key: (value, now) for key, value in updates.items()})
+        refreshed = dataclasses.replace(existing, **updates)
+        if report.power is not None:
+            refreshed.source = "ble"
+            refreshed.clear_optimistic_window()
+        elif existing.source != "optimistic":
+            refreshed.source = "ble"
+        self._states[device_id] = refreshed
+        self._transport.record_read(device_id, "ble")
+        if self.data is not None:
+            self.async_update_listeners()
+
+    def _merge_h6104_ble_fields(self, device_id: str, state: GoveeDeviceState) -> bool:
+        """Keep fresh received fields over a lagging cloud read, field by field."""
+        device = self._devices.get(device_id)
+        if device is None or device.sku != "H6104":
+            return False
+        now = dt_util.utcnow()
+        last_write = self._h6104_last_write.get(device_id)
+        applied = False
+        for field, (value, received) in self._h6104_ble_fields.get(device_id, {}).items():
+            if (now - received).total_seconds() > 120 or (last_write is not None and received < last_write):
+                continue
+            setattr(state, field, value)
+            applied = True
+        if applied:
+            state.source = "ble"
+        return applied
+
+    async def _async_refresh_h6104_ble_status(self, device_id: str, *, force: bool = False) -> None:
+        """Best-effort status reads on commands and the existing poll cadence."""
+        device = self._devices.get(device_id)
+        if device is None or device.sku != "H6104":
+            return
+        client = self._ble_devices.get(device_id)
+        if client is None or client.supports_readback is not True or not self._ble_write_eligible(device_id):
+            return
+        now = time.monotonic()
+        previous = self._h6104_last_query.get(device_id)
+        if not force and previous is not None and now - previous < 2:
+            return
+        self._h6104_last_query[device_id] = now
+        try:
+            async with asyncio.timeout(5):
+                await client.async_read_status()
+        except Exception as err:
+            self._record_transport_failure(device_id, "ble", str(err))
+            _LOGGER.debug("H6104 status read failed for %s: %s", device_id, err)
+
+    def _h6104_idle_reconnect_eligible(self, device_id: str) -> bool:
+        """Allow a connection attempt after our own idle release, not a failed link.
+
+        Some proxies do not deliver a fresh advert immediately on release.
+        Requiring one to attempt reconnect would deadlock this known device.
+        A failed attempt clears the idle flag and uses normal failure gating.
+        """
+        device = self._devices.get(device_id)
+        client = self._ble_devices.get(device_id)
+        health = self._transport.get(device_id, "ble")
+        return (
+            device is not None
+            and device.sku == "H6104"
+            and client is not None
+            and client.idle_disconnected is True
+            and health is not None
+            and health.last_failure_reason in (None, "stale_advertisement")
+        )
+
     def _ble_write_eligible(self, device_id: str) -> bool:
         """Return True if this device's BLE advertisements are fresh enough to write to.
 
@@ -5858,12 +6015,19 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         blindly and never fall through to LAN/MQTT/REST (#198).
         """
         health = self._transport.get(device_id, "ble")
+        if self._h6104_idle_reconnect_eligible(device_id):
+            return True
+        if health is not None and health.last_failure_reason == "stale_advertisement":
+            client = self._ble_devices.get(device_id)
+            if client is not None and client.is_connected is True:
+                return True
         return health is not None and health.is_available
 
     async def _try_ble_command(self, device_id: str, command: DeviceCommand) -> bool:
         """Attempt to send a command via BLE. Returns True on success.
 
-        Only power, brightness, and RGB color commands are BLE-capable.
+        Power, brightness, and RGB are shared. The opted-in H6104 additionally
+        handles TV mode and automatic-color music modes over its UART.
         Scenes, color_temp, work modes, etc. fall through to REST.
         """
         ble_device = self._ble_devices.get(device_id)
@@ -5871,6 +6035,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             return False
         device = self._devices.get(device_id)
         ble_sku = device.sku if device is not None else "unknown"
+        detail = None
 
         try:
             if isinstance(command, PowerCommand):
@@ -5879,13 +6044,46 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 else:
                     await ble_device.turn_off()
             elif isinstance(command, BrightnessCommand):
-                await ble_device.set_brightness(command.brightness)
+                brightness = command.brightness
+                if ble_sku == "H6104" and device is not None:
+                    brightness = max(20, min(254, round(brightness * 254 / max(1, device.brightness_range[1]))))
+                await ble_device.set_brightness(brightness)
             elif isinstance(command, ColorCommand):
                 await ble_device.set_rgb(
                     command.color.r,
                     command.color.g,
                     command.color.b,
                 )
+            elif isinstance(command, MusicModeCommand) and ble_sku == "H6104":
+                if command.auto_color != 1 or command.music_mode not in (3, 4, 5, 6):
+                    return False
+                # H6104 API IDs from the field capability dump differ from
+                # legacy BLE effect codes: Energic 5->0, Spectrum 6->1,
+                # Rolling 4->2, Rhythm 3->3. Codes 1/2 also need RGB bytes.
+                # https://github.com/softgrass/govee-api-ble/blob/master/src/govee_api_ble/device.py
+                effect = {5: 0, 6: 1, 4: 2, 3: 3}[command.music_mode]
+                state = self._states.get(device_id)
+                color = (state.last_color or state.color) if state else None
+                color = color or RGBColor(255, 255, 255)
+                await ble_device.set_music_mode(effect, command.sensitivity, rgb=color.as_tuple)
+                detail = (
+                    f"H6104 music api_mode={command.music_mode} ble_effect={effect} "
+                    f"sensitivity={command.sensitivity} rgb={color.as_tuple}"
+                )
+            elif (
+                isinstance(command, ToggleCommand)
+                and command.toggle_instance == INSTANCE_DREAMVIEW
+                and ble_sku == "H6104"
+            ):
+                if command.enabled:
+                    area, sensitivity = self.h6104_tv_settings(device_id)
+                    await ble_device.set_tv_mode(area=area, sensitivity=sensitivity)
+                    detail = f"H6104 TV mode area={area} sensitivity={sensitivity}"
+                else:
+                    state = self._states.get(device_id)
+                    color = (state.last_color or state.color) if state else None
+                    color = color or RGBColor(255, 255, 255)
+                    await ble_device.set_rgb(color.r, color.g, color.b)
             else:
                 # Not BLE-capable (scenes, color_temp, work modes, etc.)
                 return False
@@ -5905,7 +6103,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             # `refresh_ble_staleness` uses to decide the device stopped
             # advertising; a blind write must not move it (#198).
             self._record_transport_send(device_id, "ble")
-            self._record_local_command(device_id, ble_sku, "ble", command, delivered=True)
+            self._record_local_command(device_id, ble_sku, "ble", command, delivered=True, detail=detail)
             # A successful BLE write reaches the device directly — flip
             # `online` back True if a stale `online: false` from the cloud
             # is masking a recovered device (issue #68).
@@ -5970,6 +6168,20 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if not device:
             _LOGGER.error("Unknown device for music mode: %s", device_id)
             return False
+
+        if device.sku == "H6104" and device_id in self._ble_devices:
+            if enabled:
+                if music_mode == 1:
+                    modes = [
+                        opt["value"] for opt in device.get_music_mode_options() if opt.get("value") in (3, 4, 5, 6)
+                    ]
+                    music_mode = modes[0] if modes else 3
+                return await self.async_control_device(
+                    device_id, MusicModeCommand(music_mode=music_mode, sensitivity=sensitivity, auto_color=1)
+                )
+            state = self._states.get(device_id)
+            color = (state.last_color or state.color) if state else None
+            return await self.async_control_device(device_id, ColorCommand(color=color or RGBColor(255, 255, 255)))
 
         # Try REST API first for devices with STRUCT music mode capability
         if device.has_struct_music_mode:
@@ -6075,6 +6287,40 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
         return success
 
+    def h6104_tv_settings(self, device_id: str) -> tuple[int, int]:
+        """Return desired area/sensitivity; entity restoration persists them."""
+        return self._h6104_tv_settings.get(device_id, (1, 50))
+
+    def restore_h6104_tv_settings(
+        self, device_id: str, *, area: int | None = None, sensitivity: int | None = None
+    ) -> None:
+        """Restore desired settings without sending a command or selecting TV mode."""
+        old_area, old_sensitivity = self.h6104_tv_settings(device_id)
+        area = old_area if area is None else area
+        sensitivity = old_sensitivity if sensitivity is None else sensitivity
+        if area not in (0, 1) or not 0 <= sensitivity <= 100:
+            raise ValueError("Invalid H6104 TV settings")
+        self._h6104_tv_settings[device_id] = (area, sensitivity)
+
+    async def async_update_h6104_tv_settings(
+        self, device_id: str, *, area: int | None = None, sensitivity: int | None = None
+    ) -> bool:
+        """Apply desired settings immediately only when TV mode is already active."""
+        lock = self._h6104_tv_settings_locks.setdefault(device_id, asyncio.Lock())
+        async with lock:
+            previous = self.h6104_tv_settings(device_id)
+            self.restore_h6104_tv_settings(device_id, area=area, sensitivity=sensitivity)
+            state = self._states.get(device_id)
+            try:
+                if state is not None and state.dreamview_enabled:
+                    if not await self.async_send_dreamview(device_id, True):
+                        self._h6104_tv_settings[device_id] = previous
+                        return False
+            except Exception:
+                self._h6104_tv_settings[device_id] = previous
+                raise
+            return True
+
     async def async_send_dreamview(self, device_id: str, enabled: bool) -> bool:
         """Send DreamView command via REST API, with BLE fallback.
 
@@ -6089,6 +6335,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if not device:
             _LOGGER.error("Unknown device for DreamView: %s", device_id)
             return False
+
+        if device.sku == "H6104":
+            return await self.async_control_device(device_id, create_dreamview_command(enabled))
 
         # Try REST API first (works for HTTP-capable devices like H6097), except
         # on SKUs that accept the toggle and ignore it (issue #213), and except

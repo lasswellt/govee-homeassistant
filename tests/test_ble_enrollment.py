@@ -15,10 +15,13 @@ from __future__ import annotations
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from custom_components.govee.ble_advertisement import (
     BleAdvertisementHandler,
     ble_address_from_device_id,
 )
+from custom_components.govee.const import CONF_ENABLE_H6104_BLE
 
 _MODULE = "custom_components.govee.ble_advertisement"
 
@@ -140,4 +143,56 @@ class TestEnrollFromCache:
         with patch(f"{_MODULE}.HAS_BLUETOOTH", False), patch.object(handler, "handle_advertisement") as handle:
             handler.enroll_from_cache()  # must not raise
 
+        handle.assert_not_called()
+
+
+class TestH6104OptIn:
+    """Exercise the same gate for fresh and cached H6104 advertisements."""
+
+    @pytest.mark.parametrize("enabled", [False, True])
+    def test_cached_h6104_requires_opt_in(self, enabled):
+        coord = _coordinator(sku="H6104")
+        coord._config_entry.options = {CONF_ENABLE_H6104_BLE: enabled}
+        handler = BleAdvertisementHandler(coord)
+        info = MagicMock()
+        with _bluetooth(handler, found=info) as (bt, handle):
+            handler.enroll_from_cache()
+        if enabled:
+            handle.assert_called_once_with(info)
+        else:
+            bt.async_last_service_info.assert_not_called()
+            handle.assert_not_called()
+
+    @pytest.mark.parametrize("options", [{}, {CONF_ENABLE_H6104_BLE: False}, {CONF_ENABLE_H6104_BLE: True}])
+    def test_fresh_h6104_requires_opt_in(self, options):
+        coord = _coordinator(sku="H6104")
+        coord._config_entry.options = options
+        coord._states = {}
+        coord._ble_ignored_skus_logged = set()
+        info = MagicMock(name="service_info")
+        info.name = "ihoment_H6104_B99E"
+        info.address = "C0:EB:32:C1:19:FC"
+        bt = MagicMock()
+        bt.async_scanner_count.return_value = 1
+        with (
+            patch(f"{_MODULE}.bt_component", bt, create=True),
+            patch(f"{_MODULE}.BLE_COMMAND_SUPPORTED_MODELS", frozenset({"H1270"}), create=True),
+            patch(f"{_MODULE}.SEGMENTED_MODELS", frozenset(), create=True),
+            patch(f"{_MODULE}.GoveeBLEDevice", create=True) as client,
+        ):
+            BleAdvertisementHandler(coord).handle_advertisement(info)
+        if options.get(CONF_ENABLE_H6104_BLE):
+            client.assert_called_once_with(info.device, segmented=False, legacy_uart=True)
+            assert list(coord._ble_devices.values()) == [client.return_value]
+        else:
+            client.assert_not_called()
+            assert coord._ble_devices == {}
+
+    def test_opt_in_does_not_enable_another_unverified_model(self):
+        coord = _coordinator(sku="H6072")
+        coord._config_entry.options = {CONF_ENABLE_H6104_BLE: True}
+        handler = BleAdvertisementHandler(coord)
+        with _bluetooth(handler, found=MagicMock()) as (bt, handle):
+            handler.enroll_from_cache()
+        bt.async_last_service_info.assert_not_called()
         handle.assert_not_called()

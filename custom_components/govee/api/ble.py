@@ -46,6 +46,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum
@@ -65,6 +66,7 @@ from .ble_crypto import (
     async_supports_encryption,
 )
 from .ble_packet import build_packet
+from .ble_status import H6104Report, decode_h6104_status
 
 if TYPE_CHECKING:
     from bleak.backends.device import BLEDevice
@@ -75,6 +77,9 @@ _LOGGER = logging.getLogger(__name__)
 # GATT characteristic UUIDs (same as Beshelmek/govee_ble_lights)
 WRITE_CHARACTERISTIC_UUID = "00010203-0405-0607-0809-0a0b0c0d2b11"
 READ_CHARACTERISTIC_UUID = "00010203-0405-0607-0809-0a0b0c0d2b10"
+# App-derived H6104/H6101 UART endpoint, also present in the H6104 field GATT dump.
+# https://github.com/Brady-Woods/govee-ble-local/blob/535104e8e107b35757e6f90d8bbb2cadf599985c/spec/docs/GOVEE_BLE_GATT_PROTOCOL.md#23-alternate-uart-service-a-few-devices
+LEGACY_UART_CHARACTERISTIC_UUID = "0000ffe1-0000-1000-8000-00805f9b34fb"
 
 # Advertising name prefixes used for Bluetooth discovery (manifest.json matchers)
 BLE_DISCOVERY_NAMES: tuple[str, ...] = ("Govee_", "ihoment_", "GBK_")
@@ -114,6 +119,8 @@ _PACKET_HEAD_COMMAND = 0x33
 
 # Connection management
 _MAX_CONNECT_ATTEMPTS = 4
+_LEGACY_IDLE_DISCONNECT_SECONDS = 5.0
+_STATUS_REPLY_TIMEOUT = 0.5
 
 
 class LedPacketCmd(IntEnum):
@@ -144,10 +151,10 @@ class LedColorMode(IntEnum):
 class GoveeBLEState:
     """Snapshot of the last-known state of a Govee BLE light.
 
-    Govee BLE lights do not reliably push state updates over GATT notifications,
-    so this snapshot is maintained optimistically from the commands we send.
-    The coordinator's ``update()`` call is effectively a keep-alive — it does
-    not round-trip state over GATT (see module docstring).
+    This compatibility snapshot is maintained optimistically from commands.
+    H6104 device-reported values travel separately through H6104Report callbacks
+    and async_read_status(), so a cached desired value cannot masquerade as a
+    received status report. Modern models retain the existing optimistic path.
     """
 
     power: bool | None = None
@@ -246,6 +253,7 @@ class GoveeBLEDevice:
         ble_device: BLEDevice,
         refresh_ble_device: Callable[[], BLEDevice | None] | None = None,
         segmented: bool = False,
+        legacy_uart: bool = False,
     ) -> None:
         """Initialize the device wrapper.
 
@@ -258,16 +266,28 @@ class GoveeBLEDevice:
                 Optional for tests.
             segmented: True if the device uses the segmented color encoding
                 (H6053, H6072, H6102, H6199-class RGBIC strips).
+            legacy_uart: Use H6104's plaintext FFE1 write/notify endpoint.
         """
         self._ble_device = ble_device
         self._refresh_ble_device = refresh_ble_device
         self._segmented = segmented
+        self._legacy_uart = legacy_uart
+        self._write_uuid = LEGACY_UART_CHARACTERISTIC_UUID if legacy_uart else WRITE_CHARACTERISTIC_UUID
         self._client: BleakClient | None = None
         # Set only for devices speaking the encrypted protocol, and only for
         # as long as the connection that negotiated it lives.
         self._session: GoveeBLESession | None = None
         self._state = GoveeBLEState()
         self._lock = asyncio.Lock()
+        self._idle_disconnect_handle: asyncio.TimerHandle | None = None
+        self._connection_generation = 0
+        self._idle_disconnected = False
+        self._report_callbacks: list[Callable[[H6104Report], None]] = []
+        self._pending_status: tuple[bytes, asyncio.Future[H6104Report]] | None = None
+        self._power_read_validated = False
+        self._status_frames: deque[str] = deque(maxlen=12)
+        self._status_candidates: deque[str] = deque(maxlen=12)
+        self._status_results: dict[str, str] = {}
         self._callbacks: list[Callable[[GoveeBLEState], None]] = []
 
     # ------------------------------------------------------------------ #
@@ -288,6 +308,109 @@ class GoveeBLEDevice:
     def state(self) -> GoveeBLEState:
         """Last-known optimistic state."""
         return self._state
+
+    @property
+    def is_connected(self) -> bool:
+        """Whether the current GATT connection is still live."""
+        return self._client is not None and bool(self._client.is_connected)
+
+    @property
+    def idle_disconnected(self) -> bool:
+        """The last link was deliberately released, rather than lost or failed."""
+        return self._idle_disconnected
+
+    @property
+    def supports_readback(self) -> bool:
+        return self._legacy_uart
+
+    @property
+    def readback_diagnostics(self) -> dict[str, object]:
+        """Known status frames only; never device-info or pairing payloads."""
+        return {
+            "power_read_validated": self._power_read_validated,
+            "last_queries": dict(self._status_results),
+            "recent_status_frames": list(self._status_frames),
+            "recent_status_candidates": list(self._status_candidates),
+        }
+
+    def register_report_callback(self, callback: Callable[[H6104Report], None]) -> None:
+        """Receive device reports separately from optimistic state callbacks."""
+        self._report_callbacks.append(callback)
+
+    def _emit_report(self, report: H6104Report) -> None:
+        for callback in self._report_callbacks:
+            try:
+                callback(report)
+            except Exception:
+                _LOGGER.exception("Error applying H6104 status report")
+
+    def _on_uart_notification(self, client: BleakClient, data: bytearray) -> None:
+        """Ignore late connections, echoes, bad checksums and unrelated frames."""
+        if client is not self._client:
+            return
+        frame = bytes(data)
+        if len(frame) != 20:
+            return
+        if (frame[0] == 0xAA and frame[1] in (1, 4, 5)) or frame[:2] == bytes([0xEE, 0x20]):
+            # Keep bounded evidence even for echoes/unknown layouts, while
+            # excluding device-info, Wi-Fi/pairing and arbitrary notifications.
+            # A candidate is diagnostic evidence, not decoded/accepted state.
+            self._status_candidates.append(frame.hex())
+        pending = self._pending_status
+        if frame[0] == 0xAA:
+            if pending is None or pending[1].done() or frame[1] != pending[0][1]:
+                return
+            query = pending[0]
+        elif frame[:2] == bytes([0xEE, 0x20]):
+            query = None
+        else:
+            return
+        report = decode_h6104_status(frame, query=query, power_read_validated=self._power_read_validated)
+        if report is None:
+            return
+        self._status_frames.append(frame.hex())
+        if report.power is True:
+            self._power_read_validated = True
+        if frame[0] == 0xAA and pending is not None:
+            pending[1].set_result(report)
+        else:
+            self._emit_report(report)
+
+    async def async_read_status(self) -> list[H6104Report]:
+        """Read power, raw brightness and mode without changing the light.
+
+        A timeout is missing data, never a negative state or a failed control
+        command. Each reply is bounded; unsupported reads do not hold a slot.
+        """
+        if not self._legacy_uart:
+            return []
+        reports: list[H6104Report] = []
+        async with self._lock:
+            self._cancel_idle_disconnect()
+            self._idle_disconnected = False
+            try:
+                client = await self._ensure_connected()
+                for command, payload in ((1, []), (4, []), (5, [1])):
+                    query = build_packet([0xAA, command, *payload])
+                    future: asyncio.Future[H6104Report] = asyncio.get_running_loop().create_future()
+                    self._pending_status = (query, future)
+                    try:
+                        await client.write_gatt_char(self._write_uuid, query, response=False)
+                        report = await asyncio.wait_for(future, _STATUS_REPLY_TIMEOUT)
+                        reports.append(report)
+                        self._status_results[f"aa{command:02x}"] = "reply"
+                        self._emit_report(report)
+                    except TimeoutError:
+                        self._status_results[f"aa{command:02x}"] = "timeout_or_echo"
+                    finally:
+                        if not future.done():
+                            future.cancel()
+                        elif not future.cancelled():
+                            future.exception()  # retrieve if disconnect and write both failed
+                        self._pending_status = None
+            finally:
+                self._schedule_idle_disconnect()
+        return reports
 
     @property
     def segmented(self) -> bool:
@@ -347,10 +470,61 @@ class GoveeBLEDevice:
         """
         if self._client is not None and client is not self._client:
             return
+        self._cancel_idle_disconnect()
+        self._idle_disconnected = False
+        if self._pending_status is not None and not self._pending_status[1].done():
+            self._pending_status[1].set_exception(BleakError("Disconnected during status read"))
         self._client = None
         # Frame counters restart at 1 on the next connection, so reusing this
         # session would encrypt with nonces the device has already seen.
         self._session = None
+
+    def _cancel_idle_disconnect(self) -> None:
+        """Invalidate queued idle work before a command, disconnect or shutdown."""
+        self._connection_generation += 1
+        if self._idle_disconnect_handle is not None:
+            self._idle_disconnect_handle.cancel()
+            self._idle_disconnect_handle = None
+
+    def _schedule_idle_disconnect(self) -> None:
+        """Release the H6104 proxy slot after a short burst of commands."""
+        if not self._legacy_uart or self._client is None:
+            return
+        self._idle_disconnect_handle = asyncio.get_running_loop().call_later(
+            _LEGACY_IDLE_DISCONNECT_SECONDS, self._begin_idle_disconnect, self._connection_generation
+        )
+
+    def _begin_idle_disconnect(self, generation: int) -> None:
+        if generation != self._connection_generation:
+            return
+        self._idle_disconnect_handle = None
+        asyncio.create_task(self._disconnect_if_idle(generation))
+
+    async def _disconnect_if_idle(self, generation: int) -> None:
+        async with self._lock:
+            # A command can arrive after the timer fired but before this task
+            # got the lock. It owns the connection now; don't disconnect it.
+            if generation != self._connection_generation:
+                return
+            if self._client is None:
+                return
+            try:
+                await self._disconnect_client()
+                self._idle_disconnected = True
+            except Exception:
+                _LOGGER.debug("Idle BLE disconnect failed for %s", self.address, exc_info=True)
+
+    async def _disconnect_client(self) -> None:
+        """Disconnect under the caller's lock without changing light power/mode."""
+        client = self._client
+        try:
+            if client is not None and client.is_connected:
+                await client.disconnect()
+        except BleakError:
+            _LOGGER.debug("Error disconnecting Govee BLE client %s (ignored)", self.address)
+        finally:
+            self._client = None
+            self._session = None
 
     async def _ensure_connected(self) -> BleakClient:
         """Open or return the cached ``BleakClient`` for this device.
@@ -389,7 +563,17 @@ class GoveeBLEDevice:
         )
 
         try:
-            if await async_supports_encryption(self._client):
+            if self._legacy_uart:
+                # On H6104 the 2b12 characteristic belongs to OTA service 1912,
+                # not control service 1910: it is not encryption-version data.
+                # Subscribe on the UART as the app does. Only validated status
+                # replies/known notifications reach the separate report path.
+                if self._client.services.get_characteristic(self._write_uuid) is not None:
+                    client = self._client
+                    await client.start_notify(
+                        self._write_uuid, lambda _sender, data: self._on_uart_notification(client, data)
+                    )
+            elif await async_supports_encryption(self._client):
                 self._session = await async_establish_session(
                     self._client, WRITE_CHARACTERISTIC_UUID, READ_CHARACTERISTIC_UUID
                 )
@@ -415,10 +599,29 @@ class GoveeBLEDevice:
         the session cipher, so every command encoding above is shared.
         """
         async with self._lock:
-            client = await self._ensure_connected()
-            if self._session is not None:
-                frame = self._session.wrap(frame)
-            await client.write_gatt_char(WRITE_CHARACTERISTIC_UUID, frame, response=False)
+            self._cancel_idle_disconnect()
+            self._idle_disconnected = False
+            try:
+                client = await self._ensure_connected()
+                if client.services.get_characteristic(self._write_uuid) is None:
+                    # Expose structure only, never characteristic values. Older
+                    # H6104 firmware can connect without exposing our control UUID;
+                    # its actual GATT layout is needed before selecting a protocol.
+                    services = [
+                        f"{service.uuid}: "
+                        + ", ".join(f"{char.uuid} ({'/'.join(char.properties)})" for char in service.characteristics)
+                        for service in client.services
+                    ]
+                    raise BleakError(
+                        f"Control characteristic {self._write_uuid} was not found. "
+                        f"Discovered GATT services: {'; '.join(services) or 'none'}. "
+                        "No BLE command was sent; no alternate characteristic was tried."
+                    )
+                if self._session is not None:
+                    frame = self._session.wrap(frame)
+                await client.write_gatt_char(self._write_uuid, frame, response=False)
+            finally:
+                self._schedule_idle_disconnect()
 
     # ------------------------------------------------------------------ #
     # High-level command API
@@ -447,6 +650,37 @@ class GoveeBLEDevice:
         await self._write(_build_brightness_frame(value))
         self._state.brightness = value
         self._emit()
+
+    async def set_tv_mode(self, area: int = 1, sensitivity: int = 50) -> None:
+        """Select H6104 video mode with screen area and sensitivity.
+
+        App-derived SubModeVideo layout: 33 05 00 00 area sensitivity.
+        https://github.com/Brady-Woods/govee-ble-local/blob/535104e8e107b35757e6f90d8bbb2cadf599985c/spec/docs/OPCODE_COVERAGE.md
+        """
+        if not self._legacy_uart:
+            raise BleakError("TV mode is only implemented for the H6104 UART profile")
+        if area not in (0, 1) or not 0 <= sensitivity <= 100:
+            raise ValueError("TV area must be 0/1 and sensitivity must be 0-100")
+        await self._write(_build_frame(LedPacketCmd.COLOR, [0x00, 0x00, area, sensitivity]))
+
+    async def set_music_mode(
+        self, mode: int, sensitivity: int = 50, rgb: tuple[int, int, int] = (255, 255, 255)
+    ) -> None:
+        """Select a legacy BLE music code, not a Developer API effect ID.
+
+        H6104 SubModeMusic: 33 05 01 code sensitivity. Codes 1/2 additionally
+        require RGB. Legacy codes are Energic=0, Spectrum=1, Rolling=2,
+        Rhythm=3 (softgrass/govee-api-ble; still needs H6104 field validation).
+        https://github.com/Brady-Woods/govee-ble-local/blob/535104e8e107b35757e6f90d8bbb2cadf599985c/spec/docs/OPCODE_COVERAGE.md
+        """
+        if not self._legacy_uart:
+            raise BleakError("Music mode is only implemented for the H6104 UART profile")
+        if mode not in (0, 1, 2, 3) or not 0 <= sensitivity <= 100:
+            raise ValueError("Unsupported H6104 music mode or sensitivity")
+        payload = [0x01, mode, sensitivity]
+        if mode in (1, 2):
+            payload.extend(max(0, min(255, int(value))) for value in rgb)
+        await self._write(_build_frame(LedPacketCmd.COLOR, payload))
 
     async def set_rgb(self, red: int, green: int, blue: int) -> None:
         """Set RGB color.
@@ -483,13 +717,7 @@ class GoveeBLEDevice:
     async def stop(self) -> None:
         """Cleanly disconnect the ``BleakClient`` (idempotent)."""
         async with self._lock:
-            if self._client is not None and self._client.is_connected:
-                try:
-                    await self._client.disconnect()
-                except BleakError:
-                    _LOGGER.debug(
-                        "Error disconnecting Govee BLE client %s (ignored)",
-                        self.address,
-                    )
-            self._client = None
-            self._session = None
+            self._cancel_idle_disconnect()
+            self._idle_disconnected = False
+            await self._disconnect_client()
+            self._report_callbacks.clear()

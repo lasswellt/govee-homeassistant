@@ -177,7 +177,149 @@ Every device also gets two diagnostic timestamps — **Last Update Received** an
 
 This matters beyond speed: Govee's cloud sometimes answers a color command with `success` and never delivers it to the device (the light doesn't change, and nothing reports an error). Sending color locally sidesteps the cloud entirely — see [Colors don't apply](#troubleshooting).
 
-**Command routing.** Each command takes the fastest transport that can carry it *and confirm it*, falling back automatically: **BLE → LAN → MQTT → cloud REST**. LAN carries power, brightness, color and color temperature — exactly the four values a device reports back, which is what makes verify‑by‑read possible. MQTT (opt‑in) carries power, brightness and color. Direct BLE control is deliberately limited to the models confirmed to honour it: the H6199, and the H1270 over the encrypted BLE transport its firmware requires. Other models (the H6072 among them) advertise Bluetooth but silently drop writes, so they are never sent BLE commands. Everything else — scenes, segments, music mode, work modes, toggles — always goes over the cloud API, with one exception: Tower Fan 2 (H7105/H7107) oscillation goes over the AWS IoT session when account login is configured, because the cloud toggle is a no-op on those fans.
+**Command routing.** Each command takes the fastest eligible transport, falling back automatically on errors: **BLE → LAN → MQTT → cloud REST**. LAN carries power, brightness, color and color temperature — exactly the four values a device reports back, which is what makes verify‑by‑read possible. MQTT (opt‑in) carries power, brightness and color. Automatic direct BLE control is deliberately limited to the models confirmed to honour it: the H6199, and the H1270 over the encrypted BLE transport its firmware requires. This fork also offers an explicit experimental H6104 opt-in, described below. Other models (the H6072 among them) advertise Bluetooth but silently drop writes, so they are never sent BLE commands. Everything else — scenes, segments, music mode, work modes, toggles — always goes over the cloud API, with one exception: Tower Fan 2 (H7105/H7107) oscillation goes over the AWS IoT session when account login is configured, because the cloud toggle is a no-op on those fans.
+
+### Experimental H6104 TV backlight Bluetooth control (this fork)
+
+For this experimental branch, download the test component package supplied with
+the change, back up your current `/config/custom_components/govee` directory,
+then extract the package's `govee` directory into `/config/custom_components/`,
+replacing the existing component. Restart Home Assistant. Install only one copy
+of the `govee` integration; this replaces the upstream component rather than
+adding a second integration. To roll back, restore your backup and restart HA.
+The fork's default branch and upstream HACS release do not include this draft
+change; installing either of those will not expose the experimental option.
+
+Under **Settings → Devices & services → Govee → Configure → General**, enable
+**Enable experimental H6104 Bluetooth control**. Saving options reloads the
+integration. Leave Home Assistant's Bluetooth integration enabled and use a
+connectable local adapter or an ESPHome proxy with active connections enabled
+within range of the light. Close the Govee phone app during testing so it does
+not occupy the light's Bluetooth connection. Keep the H6104 in your Govee account;
+the existing API-key setup and cloud device list are still required.
+
+The light must advertise a model name such as `ihoment_H6104_XXXX`. This fork
+uses the H6104's legacy `FFE0` service / `FFE1` write-and-notify characteristic
+with the existing power, brightness and single-zone RGB BLE frames. The endpoint
+matches both an H6104 GATT capture and the
+[app-derived protocol reference](https://github.com/Brady-Woods/govee-ble-local/blob/535104e8e107b35757e6f90d8bbb2cadf599985c/spec/docs/GOVEE_BLE_GATT_PROTOCOL.md#23-alternate-uart-service-a-few-devices).
+It enables notifications on `FFE1` and skips the modern encryption-version probe:
+the similarly named `2b12` characteristic on this H6104 belongs to its OTA service.
+Discovery has been observed, but **command operation is not hardware-verified**.
+H6104 is deliberately absent from the automatically enabled, verified model list.
+The H6104 **DreamView** switch selects TV/camera mode directly over BLE. Turn the
+light on first, then turn this switch on. Turning it off restores a solid color.
+The device's Configuration section also exposes **TV sensitivity** (0–100) and
+**TV screen area** (Part of screen / Whole screen). Defaults are sensitivity 50
+and Whole screen. Changes apply immediately while DreamView is on; while it is
+off they are saved for the next activation. Each device restores its desired
+settings across HA restarts without sending mode commands during restoration.
+These are locally remembered settings, not values read back from the camera.
+
+Sensitivity is the camera's response setting, not an exposed camera frame rate.
+The H6104 reference does not identify a separate refresh-rate control or the
+H6101's dynamic/soft mode selector. Power and TV-mode activation have been
+field-tested on the user's H6104; adjustable settings still need hardware
+verification. Selecting a solid RGB color or color temperature clears the
+DreamView switch state. Brightness changes leave TV mode selected.
+Color temperature, other effects and camera calibration remain on the existing
+Wi-Fi/cloud paths.
+
+The H6104 **Music mode** switch, **Music mode** dropdown and **Music sensitivity**
+slider now send automatic-color music modes over FFE1 BLE as well. The advertised
+modes are Rhythm, Rolling, Energic and Spectrum (cloud IDs 3–6). Turning music off
+restores a solid color over BLE. Music and DreamView clear each other's switch
+state; choosing a solid color clears both. The music frame is taken from the
+app-derived H6104 `SubModeMusic` reference (`33 05 01 code sensitivity`), but
+physical music-mode operation still needs testing. Fixed-color and unsupported
+music variants retain their previous fallback path.
+
+The cloud IDs 3–6 must **not** be sent unchanged as legacy BLE effect codes:
+the candidate legacy mapping is Energic=0, Spectrum=1, Rolling=2, Rhythm=3,
+matching [the original legacy implementation](https://github.com/softgrass/govee-api-ble/blob/master/src/govee_api_ble/device.py).
+Spectrum and Rolling also carry RGB from the remembered/current solid color
+(white if none is known). That reference was tested on other legacy models;
+the mapping remains unverified on this H6104. The initial unconverted-code
+build did not produce music effects in field testing. If the corrected build
+does not either, compare a working Govee-app BLE capture before changing more
+command bytes. Diagnostics report both cloud and BLE effect IDs and the color.
+
+A live GATT connection stays available even when the light stops advertising.
+Disconnected devices still require fresh advertisements, and real write errors
+still make BLE unavailable. This avoids the previous three-minute
+`stale_advertisement` cutoff without treating unacknowledged writes as received
+packets. After installing this build, restart HA and test controls after both
+several minutes idle and repeated mode/power changes.
+
+H6104 now disconnects its GATT link after five seconds without commands to free
+the Bluetooth proxy slot, reconnecting for the next command. A burst of commands
+reuses the link and resets the idle timer. It is normal for it to disappear from
+the proxy's active-connections list while idle: that list is different from the
+integration's availability sensor. No power-off or mode-change command is sent
+when releasing the connection. Modern/encrypted models keep their existing
+connection lifecycle.
+
+After an intentional H6104 idle release, a stale advertisement does not prevent
+one reconnect attempt to the previously enrolled device. Starting the attempt
+clears that idle allowance; a real connection/write failure retains the usual
+failure gate until fresh discovery. This also keeps controls actionable when
+the cloud reports the light offline. H6104 DreamView never falls back to the
+unsupported cloud `dreamViewToggle`: a local failure reports the BLE reason.
+This test build is identified by `h6104_ble_build: 2026.10.25.10` in downloaded
+diagnostics, to distinguish packages that share the upstream manifest version.
+
+### H6104 Bluetooth status readback (experimental)
+
+The UART subscription now decodes known replies to `AA 01` (power), `AA 04`
+(brightness), and `AA 05 01` (mode/color), plus `EE 20` brightness notifications.
+Reads run after BLE commands and on the configured integration poll cadence,
+including when cloud requests are skipped. Each reply has a 0.5-second deadline;
+an entire connection/read attempt is bounded to five seconds. The normal idle
+disconnect still releases the proxy slot. App/button changes made while the link
+is idle become visible on the next successful poll, not instantly.
+
+Only checksummed 20-byte known replies update HA. Write acknowledgements,
+unrelated packets and request echoes are ignored. An all-zero power-OFF reply
+is identical to a request echo, so it is not authoritative until this running
+instance has received a non-echo ON reply. This is intentionally conservative;
+HA commands still provide immediate optimistic state when readback is missing.
+Unknown modes/effects are not presented as a confirmed named effect, and CCT
+tint bytes are not converted into a guessed Kelvin value.
+
+Fresh reported fields override stale cloud values for up to 120 seconds, with
+per-field timestamps so a pre-command reading cannot undo a newer command.
+New device pushes retain precedence for fields they actually change. H6104
+brightness writes and replies are scaled between its raw 0–254 range and the
+API/HA device percentage; nonzero writes respect the documented minimum of 20.
+Other models retain their existing transport and status behavior.
+
+After installing, test ON then OFF, brightness levels, RGB, music and DreamView,
+then an app/button change with the Govee app closed before the next HA poll.
+Downloaded device diagnostics include `ble_readback.last_queries`,
+`power_read_validated`, accepted status frames, and separate status candidates
+(including ignored echoes/unknown layouts) for firmware diagnosis. No device-info,
+pairing or arbitrary notification payloads are included. These decoders and
+queries are app-derived and locally tested, **not yet verified on this H6104's
+firmware**; timeouts keep existing state rather than inventing a device reply.
+
+To verify on your unit, enable the transport diagnostic entities, then check
+power on/off, several brightness levels and red/green/blue with the light's
+Wi-Fi disconnected while its power and HA's network stay on. Check the physical
+light as well as `recent_commands` in integration diagnostics: BLE state is
+optimistic and a successful GATT write **does not confirm the light acted**.
+Connection/write errors retain the existing cloud fallback, but silently ignored
+frames cannot trigger it. If the light does not react, disable this option to
+restore normal routing and collect debug logs/GATT service details before trying
+another protocol. Repeat the test after reconnecting Wi-Fi and after restarting HA.
+
+The initial H6104 field test failed before sending a BLE command: the discovered
+GATT database did not contain the usual `00010203-0405-0607-0809-0a0b0c0d2b11`
+control characteristic. This is not evidence that the light ignored the power
+frame. This branch now includes discovered service UUIDs, characteristic UUIDs
+and their properties in that failure's `recent_commands` detail. After installing
+the diagnostic build, reload the integration, try one power command, then download
+Govee integration diagnostics. These details reveal the exposed GATT structure
+without reading characteristic values or writing to guessed alternate endpoints.
 
 Commands always use optimistic updates, so the UI reflects your action immediately and reconciles with the next confirmed state. MQTT publishes are acknowledged by the broker (QoS 1); an unacknowledged send falls through to REST rather than being reported as success.
 

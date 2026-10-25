@@ -17,6 +17,7 @@ from custom_components.govee.const import (
     CONF_API_KEY,
     CONF_EMAIL,
     CONF_ENABLE_DIY_SCENES,
+    CONF_ENABLE_H6104_BLE,
     CONF_ENABLE_GROUPS,
     CONF_ENABLE_SCENES,
     CONF_LAN_TARGETS,
@@ -370,6 +371,27 @@ class TestLanDeviceOverrideOption:
         result = await _run_init(flow, entry, {CONF_POLL_INTERVAL: 60, CONF_LAN_TARGETS: raw})
         assert result["type"] == "create_entry"
         assert result["data"][CONF_LAN_TARGETS] == raw
+
+
+class TestH6104BleOption:
+    """The experimental transport must require an explicit saved opt-in."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("saved", [None, False, True])
+    async def test_option_defaults_off_and_retains_saved_value(self, saved):
+        flow, entry = _options_flow()
+        entry.options = {} if saved is None else {CONF_ENABLE_H6104_BLE: saved}
+        result = await _run_init(flow, entry, None)
+        key = next(k for k in result["data_schema"].schema if k == CONF_ENABLE_H6104_BLE)
+        assert key.default() is (saved is True)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("enabled", [False, True])
+    async def test_option_is_saved(self, enabled):
+        flow, entry = _options_flow()
+        result = await _run_init(flow, entry, {CONF_POLL_INTERVAL: 60, CONF_ENABLE_H6104_BLE: enabled})
+        assert result["type"] == "create_entry"
+        assert result["data"][CONF_ENABLE_H6104_BLE] is enabled
 
 
 class TestWaterDetectorPollIntervalOption:

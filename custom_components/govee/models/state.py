@@ -905,6 +905,8 @@ class GoveeDeviceState:
         """Apply optimistic color update."""
         self.color = color
         self.color_temp_kelvin = None  # RGB mode
+        self.dreamview_enabled = False
+        self.music_mode_enabled = False
         self._stamp_optimistic()
         # Setting a color overrides any running scene
         self.active_scene = None
@@ -914,6 +916,8 @@ class GoveeDeviceState:
         """Apply optimistic color temperature update."""
         self.color_temp_kelvin = kelvin
         self.color = None  # Color temp mode
+        self.dreamview_enabled = False
+        self.music_mode_enabled = False
         self._stamp_optimistic()
         # Setting color temp overrides any running scene
         self.active_scene = None

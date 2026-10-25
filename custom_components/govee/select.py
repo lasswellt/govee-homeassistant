@@ -16,6 +16,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
     CONF_ENABLE_DIY_SCENES,
+    CONF_ENABLE_H6104_BLE,
     CONF_ENABLE_SCENES,
     DEFAULT_ENABLE_DIY_SCENES,
     DEFAULT_ENABLE_SCENES,
@@ -32,6 +33,7 @@ from .const import (
 )
 from .coordinator import GoveeConfigEntry, GoveeCoordinator
 from .entity import GoveeEntity
+from .h6104 import GoveeTVAreaSelect
 from .kettle.entities import kettle_selects
 from .models import (
     GoveeDevice,
@@ -89,6 +91,8 @@ async def async_setup_entry(
     )
 
     for device in coordinator.devices.values():
+        if device.sku == "H6104" and not device.is_group and entry.options.get(CONF_ENABLE_H6104_BLE, False) is True:
+            entities.append(GoveeTVAreaSelect(coordinator, device))
         _LOGGER.debug(
             "Device %s: supports_scenes=%s supports_diy_scenes=%s is_group=%s",
             device.name,
@@ -694,10 +698,14 @@ class GoveeMusicModeSelectEntity(_GoveeSelectBase):
     def current_option(self) -> str | None:
         """Return current selected option from state."""
         state = self.coordinator.get_state(self._device_id)
+        if self._device.sku == "H6104" and (state is None or state.music_mode_enabled is not True):
+            return None
         if state and state.music_mode_name is not None:
             # Check if the name is in our options
             if state.music_mode_name in self._option_map:
                 return state.music_mode_name
+        if self._device.sku == "H6104":
+            return None
         # Return first option as default if available
         return self._attr_options[0] if self._attr_options else None
 

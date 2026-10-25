@@ -12,12 +12,14 @@ Reference behavior is validated against Beshelmek/govee_ble_lights
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from custom_components.govee.api.ble import (
     BLE_DISCOVERY_NAMES,
+    LEGACY_UART_CHARACTERISTIC_UUID,
     READ_CHARACTERISTIC_UUID,
     SEGMENTED_MODELS,
     WRITE_CHARACTERISTIC_UUID,
@@ -32,6 +34,7 @@ from custom_components.govee.api.ble import (
     _build_rgb_single_frame,
 )
 from custom_components.govee.api.ble_crypto import GoveeBLESession
+from bleak.exc import BleakError
 
 
 @pytest.fixture(autouse=True)
@@ -557,6 +560,212 @@ def _install_fake_client(device: GoveeBLEDevice) -> MagicMock:
     fake_client.disconnect = AsyncMock()
     device._client = fake_client
     return fake_client
+
+
+class TestMissingControlCharacteristic:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("empty_services", [False, True])
+    async def test_reports_gatt_structure_without_writing_or_updating_state(self, empty_services):
+        device = GoveeBLEDevice(_make_ble_device(name="ihoment_H6104_TEST"))
+        client = MagicMock()
+        client.write_gatt_char = AsyncMock()
+        client.services.get_characteristic.return_value = None
+        service = MagicMock()
+        service.uuid = "00001812-0000-1000-8000-00805f9b34fb"
+        characteristic = MagicMock()
+        characteristic.uuid = "00002a4d-0000-1000-8000-00805f9b34fb"
+        characteristic.properties = ["read", "notify"]
+        service.characteristics = [characteristic]
+        client.services.__iter__.return_value = iter([] if empty_services else [service])
+        with patch.object(device, "_ensure_connected", AsyncMock(return_value=client)):
+            with pytest.raises(BleakError) as exc:
+                await device.turn_on()
+        message = str(exc.value)
+        assert WRITE_CHARACTERISTIC_UUID in message
+        assert "No BLE command was sent" in message
+        if empty_services:
+            assert "services: none" in message
+        else:
+            assert service.uuid in message
+            assert characteristic.uuid in message
+            assert "read/notify" in message
+        client.write_gatt_char.assert_not_awaited()
+        client.read_gatt_char.assert_not_called()
+        assert device.state.power is None
+
+
+class TestLegacyIdleDisconnect:
+    @pytest.mark.asyncio
+    async def test_failed_reconnect_clears_idle_allowance(self):
+        device = GoveeBLEDevice(_make_ble_device(), legacy_uart=True)
+        device._idle_disconnected = True
+        with patch.object(device, "_ensure_connected", AsyncMock(side_effect=BleakError("connection failed"))):
+            with pytest.raises(BleakError, match="connection failed"):
+                await device.turn_on()
+        assert device.idle_disconnected is False
+
+    @pytest.mark.asyncio
+    async def test_idle_releases_the_slot_and_next_command_reconnects(self):
+        device = GoveeBLEDevice(_make_ble_device(), legacy_uart=True)
+        clients = [MagicMock(), MagicMock()]
+        for client in clients:
+            client.is_connected = True
+            client.start_notify = AsyncMock()
+            client.disconnect = AsyncMock()
+            client.write_gatt_char = AsyncMock()
+        with (
+            patch("custom_components.govee.api.ble.close_stale_connections_by_address", AsyncMock()),
+            patch("custom_components.govee.api.ble.establish_connection", AsyncMock(side_effect=clients)) as establish,
+            patch.object(asyncio.get_running_loop(), "call_later") as later,
+        ):
+            await device.turn_on()
+            assert later.call_args.args[0] == 5.0
+            generation = later.call_args.args[2]
+            await device._disconnect_if_idle(generation)
+            assert device.is_connected is False
+            assert device.idle_disconnected is True
+            assert device.state.power is True  # disconnect does not turn it off
+            clients[0].disconnect.assert_awaited_once()
+            await device.set_tv_mode()
+            assert device.idle_disconnected is False
+            assert establish.await_count == 2
+            clients[1].write_gatt_char.assert_awaited_once()
+            await device.stop()
+            assert device.idle_disconnected is False
+            clients[1].disconnect.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_a_new_command_invalidates_a_queued_idle_disconnect(self):
+        device = GoveeBLEDevice(_make_ble_device(), legacy_uart=True)
+        client = MagicMock()
+        client.is_connected = True
+        client.disconnect = AsyncMock()
+        client.write_gatt_char = AsyncMock()
+        device._client = client
+        with patch.object(asyncio.get_running_loop(), "call_later") as later:
+            await device.turn_on()
+            old_generation = later.call_args.args[2]
+            await device.set_brightness(128)
+            later.return_value.cancel.assert_called()
+            await device._disconnect_if_idle(old_generation)
+            assert device.is_connected is True
+            client.disconnect.assert_not_awaited()
+            # A timer callback that was already queued must not clobber the
+            # newly scheduled handle or disconnect the reused client.
+            handle = device._idle_disconnect_handle
+            device._begin_idle_disconnect(old_generation)
+            assert device._idle_disconnect_handle is handle
+            await device.stop()
+
+    @pytest.mark.asyncio
+    async def test_idle_callback_disconnects_and_modern_clients_are_not_scheduled(self):
+        device = GoveeBLEDevice(_make_ble_device(), legacy_uart=True)
+        client = MagicMock(is_connected=True)
+        client.disconnect = AsyncMock()
+        device._client = client
+        device._begin_idle_disconnect(device._connection_generation)
+        await asyncio.sleep(0)
+        client.disconnect.assert_awaited_once()
+        modern = GoveeBLEDevice(_make_ble_device())
+        modern._client = MagicMock()
+        with patch.object(asyncio.get_running_loop(), "call_later") as later:
+            modern._schedule_idle_disconnect()
+        later.assert_not_called()
+
+
+class TestLegacyUartTransport:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("mode", [0, 1, 2, 3])
+    @pytest.mark.parametrize("sensitivity", [0, 50, 100])
+    async def test_music_modes_use_h6104_frame(self, mode, sensitivity):
+        device = GoveeBLEDevice(_make_ble_device(), legacy_uart=True)
+        with patch.object(device, "_write", AsyncMock()) as write:
+            await device.set_music_mode(mode, sensitivity, rgb=(10, 20, 30))
+        frame = write.call_args.args[0]
+        assert frame[:5] == bytes([0x33, 0x05, 1, mode, sensitivity])
+        assert frame[5:8] == (bytes([10, 20, 30]) if mode in (1, 2) else bytes(3))
+        assert len(frame) == 20
+        checksum = 0
+        for value in frame[:-1]:
+            checksum ^= value
+        assert frame[-1] == checksum
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("mode,sensitivity", [(-1, 50), (4, 50), (7, 50), (3, -1), (3, 101)])
+    async def test_unsupported_music_parameters_do_not_write(self, mode, sensitivity):
+        device = GoveeBLEDevice(_make_ble_device(), legacy_uart=True)
+        with patch.object(device, "_write", AsyncMock()) as write:
+            with pytest.raises(ValueError):
+                await device.set_music_mode(mode, sensitivity)
+        write.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_music_does_not_change_a_modern_profile(self):
+        device = GoveeBLEDevice(_make_ble_device())
+        with patch.object(device, "_write", AsyncMock()) as write:
+            with pytest.raises(BleakError, match="H6104"):
+                await device.set_music_mode(3)
+        write.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("power_on", [False, True])
+    async def test_h6104_subscribes_and_writes_plaintext_to_ffe1(self, power_on):
+        device = GoveeBLEDevice(_make_ble_device(name="ihoment_H6104_TEST"), legacy_uart=True)
+        client = MagicMock()
+        client.start_notify = AsyncMock()
+        client.write_gatt_char = AsyncMock()
+        with (
+            patch("custom_components.govee.api.ble.close_stale_connections_by_address", AsyncMock()),
+            patch("custom_components.govee.api.ble.establish_connection", AsyncMock(return_value=client)),
+            patch("custom_components.govee.api.ble.async_supports_encryption", AsyncMock()) as probe,
+        ):
+            await (device.turn_on() if power_on else device.turn_off())
+            # Reused connections do not subscribe a second time.
+            await device.set_brightness(128)
+            await device.set_tv_mode()
+        client.start_notify.assert_awaited_once()
+        assert client.start_notify.call_args.args[0] == LEGACY_UART_CHARACTERISTIC_UUID
+        client.write_gatt_char.assert_any_await(
+            LEGACY_UART_CHARACTERISTIC_UUID, _build_power_frame(power_on), response=False
+        )
+        client.write_gatt_char.assert_any_await(
+            LEGACY_UART_CHARACTERISTIC_UUID, _build_brightness_frame(128), response=False
+        )
+        probe.assert_not_awaited()
+        client.read_gatt_char.assert_not_called()
+        tv_frame = client.write_gatt_char.call_args.args[1]
+        assert tv_frame[:6] == bytes.fromhex("330500000132")
+        assert len(tv_frame) == 20
+        checksum = 0
+        for value in tv_frame[:-1]:
+            checksum ^= value
+        assert tv_frame[-1] == checksum
+
+    @pytest.mark.asyncio
+    async def test_tv_mode_is_not_sent_to_a_modern_profile(self):
+        device = GoveeBLEDevice(_make_ble_device())
+        with patch.object(device, "_write", AsyncMock()) as write:
+            with pytest.raises(BleakError, match="H6104"):
+                await device.set_tv_mode()
+        write.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_failed_notification_setup_disconnects_without_sending(self):
+        device = GoveeBLEDevice(_make_ble_device(), legacy_uart=True)
+        client = MagicMock()
+        client.start_notify = AsyncMock(side_effect=BleakError("subscribe failed"))
+        client.disconnect = AsyncMock()
+        client.write_gatt_char = AsyncMock()
+        with (
+            patch("custom_components.govee.api.ble.close_stale_connections_by_address", AsyncMock()),
+            patch("custom_components.govee.api.ble.establish_connection", AsyncMock(return_value=client)),
+        ):
+            with pytest.raises(BleakError, match="subscribe failed"):
+                await device.turn_on()
+        client.disconnect.assert_awaited_once()
+        client.write_gatt_char.assert_not_awaited()
+        assert device._client is None
+        assert device.state.power is None
 
 
 class TestTurnOnOff:
