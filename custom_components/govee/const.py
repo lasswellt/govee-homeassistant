@@ -106,10 +106,20 @@ CONF_API_TEMPERATURE_UNIT: Final = "api_temperature_unit"
 #     °F reading. The login-enabled BFF harvest returned no thermo-hygrometers
 #     for the account, so no fahOpen hint exists and the model list is the only
 #     signal. Also reported as #85, where the option was the workaround.
+#   H5108 (fridge/freezer thermometer, temperature-only): same class as the
+#     H5111. The raw_api_state of a fridge unit carried sensorTemperature 36.86 (a
+#     plausible °F value, no unit field) and Auto read it as °C, so HA showed
+#     98.3°F. Setting the Govee app to °C changed nothing: the API keeps
+#     returning the same °F-scale numbers.
+#   H5105 (thermo-hygrometer): same class. The raw_api_state carried
+#     sensorTemperature 74.48 (plausible indoor °F, no unit field) and Auto read
+#     it as °C, so HA showed 166.1°F.
 FAHRENHEIT_REPORTING_SKUS: Final = frozenset(
     {
         "H5179",
         "H5310",
+        "H5105",
+        "H5108",
         "H5109",
         "H5110",
         "H5111",

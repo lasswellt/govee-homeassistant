@@ -370,6 +370,31 @@ class TestTemperatureSensorFahrenheitConversion:
     def test_h5103_account_celsius_hint_beats_allowlist(self):
         assert self._make_sensor_stub(21.8, "auto", sku="H5103", account_unit="celsius") == 21.8
 
+    def test_h5108_freezer_thermometer_auto_converts_fahrenheit(self):
+        # The Developer API returned 36.86 (already °F) for an H5108 in a fridge
+        # that HA showed as 98.3°F. Auto mode stores it as ~2.7°C so HA renders
+        # 36.9°F.
+        result = self._make_sensor_stub(36.86, "auto", sku="H5108")
+        assert abs(result - 2.7) < 1e-4
+
+    def test_h5108_celsius_override_passthrough(self):
+        assert self._make_sensor_stub(2.7, "celsius", sku="H5108") == 2.7
+
+    def test_h5108_account_celsius_hint_beats_allowlist(self):
+        assert self._make_sensor_stub(2.7, "auto", sku="H5108", account_unit="celsius") == 2.7
+
+    def test_h5105_thermo_hygrometer_auto_converts_fahrenheit(self):
+        # The Developer API returned 74.48 (already °F) for an H5105 that HA
+        # showed as 166.1°F. Auto mode stores it as ~23.6°C so HA renders 74.5°F.
+        result = self._make_sensor_stub(74.48, "auto", sku="H5105")
+        assert abs(result - 23.6) < 1e-4
+
+    def test_h5105_celsius_override_passthrough(self):
+        assert self._make_sensor_stub(23.6, "celsius", sku="H5105") == 23.6
+
+    def test_h5105_account_celsius_hint_beats_allowlist(self):
+        assert self._make_sensor_stub(23.6, "auto", sku="H5105", account_unit="celsius") == 23.6
+
     def test_h5310_pool_thermometer_auto_converts_fahrenheit(self):
         # Issue #157: an 88°F pool surfaced as ~191°F because the Developer API
         # had already returned °F. With no fahOpen flag to go on, the SKU
