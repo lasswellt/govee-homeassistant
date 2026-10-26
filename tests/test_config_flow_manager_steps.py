@@ -172,9 +172,16 @@ async def test_two_factor_round_trip(hass: HomeAssistant, auth_client) -> None:
     assert result["data"][KEY_IOT_CREDENTIALS]["token"] == "tok"
 
 
-async def test_two_factor_code_request_failure(hass: HomeAssistant, auth_client) -> None:
-    """If Govee refuses to send the code, the account form shows cannot_connect."""
-    auth_client.request_verification_code = AsyncMock(side_effect=GoveeApiError("no mail"))
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (GoveeApiError("no mail"), "cannot_connect"),
+        (GoveeLoginRejectedError("Failed to request verification code: Too many requests"), "login_rejected"),
+    ],
+)
+async def test_two_factor_code_request_failure(hass: HomeAssistant, auth_client, error, expected) -> None:
+    """If the code can't be sent, the account form says why: network fault or Govee refusal."""
+    auth_client.request_verification_code = AsyncMock(side_effect=error)
     flow_id = await _to_account_step(hass)
     with patch(
         "custom_components.govee.config_flow.validate_govee_credentials",
@@ -183,7 +190,7 @@ async def test_two_factor_code_request_failure(hass: HomeAssistant, auth_client)
         result = await hass.config_entries.flow.async_configure(flow_id, {CONF_EMAIL: EMAIL, CONF_PASSWORD: PASSWORD})
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "account"
-    assert result["errors"] == {"base": "cannot_connect"}
+    assert result["errors"] == {"base": expected}
 
 
 def _entry(hass: HomeAssistant, **data) -> MockConfigEntry:
@@ -484,8 +491,15 @@ async def test_reconfigure_password_without_email(hass: HomeAssistant) -> None:
     assert result["errors"] == {"base": "password_without_email"}
 
 
-async def test_reconfigure_two_factor_code_request_failure(hass: HomeAssistant, auth_client) -> None:
-    auth_client.request_verification_code = AsyncMock(side_effect=GoveeApiError("no mail"))
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (GoveeApiError("no mail"), "cannot_connect"),
+        (GoveeLoginRejectedError("Failed to request verification code: Too many requests"), "login_rejected"),
+    ],
+)
+async def test_reconfigure_two_factor_code_request_failure(hass: HomeAssistant, auth_client, error, expected) -> None:
+    auth_client.request_verification_code = AsyncMock(side_effect=error)
     entry = _entry(hass)
     flow_id = await _start_reconfigure(hass, entry)
     with patch(
@@ -496,7 +510,7 @@ async def test_reconfigure_two_factor_code_request_failure(hass: HomeAssistant, 
             flow_id, {CONF_API_KEY: API_KEY, CONF_EMAIL: EMAIL, CONF_PASSWORD: PASSWORD}
         )
     assert result["step_id"] == "reconfigure"
-    assert result["errors"] == {"base": "cannot_connect"}
+    assert result["errors"] == {"base": expected}
 
 
 async def test_options_flow_no_device_selected_saves_global_options(hass: HomeAssistant, mock_rgbic_device) -> None:
