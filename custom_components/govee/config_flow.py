@@ -14,6 +14,7 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant.config_entries import (
+    SOURCE_BLUETOOTH,
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
@@ -500,6 +501,12 @@ class GoveeConfigFlow(ConfigFlow, domain=DOMAIN):
             # 2FA, being asked for a second verification code).
             if self._iot_credentials is not None and is_dataclass(self._iot_credentials):
                 data[KEY_IOT_CREDENTIALS] = asdict(self._iot_credentials)
+
+        # Home Assistant only closes a discovery card for an entry with the
+        # same unique ID, which an entry set up by hand doesn't have
+        for flow in self._async_in_progress():
+            if flow["context"].get("source") == SOURCE_BLUETOOTH:
+                self.hass.config_entries.flow.async_abort(flow["flow_id"])
 
         return self.async_create_entry(
             title="Govee",
