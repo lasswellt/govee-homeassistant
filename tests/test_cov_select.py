@@ -188,6 +188,38 @@ class TestSceneSelect:
         scene_select.coordinator.get_state.return_value.active_scene = "999"
         assert scene_select.current_option == SCENE_NONE
 
+    def test_current_option_none_while_light_off_and_back_when_on(self, scene_select):
+        """The scene is hidden while off but kept, so it shows again once on."""
+        state = scene_select.coordinator.get_state.return_value
+        state.active_scene = "2"
+
+        state.power_state = False
+        assert scene_select.current_option == SCENE_NONE
+        assert state.active_scene == "2"
+
+        state.power_state = True
+        assert scene_select.current_option == "Sunset"
+
+    def test_current_option_shown_when_power_unknown(self, scene_select):
+        """Only a known-off light hides the scene."""
+        state = scene_select.coordinator.get_state.return_value
+        state.active_scene = "2"
+        state.power_state = None
+        assert scene_select.current_option == "Sunset"
+
+    async def test_select_none_while_off_sends_nothing(self, scene_select):
+        """Clearing would switch the light on, so "None" while off is a no-op."""
+        state = scene_select.coordinator.get_state.return_value
+        state.active_scene = "2"
+        state.power_state = False
+
+        await scene_select.async_select_option(SCENE_NONE)
+
+        scene_select.coordinator.async_clear_scene.assert_not_awaited()
+        scene_select.coordinator.async_control_device.assert_not_awaited()
+        assert state.active_scene == "2"
+        scene_select.async_write_ha_state.assert_called_once()
+
     async def test_select_scene_sends_scene_command(self, scene_select, mock_light_device):
         await scene_select.async_select_option("Party")
 
@@ -281,6 +313,30 @@ class TestDIYSceneSelect:
         assert diy_select.current_option == SCENE_NONE
         diy_select.coordinator.get_state.return_value = None
         assert diy_select.current_option == SCENE_NONE
+
+    def test_current_option_none_while_light_off_and_back_when_on(self, diy_select):
+        """The DIY scene is hidden while off but kept, so it shows again once on."""
+        state = diy_select.coordinator.get_state.return_value
+        state.active_diy_scene = "101"
+
+        state.power_state = False
+        assert diy_select.current_option == SCENE_NONE
+        assert state.active_diy_scene == "101"
+
+        state.power_state = True
+        assert diy_select.current_option == "Lava"
+
+    async def test_select_none_while_off_sends_nothing(self, diy_select):
+        """Clearing would switch the light on, so "None" while off is a no-op."""
+        state = diy_select.coordinator.get_state.return_value
+        state.active_diy_scene = "101"
+        state.power_state = False
+
+        await diy_select.async_select_option(SCENE_NONE)
+
+        diy_select.coordinator.async_clear_scene.assert_not_awaited()
+        assert state.active_diy_scene == "101"
+        diy_select.async_write_ha_state.assert_called_once()
 
     async def test_select_sends_through_diy_path(self, diy_select, diy_device):
         await diy_select.async_select_option("Waves")

@@ -6,7 +6,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.components.light import ColorMode, LightEntityFeature
+from homeassistant.components.light import ATTR_EFFECT, ColorMode, LightEntityFeature
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 from custom_components.govee.light import DIY_EFFECT_PREFIX, GoveeLightEntity
@@ -579,6 +579,21 @@ class TestLightDIYEffects:
         diy_state.apply_optimistic_music_mode_struct(music_mode=1, sensitivity=50)
 
         assert entity.effect is None
+
+    async def test_effect_hidden_while_off_and_restored_on_power_on(
+        self, diy_coordinator, mock_diy_light_device, diy_state
+    ):
+        """Power off hides the effect but keeps the DIY scene for the next power-on."""
+        entity = GoveeLightEntity(diy_coordinator, mock_diy_light_device)
+        await _add_to_hass(entity)
+        await entity.async_turn_on(effect=f"{DIY_EFFECT_PREFIX}Campfire")
+
+        diy_state.apply_optimistic_power(False)
+        assert entity.state_attributes[ATTR_EFFECT] is None
+        assert diy_state.active_diy_scene == "101"
+
+        diy_state.apply_optimistic_power(True)
+        assert entity.state_attributes[ATTR_EFFECT] == f"{DIY_EFFECT_PREFIX}Campfire"
 
     async def test_setup_entry_passes_diy_option(self, mock_diy_light_device):
         """The enable_diy_scenes option reaches the light entity."""
