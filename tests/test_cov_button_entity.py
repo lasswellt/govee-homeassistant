@@ -92,7 +92,7 @@ class TestButtonSetup:
 class TestRefreshScenesButton:
     def _entity(self, mock_light_device):
         coordinator = _coordinator(mock_light_device, _state(mock_light_device))
-        coordinator.async_get_scenes = AsyncMock(return_value=[{"name": "Sunrise", "value": {"id": 1}}])
+        coordinator.async_refresh_scenes = AsyncMock()
         return GoveeRefreshScenesButton(coordinator, mock_light_device), coordinator
 
     def test_identity(self, mock_light_device):
@@ -107,7 +107,8 @@ class TestRefreshScenesButton:
         with caplog.at_level(logging.DEBUG, logger="custom_components.govee.button"):
             await entity.async_press()
 
-        coordinator.async_get_scenes.assert_awaited_once_with(mock_light_device.device_id, refresh=True)
+        # The coordinator refreshes the catalogs and tells the selects and light.
+        coordinator.async_refresh_scenes.assert_awaited_once_with(mock_light_device.device_id)
         assert "Refreshing scenes for Living Room Light" in caplog.text
         assert "Scenes refreshed for Living Room Light" in caplog.text
 

@@ -178,6 +178,31 @@ def rgbic_capabilities(light_capabilities) -> tuple[GoveeCapability, ...]:
                 ],
             },
         ),
+        # Advertised alongside segmentedColorRgb by almost every RGBIC device
+        # in docs/device-catalog.md.
+        GoveeCapability(
+            type=CAPABILITY_SEGMENT_COLOR,
+            instance="segmentedBrightness",
+            parameters={
+                "dataType": "STRUCT",
+                "fields": [
+                    {
+                        "fieldName": "segment",
+                        "size": {"min": 1, "max": 15},
+                        "dataType": "Array",
+                        "elementRange": {"min": 0, "max": 14},
+                        "elementType": "INTEGER",
+                        "required": True,
+                    },
+                    {
+                        "fieldName": "brightness",
+                        "dataType": "INTEGER",
+                        "range": {"min": 0, "max": 100},
+                        "required": True,
+                    },
+                ],
+            },
+        ),
     )
 
 

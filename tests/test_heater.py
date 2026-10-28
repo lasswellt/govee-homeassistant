@@ -437,8 +437,8 @@ class TestFanSpeedSelectEntity:
         """Test current option returns Medium (work_mode=2)."""
         assert fan_speed_entity.current_option == "Medium"
 
-    def test_current_option_default_on_none(self, fan_speed_entity, mock_coordinator):
-        """Test current option returns first option when work_mode is None."""
+    def test_current_option_unknown_on_none(self, fan_speed_entity, mock_coordinator):
+        """Test current option is unknown (None) when work_mode is None."""
         state = GoveeDeviceState(
             device_id=fan_speed_entity._device_id,
             online=True,
@@ -447,7 +447,7 @@ class TestFanSpeedSelectEntity:
         )
         # No work_mode set
         mock_coordinator.get_state.return_value = state
-        assert fan_speed_entity.current_option == "Low"
+        assert fan_speed_entity.current_option is None
 
     async def test_select_fan_speed(self, fan_speed_entity, mock_coordinator):
         """Test selecting fan speed sends WorkModeCommand."""

@@ -10,8 +10,9 @@ import logging
 from typing import Any
 
 from homeassistant.components.select import SelectEntity
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
@@ -47,6 +48,7 @@ from .models.device import (
     INSTANCE_PRESET_SCENE,
     INSTANCE_PURIFIER_MODE,
 )
+from .scene_cache import scenes_refreshed_signal
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -259,7 +261,64 @@ async def async_setup_entry(
     _LOGGER.debug("Set up %d Govee scene select entities", len(entities))
 
 
-class GoveeSceneSelectEntity(_GoveeSelectBase):
+class _GoveeSceneListSelectBase(_GoveeSelectBase):
+    """Scene / DIY scene select whose options follow a scene refresh."""
+
+    def _scene_id_and_name(self, scene_data: dict[str, Any]) -> tuple[int, str]:
+        """Return (scene id, display name) for one catalog entry."""
+        raise NotImplementedError
+
+    def _refreshed_scenes(
+        self, scenes: list[dict[str, Any]], diy_scenes: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Pick this select's catalog out of a refresh signal."""
+        raise NotImplementedError
+
+    def _build_options(self, scenes: list[dict[str, Any]]) -> None:
+        """Build the option list and both lookup maps from a scene catalog."""
+        # name -> (id, name), and scene_id (as string) -> option name
+        self._scene_map: dict[str, tuple[int, str]] = {}
+        self._scene_id_to_option: dict[str, str] = {}
+        options = [SCENE_NONE]
+
+        for scene_data in scenes:
+            scene_id, scene_name = self._scene_id_and_name(scene_data)
+
+            # Handle duplicate names by appending a counter
+            unique_name = scene_name
+            counter = 1
+            while unique_name in self._scene_map:
+                unique_name = f"{scene_name} ({counter})"
+                counter += 1
+
+            self._scene_map[unique_name] = (scene_id, scene_name)
+            self._scene_id_to_option[str(scene_id)] = unique_name
+            options.append(unique_name)
+
+        self._attr_options = options
+
+    async def async_added_to_hass(self) -> None:
+        """Rebuild the options whenever the scenes are refreshed."""
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                scenes_refreshed_signal(self._device_id),
+                self._handle_scenes_refreshed,
+            )
+        )
+
+    @callback
+    def _handle_scenes_refreshed(self, scenes: list[dict[str, Any]], diy_scenes: list[dict[str, Any]]) -> None:
+        """Adopt a refreshed catalog; an empty one (e.g. a failed fetch) keeps the current options."""
+        catalog = self._refreshed_scenes(scenes, diy_scenes)
+        if not catalog:
+            return
+        self._build_options(catalog)
+        self.async_write_ha_state()
+
+
+class GoveeSceneSelectEntity(_GoveeSceneListSelectBase):
     """Govee scene select entity.
 
     Provides a dropdown to select and activate scenes on a device.
@@ -285,32 +344,21 @@ class GoveeSceneSelectEntity(_GoveeSelectBase):
             scenes: List of scene data from API.
         """
         super().__init__(coordinator, device)
-
-        # Build scene mapping: name -> (id, name)
-        self._scene_map: dict[str, tuple[int, str]] = {}
-        # Reverse mapping: scene_id (as string) -> option name
-        self._scene_id_to_option: dict[str, str] = {}
-        options = [SCENE_NONE]
-
-        for scene_data in scenes:
-            scene_id = scene_data.get("value", {}).get("id", 0)
-            scene_name = scene_data.get("name", f"Scene {scene_id}")
-
-            # Handle duplicate names by appending ID
-            unique_name = scene_name
-            counter = 1
-            while unique_name in self._scene_map:
-                unique_name = f"{scene_name} ({counter})"
-                counter += 1
-
-            self._scene_map[unique_name] = (scene_id, scene_name)
-            self._scene_id_to_option[str(scene_id)] = unique_name
-            options.append(unique_name)
-
-        self._attr_options = options
+        self._build_options(scenes)
 
         # Unique ID
         self._attr_unique_id = f"{device.device_id}{SUFFIX_SCENE_SELECT}"
+
+    def _scene_id_and_name(self, scene_data: dict[str, Any]) -> tuple[int, str]:
+        """Regular scenes carry their id in a ``{"id": ...}`` value."""
+        scene_id = scene_data.get("value", {}).get("id", 0)
+        return scene_id, scene_data.get("name", f"Scene {scene_id}")
+
+    def _refreshed_scenes(
+        self, scenes: list[dict[str, Any]], diy_scenes: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Use the regular scene catalog."""
+        return scenes
 
     @property
     def current_option(self) -> str | None:
@@ -334,7 +382,8 @@ class GoveeSceneSelectEntity(_GoveeSelectBase):
         """
         if option == SCENE_NONE:
             # Send a color/color_temp command to exit the scene on the device
-            await self.coordinator.async_clear_scene(self._device_id)
+            if not await self.coordinator.async_clear_scene(self._device_id):
+                raise self._command_failed()
             self.async_write_ha_state()
             return
 
@@ -349,7 +398,7 @@ class GoveeSceneSelectEntity(_GoveeSelectBase):
         _LOGGER.debug("Activated scene '%s' on %s", scene_name, self._device.name)
 
 
-class GoveeDIYSceneSelectEntity(_GoveeSelectBase):
+class GoveeDIYSceneSelectEntity(_GoveeSceneListSelectBase):
     """Govee DIY scene select entity.
 
     Provides a dropdown to select and activate DIY scenes on a device.
@@ -375,33 +424,21 @@ class GoveeDIYSceneSelectEntity(_GoveeSelectBase):
             scenes: List of DIY scene data from API.
         """
         super().__init__(coordinator, device)
-
-        # Build scene mapping: name -> (id, name)
-        self._scene_map: dict[str, tuple[int, str]] = {}
-        # Reverse mapping: scene_id (as string) -> option name
-        self._scene_id_to_option: dict[str, str] = {}
-        options = [SCENE_NONE]
-
-        for scene_data in scenes:
-            # DIY scenes: value is an int (scene ID), not a dict like regular scenes
-            scene_id = scene_data.get("value", 0)
-            scene_name = scene_data.get("name", f"DIY {scene_id}")
-
-            # Handle duplicate names by appending ID
-            unique_name = scene_name
-            counter = 1
-            while unique_name in self._scene_map:
-                unique_name = f"{scene_name} ({counter})"
-                counter += 1
-
-            self._scene_map[unique_name] = (scene_id, scene_name)
-            self._scene_id_to_option[str(scene_id)] = unique_name
-            options.append(unique_name)
-
-        self._attr_options = options
+        self._build_options(scenes)
 
         # Unique ID
         self._attr_unique_id = f"{device.device_id}{SUFFIX_DIY_SCENE_SELECT}"
+
+    def _scene_id_and_name(self, scene_data: dict[str, Any]) -> tuple[int, str]:
+        """DIY scenes: value is an int (scene ID), not a dict like regular scenes."""
+        scene_id = scene_data.get("value", 0)
+        return scene_id, scene_data.get("name", f"DIY {scene_id}")
+
+    def _refreshed_scenes(
+        self, scenes: list[dict[str, Any]], diy_scenes: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Use the DIY scene catalog."""
+        return diy_scenes
 
     @property
     def available(self) -> bool:
@@ -430,7 +467,8 @@ class GoveeDIYSceneSelectEntity(_GoveeSelectBase):
         """
         if option == SCENE_NONE:
             # Send a color/color_temp command to exit the scene on the device
-            await self.coordinator.async_clear_scene(self._device_id)
+            if not await self.coordinator.async_clear_scene(self._device_id):
+                raise self._command_failed()
             self.async_write_ha_state()
             return
 
@@ -498,8 +536,8 @@ class GoveeHdmiSourceSelectEntity(_GoveeSelectBase):
             for name, value in self._option_map.items():
                 if value == state.hdmi_source:
                     return name
-        # Return first option as default if available
-        return self._attr_options[0] if self._attr_options else None
+        # Unknown source: show unknown rather than a made-up first option.
+        return None
 
     async def async_select_option(self, option: str) -> None:
         """Handle HDMI source selection."""
@@ -551,7 +589,7 @@ class GoveeNightlightSceneSelectEntity(_GoveeSelectBase):
             for name, value in self._option_map.items():
                 if value == state.nightlight_scene:
                     return name
-        return self._attr_options[0] if self._attr_options else None
+        return None
 
     async def async_select_option(self, option: str) -> None:
         """Handle nightlight scene selection."""
@@ -785,8 +823,8 @@ class GoveeFanSpeedSelectEntity(_GoveeSelectBase):
             for name, (wm, _mv) in self._option_map.items():
                 if wm == state.work_mode:
                     return name
-        # Return first option as default if available
-        return self._attr_options[0] if self._attr_options else None
+        # Unknown speed: show unknown rather than a made-up first option.
+        return None
 
     async def async_select_option(self, option: str) -> None:
         """Handle fan speed selection."""
@@ -865,8 +903,9 @@ class GoveePurifierModeSelectEntity(_GoveeSelectBase):
             for name, value in self._option_map.items():
                 if value == state.purifier_mode:
                     return name
-        # Return first option as default if available
-        return self._attr_options[0] if self._attr_options else None
+        # Unknown, or the unit is in a non-gear mode (e.g. Auto): none of the
+        # options is active, so report unknown rather than the first option.
+        return None
 
     async def async_select_option(self, option: str) -> None:
         """Handle purifier mode selection."""
@@ -932,8 +971,8 @@ class GoveePresetSceneSelectEntity(_GoveeSelectBase):
             for name, value in self._option_map.items():
                 if value == state.preset_scene:
                     return name
-        # Default to the first scene when the cloud reports nothing.
-        return self._attr_options[0] if self._attr_options else None
+        # The cloud reports nothing until a scene is picked: show unknown.
+        return None
 
     async def async_select_option(self, option: str) -> None:
         """Handle preset scene selection."""

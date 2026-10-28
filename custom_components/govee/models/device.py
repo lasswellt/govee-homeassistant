@@ -156,6 +156,9 @@ INSTANCE_BRIGHTNESS = "brightness"
 INSTANCE_COLOR_RGB = "colorRgb"
 INSTANCE_COLOR_TEMP = "colorTemperatureK"
 INSTANCE_SEGMENT_COLOR = "segmentedColorRgb"
+# Per-segment brightness: a STRUCT of ``segment`` (index array) and
+# ``brightness`` (0-100 in every captured device), sibling of segmentedColorRgb.
+INSTANCE_SEGMENT_BRIGHTNESS = "segmentedBrightness"
 INSTANCE_SCENE = "lightScene"
 INSTANCE_DIY = "diyScene"
 # Saved device "snapshots" — a third dynamic_scene instance whose named options
@@ -437,6 +440,22 @@ class GoveeDevice:
     def supports_segments(self) -> bool:
         """Check if device supports segment control (RGBIC)."""
         return any(cap.is_segment_color for cap in self.capabilities)
+
+    @property
+    def supports_segment_brightness(self) -> bool:
+        """Check if device advertises per-segment brightness (segmentedBrightness)."""
+        return self.get_capability(CAPABILITY_SEGMENT_COLOR, INSTANCE_SEGMENT_BRIGHTNESS) is not None
+
+    @property
+    def segment_brightness_range(self) -> tuple[int, int]:
+        """Get the segmentedBrightness ``brightness`` field range. Default (0, 100)."""
+        cap = self.get_capability(CAPABILITY_SEGMENT_COLOR, INSTANCE_SEGMENT_BRIGHTNESS)
+        if cap is not None:
+            for cap_field in cap.parameters.get("fields", []):
+                if cap_field.get("fieldName") == "brightness":
+                    range_data = cap_field.get("range") or {}
+                    return (int(range_data.get("min", 0)), int(range_data.get("max", 100)))
+        return (0, 100)
 
     @property
     def light_toggle_instances(self) -> list[str]:
