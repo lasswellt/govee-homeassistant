@@ -18,7 +18,7 @@ import socket
 
 import pytest
 
-from custom_components.govee.api import lan_client
+from custom_components.govee.api import lan, lan_client
 from custom_components.govee.api.lan_client import (
     GoveeLanClient,
     LanDevStatus,
@@ -730,6 +730,30 @@ class TestGoveeLanClientDegrade:
         assert send_sock.closed is True
         assert socket.IP_DROP_MEMBERSHIP in recv_sock.opt_names()
 
+    async def test_second_endpoint_failure_closes_the_first_transport(self, monkeypatch):
+        recv_sock = _FakeSocket()
+        send_sock = _FakeSocket()
+        _patch_sockets(monkeypatch, recv_sock, send_sock)
+        created: list[_FakeTransport] = []
+
+        async def first_only(protocol_factory, sock=None):
+            if created:
+                raise OSError("cannot attach the send socket")
+            transport = _FakeTransport(sock)
+            created.append(transport)
+            return transport, protocol_factory()
+
+        loop = asyncio.get_running_loop()
+        monkeypatch.setattr(loop, "create_datagram_endpoint", first_only)
+
+        client = GoveeLanClient(lambda ip, payload: None)
+        await client.async_start(["10.0.0.2"])  # must NOT raise
+
+        assert client.available is False
+        # The receive transport is not left registered on the loop.
+        assert created[0].closed is True
+        assert send_sock.closed is True
+
 
 class TestGoveeLanClientStop:
     """async_stop drops the group, closes BOTH sockets, and is idempotent."""
@@ -866,6 +890,27 @@ class TestAsyncSendCommand:
 
         assert await client.async_send_command("10.0.0.5", "turn", {"value": 0}) is False
 
+    async def test_returns_false_when_the_transport_reports_the_error(self, monkeypatch):
+        # CPython's datagram transport never raises from sendto: it hands the
+        # OSError to protocol.error_received and returns. That must still count
+        # as a failed send.
+        _patch_sockets(monkeypatch, _FakeSocket(), _FakeSocket())
+        endpoints = _patch_create_endpoint(monkeypatch)
+        client = GoveeLanClient(lambda ip, status: None)
+        await client.async_start([])
+        send_transport, send_protocol, _ = endpoints[1]
+
+        def _cpython_sendto(data, addr=None):
+            send_protocol.error_received(OSError(101, "Network is unreachable"))
+
+        send_transport.sendto = _cpython_sendto
+
+        assert await client.async_send_command("10.0.0.5", "turn", {"value": 0}) is False
+
+        # The error belongs to that send only; the next good send succeeds.
+        send_transport.sendto = lambda data, addr=None: None
+        assert await client.async_send_command("10.0.0.5", "turn", {"value": 0}) is True
+
     async def test_returns_false_when_unavailable(self):
         # A never-started client has no send transport — send is a no-op False.
         client = GoveeLanClient(lambda ip, status: None)
@@ -979,6 +1024,69 @@ class TestAsyncReadBatch:
 # ------------------------------------------------------------------------------
 
 
+class TestAsyncScan:
+    """Rescans run on the client's own :4002 socket instead of a second one."""
+
+    @staticmethod
+    def _scan_reply(device: str, ip: str) -> bytes:
+        return json.dumps({"msg": {"cmd": "scan", "data": {"device": device, "ip": ip, "sku": "H6072"}}}).encode()
+
+    async def test_sends_from_the_4002_socket_and_collects_replies(self, monkeypatch):
+        client, pushes = await _start_client(monkeypatch)
+
+        async def _window(_timeout):
+            client._handle_datagram("10.0.0.5", self._scan_reply("AA:BB", "10.0.0.5"))
+            client._handle_datagram("10.0.0.6", b"garbage")
+            client._handle_datagram("10.0.0.7", _dev_status_bytes(brightness=40))
+
+        monkeypatch.setattr(lan_client.asyncio, "sleep", _window)
+
+        records = await client.async_scan(
+            interface_ips=["10.0.0.2"], extra_targets=["192.0.2.10"], broadcast_targets=["10.0.0.255"]
+        )
+
+        assert records == [{"device": "AA:BB", "ip": "10.0.0.5", "sku": "H6072"}]
+        sent = {addr for _data, addr in client._recv_transport.sent}
+        assert sent == {
+            (lan.LAN_MULTICAST_GROUP, lan.LAN_DISCOVERY_PORT),
+            ("192.0.2.10", lan.LAN_DISCOVERY_PORT),
+            ("10.0.0.255", lan.LAN_DISCOVERY_PORT),
+        }
+        assert client._send_transport.sent == []
+        # devStatus pushes keep flowing during the scan window.
+        assert [ip for ip, _ in pushes] == ["10.0.0.7"]
+        assert client._scan_collector is None
+
+    async def test_scan_replies_outside_a_scan_are_ignored(self, monkeypatch):
+        client, pushes = await _start_client(monkeypatch)
+
+        client._handle_datagram("10.0.0.5", self._scan_reply("AA:BB", "10.0.0.5"))
+
+        assert pushes == []
+
+    async def test_overlapping_scan_does_not_steal_the_running_scans_replies(self, monkeypatch):
+        client, _ = await _start_client(monkeypatch)
+        inner: dict[str, object] = {}
+
+        async def _window(_timeout):
+            if "result" not in inner:
+                inner["result"] = await client.async_scan(interface_ips=[], extra_targets=[], broadcast_targets=[])
+            client._handle_datagram("10.0.0.5", self._scan_reply("AA:BB", "10.0.0.5"))
+
+        monkeypatch.setattr(lan_client.asyncio, "sleep", _window)
+
+        records = await client.async_scan(interface_ips=[], extra_targets=[], broadcast_targets=[])
+
+        assert inner["result"] == []
+        assert records == [{"device": "AA:BB", "ip": "10.0.0.5", "sku": "H6072"}]
+
+    async def test_raises_when_not_running(self):
+        client = GoveeLanClient(lambda ip, status: None)
+
+        with pytest.raises(OSError):
+            await client.async_scan(interface_ips=[], extra_targets=[], broadcast_targets=[])
+
+
 class TestSourceIpDispatch:
     """Valid devStatus dispatched by source IP; garbage ignored; no double-fire."""
 
@@ -1025,6 +1133,21 @@ class TestSourceIpDispatch:
         client._handle_datagram("10.0.0.9", json.dumps({"msg": {"cmd": "devStatus", "data": {}}}).encode("utf-8"))
 
         # None of these is a well-formed devStatus reply -> nothing dispatched.
+        assert pushes == []
+
+    async def test_hostile_datagrams_are_ignored_without_raising(self, monkeypatch):
+        # A datagram from any LAN host must never raise out of the socket
+        # callback (asyncio would log a traceback per packet).
+        client, pushes = await _start_client(monkeypatch)
+
+        client._handle_datagram("10.0.0.9", b"[" * 100000)  # RecursionError in json
+        client._handle_datagram(
+            "10.0.0.9",
+            b'{"msg":{"cmd":"devStatus","data":{"onOff":1,"brightness":1e400,'
+            b'"color":{"r":0,"g":0,"b":0},"colorTemInKelvin":0}}}',
+        )  # int(inf)
+        client._handle_datagram("10.0.0.9", _dev_status_bytes(color={"r": 1e400, "g": 0, "b": 0}))
+
         assert pushes == []
 
     async def test_unregister_unknown_ip_is_a_noop(self, monkeypatch):
