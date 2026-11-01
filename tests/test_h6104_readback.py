@@ -130,7 +130,7 @@ def test_push_updates_and_late_reply_filtering():
 
 @pytest.fixture
 def tv_coord():
-    entry = MagicMock(options={}, data={})
+    entry = MagicMock(options={"enable_h6104_ble": True}, data={})
     api = MagicMock()
     coord = GoveeCoordinator(
         hass=MagicMock(), config_entry=entry, api_client=api, iot_credentials=None, poll_interval=60
@@ -279,3 +279,53 @@ def test_newer_mqtt_report_does_not_get_overwritten_by_old_ble_cache(tv_coord):
     coord._on_mqtt_state_update("tv", {"onOff": 0})
     assert "power_state" not in coord._h6104_ble_fields["tv"]
     assert "dreamview_enabled" in coord._h6104_ble_fields["tv"]
+
+
+@pytest.mark.asyncio
+async def test_slow_read_is_throttled_after_completion_and_timeout_keeps_commands_eligible(tv_coord):
+    coord, _device, _api = tv_coord
+    client = MagicMock(supports_readback=True)
+    client.async_read_status = AsyncMock(side_effect=TimeoutError())
+    coord._ble_devices["tv"] = client
+    before = coord._transport.get("tv", "ble")
+    with patch("custom_components.govee.coordinator.time") as clock:
+        clock.monotonic.side_effect = [10, 13, 13.1]
+        await coord._async_refresh_h6104_ble_status("tv")
+        await coord._async_refresh_h6104_ble_status("tv")
+    client.async_read_status.assert_awaited_once()
+    assert coord._transport.get("tv", "ble") == before
+    assert coord._ble_write_eligible("tv") is True
+
+
+def test_cloud_path_optimistic_command_supersedes_previous_ble_report(tv_coord):
+    from custom_components.govee.models import PowerCommand
+
+    coord, _device, _api = tv_coord
+    coord._apply_h6104_ble_report("tv", H6104Report(power=True))
+    coord._apply_optimistic_update("tv", PowerCommand(power_on=False))
+    state = coord.get_state("tv")
+    coord._merge_h6104_ble_fields("tv", state)
+    assert state.power_state is False
+
+
+@pytest.mark.asyncio
+async def test_late_idle_disconnect_callback_does_not_remove_reconnect_allowance():
+    device = GoveeBLEDevice(MagicMock(), legacy_uart=True)
+    client = MagicMock(is_connected=True, disconnect=AsyncMock())
+    device._client = client
+    await device._disconnect_if_idle(device._connection_generation)
+    assert device.idle_disconnected is True
+    device._on_disconnected(client)
+    assert device.idle_disconnected is True
+    await device.stop()
+
+
+@pytest.mark.asyncio
+async def test_read_connect_timeout_preserves_intentional_idle_allowance():
+    device = GoveeBLEDevice(MagicMock(), legacy_uart=True)
+    device._idle_disconnected = True
+    with patch.object(device, "_ensure_connected", AsyncMock(side_effect=TimeoutError())):
+        with pytest.raises(TimeoutError):
+            await device.async_read_status()
+    assert device.idle_disconnected is True
+    await device.stop()

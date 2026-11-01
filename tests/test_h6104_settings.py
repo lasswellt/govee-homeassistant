@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+
 from custom_components.govee import number, select
 from custom_components.govee.const import CONF_ENABLE_H6104_BLE
 from custom_components.govee.coordinator import GoveeCoordinator
@@ -39,10 +41,10 @@ async def test_live_settings_preserve_the_other_field_and_only_send_in_tv_mode(t
     sensitivity.async_write_ha_state = MagicMock()
     area.async_write_ha_state = MagicMock()
     await sensitivity.async_set_native_value(90)
-    await area.async_select_option("Part of screen")
+    await area.async_select_option("part")
     assert coord.h6104_tv_settings("tv") == (0, 90)
     assert sensitivity.native_value == 90
-    assert area.current_option == "Part of screen"
+    assert area.current_option == "part"
     assert coord.h6104_tv_settings("another_tv") == (1, 50)
     assert coord.async_send_dreamview.await_count == (2 if active else 0)
 
@@ -66,7 +68,7 @@ async def test_failed_active_setting_write_rolls_back(tv, raise_error):
 @pytest.mark.parametrize("value", [-1, 101, 12.5, float("nan")])
 async def test_invalid_sensitivity_never_sends(tv, value):
     coord, device, _entry = tv
-    with pytest.raises(ValueError):
+    with pytest.raises(ServiceValidationError):
         await GoveeTVSensitivityNumber(coord, device).async_set_native_value(value)
     coord.async_send_dreamview.assert_not_awaited()
 
@@ -137,3 +139,33 @@ async def test_tv_settings_are_encoded_in_the_frame(area, sensitivity):
     with patch.object(ble, "_write", AsyncMock()) as write:
         await ble.set_tv_mode(area=area, sensitivity=sensitivity)
     assert write.call_args.args[0][:6] == bytes([0x33, 0x05, 0, 0, area, sensitivity])
+
+
+@pytest.mark.asyncio
+async def test_unknown_area_and_failed_entity_writes_are_translated(tv):
+    coord, device, _entry = tv
+    with pytest.raises(ServiceValidationError) as exc:
+        await GoveeTVAreaSelect(coord, device).async_select_option("invalid")
+    assert exc.value.translation_key == "unknown_option"
+    coord._states["tv"].dreamview_enabled = True
+    coord.async_send_dreamview.return_value = False
+    for entity, method, value in [
+        (GoveeTVAreaSelect(coord, device), "async_select_option", "part"),
+        (GoveeTVSensitivityNumber(coord, device), "async_set_native_value", 90),
+    ]:
+        with pytest.raises(HomeAssistantError) as exc:
+            await getattr(entity, method)(value)
+        assert exc.value.translation_key == "command_failed"
+    assert coord.h6104_tv_settings("tv") == (1, 50)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value", ["whole", "Whole screen", "part", "Part of screen"])
+async def test_area_restores_translated_keys_and_legacy_labels(tv, value):
+    coord, device, _entry = tv
+    area = GoveeTVAreaSelect(coord, device)
+    with patch.object(GoveeEntity, "async_added_to_hass", AsyncMock()):
+        area.async_get_last_state = AsyncMock(return_value=MagicMock(state=value))
+        await area.async_added_to_hass()
+    assert area.current_option == ("part" if value in ("part", "Part of screen") else "whole")
+    coord.async_send_dreamview.assert_not_awaited()

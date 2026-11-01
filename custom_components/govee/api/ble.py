@@ -280,6 +280,7 @@ class GoveeBLEDevice:
         self._state = GoveeBLEState()
         self._lock = asyncio.Lock()
         self._idle_disconnect_handle: asyncio.TimerHandle | None = None
+        self._idle_disconnect_task: asyncio.Task[None] | None = None
         self._connection_generation = 0
         self._idle_disconnected = False
         self._report_callbacks: list[Callable[[H6104Report], None]] = []
@@ -321,6 +322,7 @@ class GoveeBLEDevice:
 
     @property
     def supports_readback(self) -> bool:
+        """Whether this device supports legacy UART status queries."""
         return self._legacy_uart
 
     @property
@@ -387,9 +389,9 @@ class GoveeBLEDevice:
         reports: list[H6104Report] = []
         async with self._lock:
             self._cancel_idle_disconnect()
-            self._idle_disconnected = False
             try:
                 client = await self._ensure_connected()
+                self._idle_disconnected = False
                 for command, payload in ((1, []), (4, []), (5, [1])):
                     query = build_packet([0xAA, command, *payload])
                     future: asyncio.Future[H6104Report] = asyncio.get_running_loop().create_future()
@@ -468,7 +470,7 @@ class GoveeBLEDevice:
         A late callback from a superseded client must not wipe the connection
         that replaced it, so only the current client's drop is honoured.
         """
-        if self._client is not None and client is not self._client:
+        if client is not self._client:
             return
         self._cancel_idle_disconnect()
         self._idle_disconnected = False
@@ -498,7 +500,7 @@ class GoveeBLEDevice:
         if generation != self._connection_generation:
             return
         self._idle_disconnect_handle = None
-        asyncio.create_task(self._disconnect_if_idle(generation))
+        self._idle_disconnect_task = asyncio.create_task(self._disconnect_if_idle(generation))
 
     async def _disconnect_if_idle(self, generation: int) -> None:
         async with self._lock:
@@ -612,11 +614,8 @@ class GoveeBLEDevice:
                         + ", ".join(f"{char.uuid} ({'/'.join(char.properties)})" for char in service.characteristics)
                         for service in client.services
                     ]
-                    raise BleakError(
-                        f"Control characteristic {self._write_uuid} was not found. "
-                        f"Discovered GATT services: {'; '.join(services) or 'none'}. "
-                        "No BLE command was sent; no alternate characteristic was tried."
-                    )
+                    _LOGGER.debug("Discovered GATT services for %s: %s", self.address, services)
+                    raise BleakError(f"Control characteristic {self._write_uuid} was not found")
                 if self._session is not None:
                     frame = self._session.wrap(frame)
                 await client.write_gatt_char(self._write_uuid, frame, response=False)
@@ -721,3 +720,6 @@ class GoveeBLEDevice:
             self._idle_disconnected = False
             await self._disconnect_client()
             self._report_callbacks.clear()
+        if self._idle_disconnect_task is not None:
+            await self._idle_disconnect_task
+            self._idle_disconnect_task = None

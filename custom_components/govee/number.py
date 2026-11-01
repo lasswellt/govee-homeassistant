@@ -22,7 +22,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .api.probe_thermometer import probes_for_sku
-from .const import CONF_ENABLE_H6104_BLE, SUFFIX_HEATER_TEMPERATURE, SUFFIX_MUSIC_SENSITIVITY
+from .const import CONF_ENABLE_H6104_BLE, DEFAULT_ENABLE_H6104_BLE, SUFFIX_HEATER_TEMPERATURE, SUFFIX_MUSIC_SENSITIVITY
 from .coordinator import GoveeConfigEntry, GoveeCoordinator
 from .entity import GoveeEntity
 from .h6104 import GoveeTVSensitivityNumber
@@ -44,7 +44,11 @@ async def async_setup_entry(
     entities: list[NumberEntity] = []
 
     for device in coordinator.devices.values():
-        if device.sku == "H6104" and not device.is_group and entry.options.get(CONF_ENABLE_H6104_BLE, False) is True:
+        if (
+            device.sku == "H6104"
+            and not device.is_group
+            and entry.options.get(CONF_ENABLE_H6104_BLE, DEFAULT_ENABLE_H6104_BLE) is True
+        ):
             entities.append(GoveeTVSensitivityNumber(coordinator, device))
         # Probe thermometer alarm limits: four per probe.
         if device.is_probe_thermometer:
@@ -201,7 +205,10 @@ class GoveeMusicSensitivityNumber(GoveeEntity, RestoreEntity, NumberEntity):
     @property
     def native_value(self) -> float | None:
         """Prefer H6104 device-reported music sensitivity when available."""
-        if self._device.sku == "H6104":
+        if (
+            self._device.sku == "H6104"
+            and self.coordinator._config_entry.options.get(CONF_ENABLE_H6104_BLE, DEFAULT_ENABLE_H6104_BLE) is True
+        ):
             state = self.coordinator.get_state(self._device_id)
             if state is not None and state.music_sensitivity is not None:
                 return float(state.music_sensitivity)
@@ -373,7 +380,8 @@ class GoveeHeaterTemperatureNumber(GoveeEntity, RestoreNumber):
         Args:
             value: Temperature value in Celsius.
         """
-        temperature = int(value)
+        # round, not int: 69.8 °F arrives as 20.999999999999996 °C (#265).
+        temperature = round(min(max(value, self.native_min_value), self.native_max_value))
 
         # Preserve the current auto_stop setting so the API doesn't ignore the
         # command: polled, or the switch's restored/last set value (both live

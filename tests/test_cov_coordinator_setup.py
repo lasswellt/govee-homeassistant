@@ -1405,6 +1405,10 @@ class TestWaterDetectorPolling:
 
 
 class TestProbePolling:
+    @pytest.fixture(autouse=True)
+    def _no_probe_spacing(self, monkeypatch):
+        monkeypatch.setattr(coord_mod, "PROBE_PACKET_SPACING", 0)
+
     def _with_probe(self, coord: GoveeCoordinator) -> GoveeCoordinator:
         _add(coord, GoveeDevice.synthetic_probe_thermometer(device_id=PROBE, sku="H5192", name="Grill"))
         return coord
@@ -1423,7 +1427,7 @@ class TestProbePolling:
         assert coord.is_probe_polling(PROBE)
         assert tasks.names == ["govee_probe_poll_now"]
         await tasks.run_all()
-        coord._poll_probe_thermometers.assert_awaited_once()
+        coord._poll_probe_thermometers.assert_awaited_once_with(only_device_id=PROBE)
         assert len(timers.calls) == 1
 
     def test_rescheduling_cancels_the_pending_timer(self, monkeypatch):
@@ -1442,11 +1446,11 @@ class TestProbePolling:
         coord._poll_probe_thermometers = AsyncMock()
         coord._schedule_probe_poll = MagicMock()
 
-        await coord._probe_poll_callback()
+        await coord._run_probe_sweep()
         coord._schedule_probe_poll.assert_not_called()
 
         coord._probe_polling_enabled.add(PROBE)
-        await coord._probe_poll_callback()
+        await coord._run_probe_sweep()
         coord._schedule_probe_poll.assert_called_once()
         assert coord._poll_probe_thermometers.await_count == 2
 

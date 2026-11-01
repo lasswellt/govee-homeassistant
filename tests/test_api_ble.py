@@ -582,13 +582,13 @@ class TestMissingControlCharacteristic:
                 await device.turn_on()
         message = str(exc.value)
         assert WRITE_CHARACTERISTIC_UUID in message
-        assert "No BLE command was sent" in message
+        assert "was not found" in message
         if empty_services:
-            assert "services: none" in message
+            assert "services: none" not in message
         else:
-            assert service.uuid in message
-            assert characteristic.uuid in message
-            assert "read/notify" in message
+            assert service.uuid not in message
+            assert characteristic.uuid not in message
+            assert "read/notify" not in message
         client.write_gatt_char.assert_not_awaited()
         client.read_gatt_char.assert_not_called()
         assert device.state.power is None
@@ -740,6 +740,8 @@ class TestLegacyUartTransport:
         for value in tv_frame[:-1]:
             checksum ^= value
         assert tv_frame[-1] == checksum
+        client.disconnect = AsyncMock()
+        await device.stop()
 
     @pytest.mark.asyncio
     async def test_tv_mode_is_not_sent_to_a_modern_profile(self):

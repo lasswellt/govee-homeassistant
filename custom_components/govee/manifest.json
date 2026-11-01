@@ -22,5 +22,5 @@
     "aiomqtt>=2.0.0",
     "bleak-retry-connector>=3.4.0"
   ],
-  "version": "2026.10.1"
+  "version": "2026.10.2"
 }

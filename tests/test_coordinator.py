@@ -502,6 +502,7 @@ class TestOptimisticUpdates:
 
         coord = object.__new__(GoveeCoordinator)
         coord._states = {sample_state.device_id: sample_state}
+        coord._devices = {}
 
         coord._apply_optimistic_update(
             sample_state.device_id,
@@ -524,6 +525,7 @@ class TestOptimisticUpdates:
 
         coord = object.__new__(GoveeCoordinator)
         coord._states = {sample_state.device_id: sample_state}
+        coord._devices = {}
 
         coord._apply_optimistic_update(
             sample_state.device_id,

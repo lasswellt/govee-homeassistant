@@ -10,6 +10,7 @@ from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.govee.light import GoveeLightEntity
 from custom_components.govee.models import (
+    BrightnessCommand,
     GoveeCapability,
     GoveeDevice,
     RGBColor,
@@ -200,6 +201,19 @@ class TestLightEffectSupport:
         assert mock_coordinator.async_control_device.call_count == 1
         cmd = mock_coordinator.async_control_device.call_args[0][1]
         assert isinstance(cmd, SceneCommand)
+
+    @pytest.mark.asyncio
+    async def test_turn_on_with_effect_and_brightness(self, mock_coordinator, mock_light_device, mock_scenes):
+        """The brightness is set after the scene, which leaves it unchanged."""
+        entity = GoveeLightEntity(mock_coordinator, mock_light_device, enable_scenes=True)
+        entity._build_effect_mapping(mock_scenes)
+
+        with patch.object(type(entity), "is_on", new_callable=lambda: property(lambda self: False)):
+            await entity.async_turn_on(effect="Sunset", brightness=255)
+
+        commands = [call[0][1] for call in mock_coordinator.async_control_device.call_args_list]
+        assert [type(cmd) for cmd in commands] == [SceneCommand, BrightnessCommand]
+        assert commands[1].brightness == entity._ha_to_device_brightness(255)
 
     @pytest.mark.asyncio
     async def test_async_added_to_hass_loads_scenes(self, mock_coordinator, mock_light_device, mock_scenes):

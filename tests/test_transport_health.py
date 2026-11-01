@@ -40,17 +40,18 @@ def _bare_coordinator() -> GoveeCoordinator:
 
 class TestLiveGattStaleness:
     @pytest.mark.parametrize("connected", [False, True])
-    def test_idle_advertisement_does_not_expire_a_live_connection(self, connected):
+    @pytest.mark.parametrize("readback", [False, True])
+    def test_idle_advertisement_does_not_expire_a_live_connection(self, connected, readback):
         coord = _bare_coordinator()
         coord._devices = {"dev1": MagicMock()}
-        coord._ble_devices = {"dev1": MagicMock(is_connected=connected)}
+        coord._ble_devices = {"dev1": MagicMock(is_connected=connected, supports_readback=readback)}
         coord._transport.ensure("dev1")
         old = datetime.now(timezone.utc) - timedelta(minutes=10)
         health = coord._transport.get("dev1", "ble")
         health.mark_success(old)
         coord._refresh_ble_staleness()
-        assert health.is_available is connected
-        assert coord._ble_write_eligible("dev1") is connected
+        assert health.is_available is (connected and readback)
+        assert coord._ble_write_eligible("dev1") is (connected and readback)
         # A connection is not a new advertisement or confirmed read.
         assert health.last_success_ts == old
 

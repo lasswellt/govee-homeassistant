@@ -98,6 +98,9 @@
     "number": {
       "govee_music_sensitivity": {
         "default": "mdi:microphone"
+      },
+      "govee_tv_sensitivity": {
+        "default": "mdi:camera-metering-center"
       }
     },
     "select": {
@@ -130,6 +133,9 @@
       },
       "kettle_brew_mode": {
         "default": "mdi:kettle-steam"
+      },
+      "govee_tv_area": {
+        "default": "mdi:monitor-screenshot"
       }
     },
     "sensor": {
@@ -198,6 +204,15 @@
       },
       "govee_dreamview": {
         "default": "mdi:movie-open"
+      },
+      "govee_heater_thermostat": {
+        "default": "mdi:thermostat-box"
+      },
+      "govee_heater_oscillation": {
+        "default": "mdi:arrow-oscillating-off",
+        "state": {
+          "on": "mdi:arrow-oscillating"
+        }
       },
       "govee_main_light": {
         "default": "mdi:ceiling-light"

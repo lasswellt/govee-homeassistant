@@ -3,7 +3,6 @@
 from typing import Final
 
 DOMAIN: Final = "govee"
-H6104_BLE_BUILD: Final = "2026.10.25.10"
 
 # Config entry keys
 CONF_API_KEY: Final = "api_key"
@@ -109,6 +108,12 @@ CONF_API_TEMPERATURE_UNIT: Final = "api_temperature_unit"
 #     °F reading. The login-enabled BFF harvest returned no thermo-hygrometers
 #     for the account, so no fahOpen hint exists and the model list is the only
 #     signal. Also reported as #85, where the option was the workaround.
+# SKUs whose Platform API listing omits colorRgb although the device reports a
+# colour over AWS IoT (#240, H7073: only powerSwitch, brightness and scenes are
+# listed, the status push carries ``color`` {r,g,b}). With IoT credentials the
+# coordinator synthesises the capability and sends colour over AWS IoT.
+MQTT_COLOR_SKUS: Final = frozenset({"H7073"})
+
 FAHRENHEIT_REPORTING_SKUS: Final = frozenset(
     {
         "H5179",
@@ -140,6 +145,10 @@ FAHRENHEIT_REPORTING_SKUS: Final = frozenset(
 # homebridge's capability grouping, so it is a different protocol class, and
 # the H7108 is unverified — both stay on the REST OscillationCommand, as does
 # every other fan SKU. Compared case-insensitively against GoveeDevice.sku.
+# Heaters that advertise both thermostatToggle (never reported by the device) and
+# the targetTemperature STRUCT's autoStop field: Auto Stop drives the STRUCT field
+# and the thermostat toggle is its own switch (#265).
+HEATER_AUTO_STOP_STRUCT_SKUS: Final = frozenset({"H7130"})
 MQTT_OSCILLATION_SKUS: Final = frozenset({"H7105", "H7107"})
 
 # Leak sensors reporting independent upper/lower probe moisture bytes over
@@ -229,6 +238,10 @@ PTREAL_RING_MASK: Final = 0xFFFF
 # reports both zones in an ``aa 30 <main> <ring>`` status frame. Verified on
 # an H1252 (#223); the H1232's REST toggles work.
 PTREAL_LIGHT_ZONE_SKUS: Final = frozenset({"H1252"})
+# SKUs whose DreamView switch follows the light's own ``aa 05 <mode>`` report
+# (issue #213: the H66A0 kept HA's optimistic ON while the app ran another
+# mode). Add a model only once a capture confirms its report.
+DREAMVIEW_STATE_FROM_FRAMES_SKUS: Final = frozenset({"H66A0"})
 
 # Colour-temperature range of those zones, the fixture's whole-device
 # colorTemperatureK range. The frame builder clamps to it.
@@ -299,6 +312,10 @@ REQUEST_STATUS_MIN_INTERVAL: Final = 3  # seconds
 # asks the user to re-enter the account login.
 MQTT_SILENT_CHECK_DELAY: Final = 1800  # seconds
 MQTT_SILENT_MIN_QUERIES: Final = 3
+# Without queries (an account whose only device is a gateway thermometer has
+# none to send), readings that reached the cloud while the session got nothing
+# are the prompt: this many of them count as silent too (#222).
+MQTT_SILENT_MIN_MISSED_PUSHES: Final = 2
 # A device the cloud reports offline still counts as reachable when a local
 # transport (LAN, BLE) is healthy or AWS IoT carried a message from it this
 # recently (#242): the Developer API's online flag lags or is wrong for some.
@@ -310,6 +327,11 @@ REACHABLE_PUSH_WINDOW: Final = 600  # seconds
 MIN_WATER_DETECTOR_POLL_INTERVAL: Final = 60
 MAX_WATER_DETECTOR_POLL_INTERVAL: Final = 3600
 MIN_PROBE_POLL_INTERVAL: Final = 10
+# A probe thermometer answers only the first of several back-to-back requests,
+# so packets go out this many seconds apart (#266), and the rarely changing
+# limits are read on every Nth sweep instead of every one.
+PROBE_PACKET_SPACING: Final = 1.0
+PROBE_LIMITS_READ_EVERY: Final = 6
 MAX_PROBE_POLL_INTERVAL: Final = 600
 
 # Govee's documented developer-API quotas. The per-minute figure comes back
@@ -622,6 +644,8 @@ SUFFIX_DREAMVIEW: Final = "_dreamview"
 SUFFIX_HEATER_TEMPERATURE: Final = "_heater_temperature"
 SUFFIX_HEATER_FAN_SPEED: Final = "_heater_fan_speed"
 SUFFIX_HEATER_AUTO_STOP: Final = "_heater_auto_stop"
+SUFFIX_HEATER_OSCILLATION: Final = "_heater_oscillation"
+SUFFIX_HEATER_THERMOSTAT: Final = "_heater_thermostat"
 SUFFIX_PURIFIER_MODE_SELECT: Final = "_purifier_mode_select"
 SUFFIX_PRESET_SCENE_SELECT: Final = "_preset_scene_select"
 SUFFIX_NIGHTLIGHT_SCENE_SELECT: Final = "_nightlight_scene_select"

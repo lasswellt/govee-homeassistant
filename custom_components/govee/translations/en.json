@@ -125,7 +125,7 @@
           "enable_mqtt_control": "Routes power, brightness, and color commands through Govee's MQTT channel instead of the REST cloud API, reducing latency and bypassing REST rate limits. Requires email and password login (MQTT credentials). Falls back to REST automatically when MQTT is unavailable, and for any device that has not yet answered over MQTT (it answers the periodic status query, so keep that on). Experimental: it uses an undocumented channel, so leave it off if commands behave unexpectedly.",
           "confirm_commands": "After a power-off, brightness, colour or colour-temperature command to a light, waits a few seconds for the light's own real-time (AWS IoT) report and asks for one status if none comes. If the light still shows the old value, the command is sent once more over the cloud API. Lights only: appliances such as kettles, heaters and fans are never resent, and a power-on is never resent. A resend uses one cloud request, only when the daily budget and rate limit allow it. Requires email and password login; lights that have not reported over AWS IoT are left as they are. Off by default.",
           "lan_targets": "Only needed when LAN-enabled Govee devices are on a different subnet or VLAN than Home Assistant, so the local discovery scan cannot reach them. Enter a comma-separated list of device IPs (10.20.0.51), broadcast addresses (10.20.0.255), and subnets in CIDR notation (10.20.0.0/24, /24 or smaller). Subnets are scanned device by device, since most routers drop cross-VLAN broadcasts. Leave blank if all devices share Home Assistant's network. Advanced: if a device still is not found because its scan reply cannot cross the VLAN, pin it with device_id=ip (AA:BB:CC:DD:EE:FF:00:11=10.20.0.51) to skip discovery for that device. Add a trailing ! (=10.20.0.51!) only for firmware that accepts LAN commands but never answers a status read. That turns off every LAN health check for the device, so a wrong IP will look like it is working while the device never responds. Enter off to turn LAN discovery and local control off entirely.",
-          "enable_h6104_ble": "Use the legacy Bluetooth transport for H6104 power, brightness, RGB color, DreamView TV mode, and automatic-color music modes. Requires a connectable Bluetooth adapter or active ESPHome proxy in range. Power and TV mode have been field-tested; music and adjustable settings still need hardware verification. State is optimistic: a successful write does not prove the light acted, so silently ignored commands cannot trigger fallback. Connection/write errors fall back automatically. Color temperature, other effects, and camera calibration still require Wi-Fi/cloud. Disable if commands do not work. Off by default."
+          "enable_h6104_ble": "Use experimental Bluetooth control and status readback for H6104 TV lights. Requires a connectable Bluetooth adapter or proxy."
         }
       },
       "kettle_slots": {
@@ -271,7 +271,11 @@
         }
       },
       "govee_tv_area": {
-        "name": "TV screen area"
+        "name": "TV screen area",
+        "state": {
+          "part": "Part of screen",
+          "whole": "Whole screen"
+        }
       }
     },
     "switch": {
@@ -292,6 +296,12 @@
       },
       "govee_heater_auto_stop": {
         "name": "Auto stop"
+      },
+      "govee_heater_thermostat": {
+        "name": "Thermostat"
+      },
+      "govee_heater_oscillation": {
+        "name": "Oscillation"
       },
       "govee_appliance_power": {
         "name": "Power"
@@ -700,6 +710,12 @@
     },
     "status_query_throttled": {
       "message": "{device} was asked for its status less than {seconds} seconds ago. Wait a moment and try again."
+    },
+    "h6104_bluetooth_required": {
+      "message": "H6104 TV mode requires Bluetooth. Check the Bluetooth adapter or proxy and the Govee diagnostics, then try again."
+    },
+    "invalid_tv_sensitivity": {
+      "message": "TV sensitivity must be a whole number from 0 to 100."
     }
   },
   "issues": {
@@ -733,7 +749,7 @@
     },
     "mqtt_silent": {
       "title": "Govee real-time updates are silent for {entry_title}",
-      "description": "The real-time (AWS IoT) session for {entry_title} is connected, but in {minutes} minutes not one message arrived, although the integration asked the devices for their status several times. Reconnecting once did not help. Everything keeps working over polling.\n\nThis usually means the saved account sign-in no longer gets updates. Go to the integration page and select **Reconfigure** to sign in again, which fetches fresh real-time credentials. This repair clears itself as soon as a real-time message arrives."
+      "description": "The real-time (AWS IoT) session for {entry_title} is connected, but in {minutes} minutes not one message arrived, although new readings from your devices reached Govee's cloud or the integration asked them for their status. Reconnecting once did not help. Everything keeps working over polling.\n\nThis usually means the saved account sign-in no longer gets updates. Go to the integration page and select **Reconfigure** to sign in again, which fetches fresh real-time credentials. This repair clears itself as soon as a real-time message arrives."
     },
     "mqtt_2fa_required": {
       "title": "Govee account requires verification",

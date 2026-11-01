@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 try:
@@ -261,9 +262,9 @@ class BleAdvertisementHandler:
             changed = True
             if ble_sku == "H6104":
                 coord._ble_devices[matched_id].register_report_callback(
-                    lambda report, did=matched_id: coord._apply_h6104_ble_report(did, report)
+                    partial(coord._apply_h6104_ble_report, matched_id)
                 )
-                _LOGGER.info(
+                _LOGGER.debug(
                     "H6104 BLE control and experimental status readback enabled for %s",
                     coord._devices[matched_id].name,
                 )
