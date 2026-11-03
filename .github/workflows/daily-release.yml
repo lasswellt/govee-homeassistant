@@ -33,7 +33,9 @@ name: Daily release
 
 on:
   schedule:
-    - cron: "0 3 * * *" # 11pm EDT / 10pm EST
+    # 10pm EDT / 9pm EST. GitHub can start scheduled runs an hour late, and the
+    # run's start time decides which Eastern day the release belongs to.
+    - cron: "0 2 * * *"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -49,7 +51,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  REQUIRED_CHECKS: "test (3.12)|test (3.13)|mypy|HACS Action|Home Assistant Validation"
+  REQUIRED_CHECKS: "test (3.12)|test (3.13)|mypy|HACS Action|Home Assistant Validation|Check style formatting"
   DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
 
 jobs:
@@ -80,19 +82,34 @@ jobs:
           set -euo pipefail
           source scripts/release_checks.sh
           ship() { echo "ship=$1" >> "$GITHUB_OUTPUT"; }
-          TAG=$(gh release list -L 1 --json tagName --jq '.[0].tagName')
-          PUBLISHED=$(gh release list -L 1 --json publishedAt --jq '.[0].publishedAt')
+          # Drafts never count: a draft has no publish date, and `date -d ""` is
+          # today, which would skip every night without an error.
+          TAG=$(gh release list --exclude-drafts -L 1 --json tagName --jq '.[0].tagName // ""')
+          PUBLISHED=$(gh release list --exclude-drafts -L 1 --json publishedAt --jq '.[0].publishedAt // ""')
+          if [ -z "$TAG" ] || [ -z "$PUBLISHED" ]; then
+            echo "::error::Could not read the latest published release (tag='$TAG' publishedAt='$PUBLISHED')"; exit 1
+          fi
           TODAY=$(TZ=America/New_York date +%F)
           if [ "$(TZ=America/New_York date -d "$PUBLISHED" +%F)" = "$TODAY" ]; then
             echo "No release: $TAG already went out today ($TODAY ET)" | tee -a "$GITHUB_STEP_SUMMARY"; ship false; exit 0
           fi
-          CHANGED=$(git diff --name-only "$TAG"..HEAD -- custom_components/ ':(exclude)custom_components/govee/manifest.json')
+          MANIFEST=custom_components/govee/manifest.json
+          CHANGED=$(git diff --name-only "$TAG"..HEAD -- custom_components/ ":(exclude)$MANIFEST")
+          # The manifest counts unless only its version changed (requirements, bluetooth matchers ...).
+          if [ "$(git show "$TAG:$MANIFEST" | jq -S 'del(.version)')" != "$(jq -S 'del(.version)' "$MANIFEST")" ]; then
+            CHANGED="$CHANGED $MANIFEST"
+          fi
           if [ -z "$CHANGED" ]; then
             echo "No release: no changes under custom_components/ since $TAG" | tee -a "$GITHUB_STEP_SUMMARY"; ship false; exit 0
           fi
           wait_checks "$(git rev-parse HEAD)" || { echo "No release: CI is not green on main" >> "$GITHUB_STEP_SUMMARY"; exit 1; }
           PREFIX="$(TZ=America/New_York date +%Y).$(TZ=America/New_York date +%-m)"
           if [[ "$TAG" == "v$PREFIX."* ]]; then VERSION="$PREFIX.$(( ${TAG##*.} + 1 ))"; else VERSION="$PREFIX.0"; fi
+          # Never push a bump for a version whose tag is taken: the release would fail
+          # after the bump is on main, and again every night after.
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "::error::Tag v$VERSION already exists; release it or remove the tag by hand"; exit 1
+          fi
           {
             echo "tag=$TAG"; echo "version=$VERSION"
           } >> "$GITHUB_OUTPUT"
@@ -339,9 +356,14 @@ jobs:
           assert n == 1 and json.loads(s2)["version"] == os.environ["VERSION"]
           open(p, "w").write(s2)
           EOF
-          git add custom_components/govee/manifest.json
-          git commit -m "chore: Bump version to $VERSION"
-          git push "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:main
+          # Re-running after a failed night: the bump may already be on main.
+          if git diff --quiet -- custom_components/govee/manifest.json; then
+            echo "manifest.json already at $VERSION; no bump commit needed"
+          else
+            git add custom_components/govee/manifest.json
+            git commit -m "chore: Bump version to $VERSION"
+            git push "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:main
+          fi
           wait_checks "$(git rev-parse HEAD)"
 
       - name: Mint release token

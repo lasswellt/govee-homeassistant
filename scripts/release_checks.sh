@@ -3,13 +3,16 @@
 
 # checks_state SHA -> prints success | pending | failure:<names>
 checks_state() {
-  local runs failed missing line n
-  runs=$(gh api "repos/$GITHUB_REPOSITORY/commits/$1/check-runs?per_page=100" \
-    --jq '.check_runs[] | "\(.name)\t\(.status)\t\(.conclusion)"')
+  local failed missing line n
   failed=""; missing=""
   IFS='|' read -ra names <<< "$REQUIRED_CHECKS"
   for n in "${names[@]}"; do
-    line=$(printf '%s\n' "$runs" | awk -F'\t' -v n="$n" '$1==n' | head -1)
+    # Ask for each check by name: the hourly scheduled workflows attach their own
+    # runs to main's head, and an unfiltered first page loses the CI runs after a few days.
+    # A name can still have several runs (one per push or scheduled suite), so judge the
+    # newest one; app 15368 is GitHub Actions, so another app's same-named check never counts.
+    line=$(gh api -X GET "repos/$GITHUB_REPOSITORY/commits/$1/check-runs" -f check_name="$n" -f app_id=15368 \
+      -f per_page=100 --jq '[.check_runs[]] | max_by(.id) // empty | "\(.name)\t\(.status)\t\(.conclusion)"')
     if [ -z "$line" ] || [ "$(cut -f2 <<< "$line")" != "completed" ]; then missing="$missing $n;"
     elif [ "$(cut -f3 <<< "$line")" != "success" ]; then failed="$failed $n;"; fi
   done
