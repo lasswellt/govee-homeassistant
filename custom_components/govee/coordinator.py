@@ -107,6 +107,7 @@ from .const import (
     LAN_CORRELATION_TTL_SECONDS,
     LAN_READ_MISS_DEMOTE_THRESHOLD,
     LAN_RESCAN_INTERVAL,
+    LAN_SETUP_RETRY_MAX_INTERVAL,
     LAN_WRITE_CONFIRM_TIMEOUT,
     LAN_WRITE_SUPPRESS_SECONDS,
     LAN_WRITE_SUPPRESS_THRESHOLD,
@@ -743,6 +744,12 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         self._lan_write_suppressed_until: dict[str, float] = {}
         # Monotonic timestamp of the last LAN rescan, for throttling (LAN-011).
         self._last_lan_rescan: float = 0.0
+        # Set by async_shutdown so a setup retry still in flight never opens a
+        # socket after unload.
+        self._lan_closed = False
+        # Wait before the next LAN setup retry while no client is running;
+        # doubles after each empty retry (see LAN_SETUP_RETRY_MAX_INTERVAL).
+        self._lan_retry_interval: float = LAN_RESCAN_INTERVAL
         # Startup discovery steps that failed or timed out in this session.
         # While non-empty, the orphan cleanup in __init__.py must not treat
         # entities of not-yet-discovered devices as stale.
@@ -1471,7 +1478,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 self._lan_write_only.add(device_id)
         return resolved
 
-    async def _async_setup_lan(self) -> None:
+    async def _async_setup_lan(self, *, retry: bool = False) -> None:
         """Set up the LAN (UDP) transport — the LAST step of coordinator setup.
 
         Auto-enables the local UDP transport (issue #57) when at least one
@@ -1491,6 +1498,11 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
         LAN-011 fills in the runtime read/rescan/health wiring; this method only
         owns the lifecycle (open LAST, correlate, leak-proof teardown).
+
+        Args:
+            retry: ``True`` when called from the poll's throttled setup retry;
+                the user-facing warnings were already logged by the first
+                attempt, so repeats drop to debug.
         """
         raw_targets = self._config_entry.options.get(CONF_LAN_TARGETS, "")
         # Rollback escape hatch: an explicit "off" disables LAN with no socket
@@ -1498,13 +1510,17 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if isinstance(raw_targets, str) and raw_targets.strip().lower() == "off":
             _LOGGER.debug("Govee LAN transport disabled via %s='off'", CONF_LAN_TARGETS)
             return
+        # Every attempt (setup or the poll's retry) starts the rescan throttle,
+        # so a failed attempt is retried after LAN_RESCAN_INTERVAL, not per poll.
+        self._last_lan_rescan = time.monotonic()
 
         # Tolerate a stale / invalid targets option: a bad cross-VLAN entry must
         # not break LAN setup, let alone the integration. Fall back to no extras.
         try:
             extra_targets = expand_lan_targets(raw_targets if isinstance(raw_targets, str) else "")
         except LanTargetError as err:
-            _LOGGER.warning(
+            _LOGGER.log(
+                logging.DEBUG if retry else logging.WARNING,
                 "Ignoring invalid %s option (%r): %s",
                 CONF_LAN_TARGETS,
                 raw_targets,
@@ -1527,14 +1543,22 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 broadcast_targets=broadcast_targets,
             )
         except OSError as err:
-            _LOGGER.info("Govee LAN discovery scan could not bind, LAN disabled: %s", err)
+            _LOGGER.log(
+                logging.DEBUG if retry else logging.INFO,
+                "Govee LAN discovery scan could not bind, LAN disabled: %s",
+                err,
+            )
             return
 
+        # A poll's setup retry can still be scanning when the entry unloads.
+        if self._lan_closed:
+            return
         client = GoveeLanClient(self._on_lan_dev_status)
         await client.async_start(interface_ips)
-        if not client.available:
-            # Clean degrade: the :4002 bind failed (held by a non-sharing app).
-            # Release whatever it grabbed and stay LAN-disabled (client None).
+        if not client.available or self._lan_closed:
+            # Clean degrade: the :4002 bind failed (held by a non-sharing app),
+            # or the entry unloaded meanwhile. Release whatever it grabbed and
+            # stay LAN-disabled (client None).
             await client.async_stop()
             return
 
@@ -1789,6 +1813,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 LAN_READ_MISS_DEMOTE_THRESHOLD,
             )
 
+    def _lan_client_running(self) -> bool:
+        """Return whether a LAN client is running (re-read after an await)."""
+        return self._lan_client is not None
+
     async def _async_maybe_rescan_lan(self) -> None:
         """Re-scan + re-correlate LAN devices on a throttled cadence (issue #57).
 
@@ -1799,13 +1827,33 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         device (blocking #3). Never raises: a scan hiccup must not fail the poll.
         :meth:`_request_lan_rescan` can clear the throttle so an unknown-IP push
         forces the next call to run.
+
+        When setup left LAN off (nothing answered or correlated yet, or the
+        :4002 bind failed), the full LAN setup is retried instead, so lights
+        whose Wi-Fi came up after Home Assistant still get local control
+        without a reload. The retry starts at ``LAN_RESCAN_INTERVAL`` and
+        doubles after each empty attempt up to ``LAN_SETUP_RETRY_MAX_INTERVAL``;
+        success resets it, and an options change reloads the entry, which
+        starts over. ``"off"`` is honoured by :meth:`_async_setup_lan` itself.
         """
-        if self._lan_client is None:
-            return
         now = time.monotonic()
-        if now - self._last_lan_rescan < LAN_RESCAN_INTERVAL:
+        interval = LAN_RESCAN_INTERVAL if self._lan_client is not None else self._lan_retry_interval
+        if now - self._last_lan_rescan < interval:
             return
         self._last_lan_rescan = now
+
+        if self._lan_client is None:
+            try:
+                await self._async_setup_lan(retry=True)
+            except Exception as err:  # noqa: BLE001 — never fail the poll
+                _LOGGER.debug("Govee LAN setup retry failed: %s", err)
+            if not self._lan_client_running():
+                # Still nothing: back off so a cloud-only install isn't scanned
+                # every five minutes forever.
+                self._lan_retry_interval = min(self._lan_retry_interval * 2, LAN_SETUP_RETRY_MAX_INTERVAL)
+            else:
+                self._lan_retry_interval = LAN_RESCAN_INTERVAL
+            return
 
         raw_targets = self._config_entry.options.get(CONF_LAN_TARGETS, "")
         try:
@@ -1816,7 +1864,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         try:
             interface_ips = await async_get_lan_interface_ips(self.hass)
             broadcast_targets = await async_get_lan_broadcast_addresses(self.hass)
-            scan = await async_scan_lan_devices(
+            # Scan through the running client's own :4002 socket: a second
+            # socket on :4002 would split unicast replies with it on Linux.
+            scan = await self._lan_client.async_scan(
                 interface_ips=interface_ips,
                 extra_targets=extra_targets,
                 broadcast_targets=broadcast_targets,
@@ -6735,6 +6785,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
         # Drop the multicast group and release the :4002 bind so a reload /
         # unload never leaks the LAN socket (issue #57, blocking #5).
+        self._lan_closed = True
         if self._lan_client is not None:
             await self._lan_client.async_stop()
             self._lan_client = None

@@ -353,7 +353,7 @@ class _ScanProtocol(asyncio.DatagramProtocol):
             body = msg.get("data", {})
             if not isinstance(body, dict):
                 return
-        except (ValueError, AttributeError):
+        except (ValueError, AttributeError, RecursionError):
             return
 
         record = {field: body[field] for field in _RESPONSE_FIELDS if field in body}
@@ -396,7 +396,7 @@ class _RawProbeProtocol(asyncio.DatagramProtocol):
             return  # chatty device / broadcast storm — keep the dump bounded
         try:
             payload: Any = json.loads(data.decode("utf-8", errors="replace"))
-        except ValueError:
+        except (ValueError, RecursionError):
             payload = {"_unparsed": data.decode("utf-8", errors="replace")[:512]}
         bucket.append(payload)
 
@@ -532,7 +532,12 @@ async def async_scan_lan_devices(
     sock = _build_socket()  # raises OSError if port 4002 cannot be bound
     joined = _join_group(sock, interfaces)
 
-    transport, protocol = await loop.create_datagram_endpoint(_ScanProtocol, sock=sock)
+    try:
+        transport, protocol = await loop.create_datagram_endpoint(_ScanProtocol, sock=sock)
+    except BaseException:
+        _drop_group(sock, joined)
+        sock.close()
+        raise
     assert isinstance(protocol, _ScanProtocol)
     try:
         _send_scan(sock, transport, interfaces)
@@ -593,7 +598,12 @@ async def async_probe_lan_raw(
     sock = _build_socket()  # raises OSError if port 4002 cannot be bound
     joined = _join_group(sock, interfaces)  # catch multicast replies too
 
-    transport, protocol = await loop.create_datagram_endpoint(_RawProbeProtocol, sock=sock)
+    try:
+        transport, protocol = await loop.create_datagram_endpoint(_RawProbeProtocol, sock=sock)
+    except BaseException:
+        _drop_group(sock, joined)
+        sock.close()
+        raise
     assert isinstance(protocol, _RawProbeProtocol)
     try:
         for ip in targets:

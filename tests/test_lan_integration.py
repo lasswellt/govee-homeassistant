@@ -614,7 +614,8 @@ class TestDhcpReassignment:
 
         monkeypatch.setattr(coord_mod, "async_get_lan_interface_ips", _ifaces)
         monkeypatch.setattr(coord_mod, "async_get_lan_broadcast_addresses", _broadcasts)
-        monkeypatch.setattr(coord_mod, "async_scan_lan_devices", _scan)
+        # Rescans go through the running client's own socket (no second :4002 bind).
+        monkeypatch.setattr(client, "async_scan", _scan)
 
         coord._request_lan_rescan()  # force the throttled rescan to run
         await coord._async_maybe_rescan_lan()
