@@ -15,6 +15,7 @@ from custom_components.govee.models import (
     ColorCommand,
     ColorTempCommand,
     SceneCommand,
+    SegmentBrightnessCommand,
     SegmentColorCommand,
     OscillationCommand,
     WorkModeCommand,
@@ -245,6 +246,35 @@ class TestGoveeDevice:
     def test_supports_segments(self, mock_rgbic_device):
         """Test segment support detection."""
         assert mock_rgbic_device.supports_segments is True
+
+    def test_segment_brightness_capability(self, mock_rgbic_device, mock_light_device):
+        """segmentedBrightness is detected and its brightness field range read."""
+        assert mock_rgbic_device.supports_segment_brightness is True
+        assert mock_rgbic_device.segment_brightness_range == (0, 100)
+        assert mock_light_device.supports_segment_brightness is False
+        assert mock_light_device.segment_brightness_range == (0, 100)
+
+    def test_segment_brightness_range_from_fields(self):
+        """A non-default brightness field range is honoured; a missing field falls back."""
+        from custom_components.govee.models import GoveeCapability, GoveeDevice
+
+        def device(fields):
+            cap = GoveeCapability(
+                type="devices.capabilities.segment_color_setting",
+                instance="segmentedBrightness",
+                parameters={"fields": fields},
+            )
+            return GoveeDevice(
+                device_id="AA:BB:CC:DD:EE:FF:00:99",
+                sku="H6000",
+                name="Strip",
+                device_type="light",
+                capabilities=(cap,),
+            )
+
+        custom = device([{"fieldName": "brightness", "range": {"min": 1, "max": 50}}])
+        assert custom.segment_brightness_range == (1, 50)
+        assert device([{"fieldName": "segment"}]).segment_brightness_range == (0, 100)
 
     def test_is_plug(self, mock_plug_device):
         """Test plug detection."""
@@ -1324,6 +1354,13 @@ class TestCommands:
         value = cmd.get_value()
         assert value["segment"] == [0, 1, 2]
         assert value["rgb"] == 16711680  # Red
+
+    def test_segment_brightness_command(self):
+        """segmentedBrightness mirrors the capability's segment/brightness STRUCT fields."""
+        cmd = SegmentBrightnessCommand(segment_indices=(0, 3), brightness=40)
+        assert cmd.capability_type == "devices.capabilities.segment_color_setting"
+        assert cmd.instance == "segmentedBrightness"
+        assert cmd.get_value() == {"segment": [0, 3], "brightness": 40}
 
     def test_command_immutable(self):
         """Test that commands are immutable."""

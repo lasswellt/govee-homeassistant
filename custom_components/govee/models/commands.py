@@ -31,6 +31,7 @@ from .device import (
     INSTANCE_OSCILLATION,
     INSTANCE_POWER,
     INSTANCE_SCENE,
+    INSTANCE_SEGMENT_BRIGHTNESS,
     INSTANCE_SEGMENT_COLOR,
     INSTANCE_SNAPSHOT,
     INSTANCE_TARGET_TEMPERATURE,
@@ -255,6 +256,33 @@ class SegmentColorCommand(DeviceCommand):
         return {
             "segment": list(self.segment_indices),
             "rgb": self.color.as_packed_int,
+        }
+
+
+@dataclass(frozen=True)
+class SegmentBrightnessCommand(DeviceCommand):
+    """Command to set brightness for specific segments (segmentedBrightness).
+
+    ``brightness`` is already in the device's range (0-100 on every captured
+    device); the value mirrors the capability's ``segment``/``brightness``
+    STRUCT fields the same way SegmentColorCommand mirrors ``segment``/``rgb``.
+    """
+
+    segment_indices: tuple[int, ...]
+    brightness: int
+
+    @property
+    def capability_type(self) -> str:
+        return CAPABILITY_SEGMENT_COLOR
+
+    @property
+    def instance(self) -> str:
+        return INSTANCE_SEGMENT_BRIGHTNESS
+
+    def get_value(self) -> dict[str, Any]:
+        return {
+            "segment": list(self.segment_indices),
+            "brightness": self.brightness,
         }
 
 

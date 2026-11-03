@@ -81,11 +81,8 @@ class GoveeRefreshScenesButton(GoveeEntity, ButtonEntity):
         """Handle the button press - refresh scenes."""
         _LOGGER.debug("Refreshing scenes for %s", self._device.name)
 
-        # Force refresh scenes from API
-        await self.coordinator.async_get_scenes(
-            self._device_id,
-            refresh=True,
-        )
+        # Force refresh from the API; the scene selects and effect list rebuild.
+        await self.coordinator.async_refresh_scenes(self._device_id)
 
         _LOGGER.debug("Scenes refreshed for %s", self._device.name)
 

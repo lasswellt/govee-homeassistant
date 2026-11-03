@@ -13,12 +13,24 @@ from typing import Any
 
 from .api.client import GoveeApiClient
 from .api.exceptions import GoveeApiError
+from .const import DOMAIN
 from .models.device import GoveeDevice
 
 _LOGGER = logging.getLogger(__name__)
 
 # Scene cache time-to-live (24 hours)
 SCENE_CACHE_TTL = 86400
+
+
+def scenes_refreshed_signal(device_id: str) -> str:
+    """Per-device dispatcher signal sent after a forced scene refresh.
+
+    Carries ``(scenes, diy_scenes)``. The scene / DIY scene selects and the
+    light's effect list build their options once at setup, so without this a
+    "Refresh scenes" press or ``govee.refresh_scenes`` call would only update
+    the cache, never what the user sees.
+    """
+    return f"{DOMAIN}_scenes_refreshed_{device_id}"
 
 
 def _forget_when_done(

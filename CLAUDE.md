@@ -66,6 +66,7 @@ custom_components/govee/
 ├── transport_health.py  # Per-device, per-transport health tracker
 ├── ble_advertisement.py # BLE advertisement correlation and enrolment
 ├── ble_passthrough.py   # BLE frames tunnelled over AWS IoT
+├── brightness.py        # HA <-> device brightness scaling (lights and segments)
 ├── status_burst.py      # Repeated AWS IoT status queries (govee.request_status)
 ├── kettle/              # H7175 kettle: frames.py decoder, manager.py coordinator helper,
 │                        #   modes.py brew modes, entities.py kettle entities, labels.py slot labels

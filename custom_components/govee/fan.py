@@ -494,6 +494,11 @@ class GoveeFanEntity(GoveeEntity, FanEntity):
         if state is None or state.work_mode is None:
             return None
 
+        if self._tier_work_modes:
+            # Tiered devices (H7121) have no manual mode; their Low tier shares
+            # the default manual workMode number, so the tier map must win.
+            # "normal" is not one of their presets, so never report it.
+            return self._work_mode_to_preset.get(state.work_mode)
         if state.work_mode == self._manual_work_mode:
             return self._manual_preset_name
         if state.work_mode in self._work_mode_to_preset:

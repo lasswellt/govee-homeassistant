@@ -44,6 +44,7 @@ def _make_coordinator(device: MagicMock | None, device_id: str) -> MagicMock:
     coordinator.devices = {device_id: device} if device is not None else {}
     coordinator.async_control_device = AsyncMock(return_value=True)
     coordinator.async_get_scenes = AsyncMock(return_value=[])
+    coordinator.async_refresh_scenes = AsyncMock()
     return coordinator
 
 
@@ -128,7 +129,7 @@ class TestRefreshScenesService:
 
         await async_refresh_scenes_handler(MagicMock(), SimpleNamespace(data={"device_id": device_id}))
 
-        coordinator.async_get_scenes.assert_awaited_once_with(device_id, refresh=True)
+        coordinator.async_refresh_scenes.assert_awaited_once_with(device_id)
 
     async def test_unknown_device_raises(self, monkeypatch):
         monkeypatch.setattr(LOOKUP, lambda hass, raw: None)
@@ -152,7 +153,19 @@ class TestRefreshScenesService:
 
         await async_refresh_scenes_handler(MagicMock(), SimpleNamespace(data={}))
 
-        coordinator.async_get_scenes.assert_awaited_once_with(device_id, refresh=True)
+        coordinator.async_refresh_scenes.assert_awaited_once_with(device_id)
+
+    async def test_all_devices_skips_devices_without_any_scenes(self, monkeypatch):
+        device_id = "AA:BB:CC:DD:EE:FF:00:11"
+        device = _make_device(segment_count=0, device_id=device_id)
+        device.supports_scenes = False
+        device.supports_diy_scenes = False
+        coordinator = _make_coordinator(device, device_id)
+        monkeypatch.setattr("custom_components.govee.services._loaded_coordinators", lambda hass: [coordinator])
+
+        await async_refresh_scenes_handler(MagicMock(), SimpleNamespace(data={}))
+
+        coordinator.async_refresh_scenes.assert_not_awaited()
 
 
 def _build_ptreal_call(device_id: str, frame: str):

@@ -373,7 +373,10 @@
               "sleep": "Repòs",
               "auto": "Automàtic",
               "custom": "Personalitzat",
-              "turbo": "Turbo"
+              "turbo": "Turbo",
+              "low": "Baix",
+              "medium": "Mitjà",
+              "high": "Alt"
             }
           }
         }

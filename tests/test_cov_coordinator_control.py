@@ -14,7 +14,7 @@ import base64
 import time
 from dataclasses import replace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
@@ -45,6 +45,7 @@ from custom_components.govee.models import (
     PowerCommand,
     RGBColor,
     SceneCommand,
+    SegmentBrightnessCommand,
     SegmentColorCommand,
     ToggleCommand,
 )
@@ -231,6 +232,65 @@ class TestControlDeviceTiers:
         health = coord._transport.get(DEV, "cloud_api")
         assert health.last_send_ts is not None and health.last_success_ts is not None
         coord.async_set_updated_data.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_segment_brightness_goes_through_the_segment_queue(self, monkeypatch):
+        monkeypatch.setattr(coord_mod, "SEGMENT_COMMAND_PACING_SECONDS", 0)
+        coord = _coordinator()
+        _add(coord, _device(caps=(_POWER, _BRIGHTNESS, _RGB, _SEGMENTS)))
+        command = SegmentBrightnessCommand(segment_indices=(0, 2), brightness=40)
+
+        assert await coord.async_control_device(DEV, command) is True
+
+        assert DEV in coord._segment_locks
+        assert _sent(coord) == [command]
+        # Brightness does not touch the tracked segment colours (#131 replay).
+        assert DEV not in coord._segment_colors
+
+    @pytest.mark.asyncio
+    async def test_rejected_segment_colour_is_not_left_for_the_ring_replay(self, monkeypatch):
+        # A colour Govee rejected must not be replayed by a later whole-device
+        # write (#131): the tracking returns to what it was before the send.
+        monkeypatch.setattr(coord_mod, "SEGMENT_COMMAND_PACING_SECONDS", 0)
+        coord = _coordinator()
+        _add(coord, _device(caps=(_POWER, _RGB, _SEGMENTS)))
+        coord.record_segment_color(DEV, 0, (0, 255, 0))
+        coord._api_client.control_device = AsyncMock(return_value=False)
+        command = SegmentColorCommand(segment_indices=(0, 1), color=RGBColor(255, 0, 0))
+
+        assert await coord.async_control_device(DEV, command) is False
+
+        assert coord._segment_colors[DEV] == {0: (0, 255, 0)}
+
+    @pytest.mark.asyncio
+    async def test_failed_segment_send_keeps_a_newer_concurrent_write(self, monkeypatch):
+        monkeypatch.setattr(coord_mod, "SEGMENT_COMMAND_PACING_SECONDS", 0)
+        coord = _coordinator()
+        _add(coord, _device(caps=(_POWER, _RGB, _SEGMENTS)))
+
+        async def rejected_after_a_newer_write(*_args):
+            coord.record_segment_color(DEV, 0, (0, 0, 255))
+            return False
+
+        coord._api_client.control_device = AsyncMock(side_effect=rejected_after_a_newer_write)
+        command = SegmentColorCommand(segment_indices=(0,), color=RGBColor(255, 0, 0))
+
+        assert await coord.async_control_device(DEV, command) is False
+
+        assert coord._segment_colors[DEV] == {0: (0, 0, 255)}
+
+    @pytest.mark.asyncio
+    async def test_segment_api_exception_rolls_back_the_tracking(self, monkeypatch):
+        monkeypatch.setattr(coord_mod, "SEGMENT_COMMAND_PACING_SECONDS", 0)
+        coord = _coordinator()
+        _add(coord, _device(caps=(_POWER, _RGB, _SEGMENTS)))
+        coord._api_client.control_device = AsyncMock(side_effect=GoveeAuthError("key revoked"))
+        command = SegmentColorCommand(segment_indices=(2,), color=RGBColor(255, 0, 0))
+
+        with pytest.raises(ConfigEntryAuthFailed):
+            await coord.async_control_device(DEV, command)
+
+        assert coord._segment_colors.get(DEV, {}) == {}
 
     @pytest.mark.asyncio
     async def test_segment_rejection_records_a_failure(self, monkeypatch):
@@ -1598,6 +1658,67 @@ class TestPtrealSegmentTier:
 # --------------------------------------------------------------------------- #
 
 
+class TestRefreshScenes:
+    """The "Refresh scenes" button / govee.refresh_scenes path (ENT-5)."""
+
+    _DIY = GoveeCapability(type="devices.capabilities.dynamic_scene", instance="diyScene", parameters={})
+    _SCENES = GoveeCapability(type="devices.capabilities.dynamic_scene", instance="lightScene", parameters={})
+
+    def _ready(self, *caps: GoveeCapability) -> GoveeCoordinator:
+        coord = _coordinator()
+        _add(coord, _device(caps=(_POWER, *caps)))
+        coord.async_get_scenes = AsyncMock(return_value=[{"name": "Aurora", "value": {"id": 9}}])
+        coord.async_get_diy_scenes = AsyncMock(return_value=[{"name": "Glow", "value": 7}])
+        return coord
+
+    @pytest.mark.asyncio
+    async def test_refreshes_both_catalogs_and_tells_the_entities(self):
+        coord = self._ready(self._SCENES, self._DIY)
+
+        with patch.object(coord_mod, "async_dispatcher_send") as send:
+            await coord.async_refresh_scenes(DEV)
+
+        coord.async_get_scenes.assert_awaited_once_with(DEV, refresh=True)
+        coord.async_get_diy_scenes.assert_awaited_once_with(DEV, refresh=True)
+        send.assert_called_once_with(
+            coord.hass,
+            f"govee_scenes_refreshed_{DEV}",
+            [{"name": "Aurora", "value": {"id": 9}}],
+            [{"name": "Glow", "value": 7}],
+        )
+
+    @pytest.mark.asyncio
+    async def test_device_without_diy_scenes_skips_that_fetch(self):
+        coord = self._ready()
+
+        with patch.object(coord_mod, "async_dispatcher_send") as send:
+            await coord.async_refresh_scenes(DEV)
+
+        coord.async_get_diy_scenes.assert_not_awaited()
+        assert send.call_args[0][3] == []
+
+    @pytest.mark.asyncio
+    async def test_device_without_scenes_skips_that_fetch(self):
+        coord = self._ready(self._DIY)
+
+        with patch.object(coord_mod, "async_dispatcher_send") as send:
+            await coord.async_refresh_scenes(DEV)
+
+        coord.async_get_scenes.assert_not_awaited()
+        coord.async_get_diy_scenes.assert_awaited_once_with(DEV, refresh=True)
+        assert send.call_args[0][2] == []
+
+    @pytest.mark.asyncio
+    async def test_unknown_device_does_nothing(self):
+        coord = self._ready()
+
+        with patch.object(coord_mod, "async_dispatcher_send") as send:
+            await coord.async_refresh_scenes("nope")
+
+        coord.async_get_scenes.assert_not_awaited()
+        send.assert_not_called()
+
+
 class TestClearScene:
     def _ready(self, device: GoveeDevice | None = None) -> tuple[GoveeCoordinator, GoveeDeviceState]:
         coord = _coordinator()
@@ -1616,7 +1737,7 @@ class TestClearScene:
         coord = _coordinator()
         coord.async_control_device = AsyncMock(return_value=True)
 
-        await coord.async_clear_scene("nope")
+        assert await coord.async_clear_scene("nope") is True
 
         coord.async_control_device.assert_not_awaited()
 
@@ -1628,7 +1749,7 @@ class TestClearScene:
         state.active_scene_name = "stale"
         state.source = "api"
 
-        await coord.async_clear_scene(DEV)
+        assert await coord.async_clear_scene(DEV) is True
 
         coord.async_control_device.assert_not_awaited()
         assert state.active_scene_name is None
@@ -1639,7 +1760,7 @@ class TestClearScene:
         coord, state = self._ready()
         state.color = RGBColor(10, 20, 30)
 
-        await coord.async_clear_scene(DEV)
+        assert await coord.async_clear_scene(DEV) is True
 
         assert self._commands(coord) == [ColorCommand(color=RGBColor(10, 20, 30))]
         assert state.active_scene is None
@@ -1695,7 +1816,8 @@ class TestClearScene:
     async def test_device_without_colour_capabilities_sends_nothing(self):
         coord, state = self._ready(_device(caps=(_POWER, _BRIGHTNESS)))
 
-        await coord.async_clear_scene(DEV)
+        # Nothing could be sent, which is not a rejection.
+        assert await coord.async_clear_scene(DEV) is True
 
         coord.async_control_device.assert_not_awaited()
         assert state.active_scene == "7"
@@ -1705,7 +1827,7 @@ class TestClearScene:
         coord, state = self._ready()
         coord.async_control_device = AsyncMock(return_value=False)
 
-        await coord.async_clear_scene(DEV)
+        assert await coord.async_clear_scene(DEV) is False
 
         assert state.active_scene == "7"
         assert state.active_diy_scene == "9"
