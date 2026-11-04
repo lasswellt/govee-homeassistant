@@ -17,6 +17,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
+    CONF_ENABLE_H6104_BLE,
+    DEFAULT_ENABLE_H6104_BLE,
     HEATER_AUTO_STOP_STRUCT_SKUS,
     SUFFIX_BACKGROUND_LIGHT,
     SUFFIX_BOTTOM_LIGHT,
@@ -152,7 +154,10 @@ async def async_setup_entry(
         # Create switch for DreamView (Movie Mode) toggle
         # Skip for group devices - groups don't support DreamView
         # DreamView uses BLE passthrough via MQTT (REST API returns 400 for some devices)
-        if device.supports_dreamview and not device.is_group:
+        h6104_tv_mode = (
+            device.sku == "H6104" and entry.options.get(CONF_ENABLE_H6104_BLE, DEFAULT_ENABLE_H6104_BLE) is True
+        )
+        if (device.supports_dreamview or h6104_tv_mode) and not device.is_group:
             entities.append(GoveeDreamViewSwitchEntity(coordinator, device))
             _LOGGER.debug(
                 "Created DreamView switch entity for %s (REST-first with BLE fallback)",

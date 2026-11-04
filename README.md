@@ -177,7 +177,42 @@ Every device also gets two diagnostic timestamps — **Last Update Received** an
 
 This matters beyond speed: Govee's cloud sometimes answers a color command with `success` and never delivers it to the device (the light doesn't change, and nothing reports an error). Sending color locally sidesteps the cloud entirely — see [Colors don't apply](#troubleshooting).
 
-**Command routing.** Each command takes the fastest transport that can carry it *and confirm it*, falling back automatically: **BLE → LAN → MQTT → cloud REST**. LAN carries power, brightness, color and color temperature — exactly the four values a device reports back, which is what makes verify‑by‑read possible. MQTT (opt‑in) carries power, brightness and color. Direct BLE control is deliberately limited to the models confirmed to honour it: the H6199, and the H1270 over the encrypted BLE transport its firmware requires. Other models (the H6072 among them) advertise Bluetooth but silently drop writes, so they are never sent BLE commands. Everything else — scenes, segments, music mode, work modes, toggles — always goes over the cloud API, with one exception: Tower Fan 2 (H7105/H7107) oscillation goes over the AWS IoT session when account login is configured, because the cloud toggle is a no-op on those fans.
+**Command routing.** Each command takes the fastest eligible transport, falling back automatically on errors: **BLE → LAN → MQTT → cloud REST**. LAN carries power, brightness, color and color temperature — exactly the four values a device reports back, which is what makes verify‑by‑read possible. MQTT (opt‑in) carries power, brightness and color. Automatic direct BLE control is deliberately limited to the models confirmed to honour it: the H6199, and the H1270 over the encrypted BLE transport its firmware requires. An experimental H6104 opt-in is also available, as described below. Other models (the H6072 among them) advertise Bluetooth but silently drop writes, so they are never sent BLE commands. Everything else — scenes, segments, music mode, work modes, toggles — always goes over the cloud API, with one exception: Tower Fan 2 (H7105/H7107) oscillation goes over the AWS IoT session when account login is configured, because the cloud toggle is a no-op on those fans.
+
+### Experimental H6104 TV backlight Bluetooth control
+
+Enable **Govee → Configure → Enable experimental H6104 Bluetooth control** to
+use a connectable Home Assistant Bluetooth adapter or ESPHome Bluetooth proxy.
+Keep the light in your Govee account for discovery and configuration. The
+experimental option is disabled by default and applies only to H6104.
+
+The H6104 uses its legacy FFE0/FFE1 Bluetooth UART for power, brightness, RGB,
+TV/DreamView and music controls. The **DreamView** switch selects camera/TV mode;
+selecting a solid color or music clears TV mode. **TV sensitivity** changes the
+camera response, and **TV screen area** selects part or all of the screen. These
+settings restore locally and are sent immediately if TV mode is active. They do
+not change camera frame rate or calibration. Music effects and sensitivity use
+the legacy device protocol and may vary with firmware.
+
+The Bluetooth connection is released after five idle seconds to free the proxy
+slot, and reconnects for commands and periodic status reads. Seeing Bluetooth
+**Disconnected** while idle is expected. The Govee app or another controller can
+compete for that connection. If the device ignores commands, disable the option
+and collect integration diagnostics before trying a different protocol.
+
+Status readback uses checksummed AA01 power, AA04 brightness, AA05 mode/color and
+EE20 brightness reports. Received values correct optimistic state and temporarily
+win over stale cloud readings; newer commands and MQTT changes take precedence.
+Missing, unknown or malformed replies do not fabricate state. Kelvin values are
+not inferred from tint replies. Firmware support varies; an all-zero OFF reply
+is trusted only after an ON reply establishes power-read support, because OFF is
+identical to an echoed query. Test ON before OFF after a reload.
+
+Idle monitoring follows the integration polling cadence rather than maintaining
+a continuous connection. Diagnostics include bounded accepted/candidate status
+frames and per-query results. Command delivery alone does not establish physical
+success. H6104 TV mode requires Bluetooth when this option is enabled; it cannot
+fall back to the unsupported cloud DreamView toggle.
 
 Commands always use optimistic updates, so the UI reflects your action immediately and reconciles with the next confirmed state. MQTT publishes are acknowledged by the broker (QoS 1); an unacknowledged send falls through to REST rather than being reported as success.
 

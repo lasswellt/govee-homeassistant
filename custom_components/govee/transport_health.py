@@ -101,14 +101,22 @@ class TransportHealthTracker:
         self,
         device_ids: Iterable[str],
         ble_connected_ids: set[str],
+        live_gatt_ids: set[str] | None = None,
     ) -> None:
-        """Mark BLE unavailable when last advertisement exceeds stale window."""
+        """Age advertisements only when a device has no live GATT connection."""
         now = datetime.now(timezone.utc)
         for device_id in device_ids:
             self.ensure(device_id)
             ble = self._health[device_id]["ble"]
             if device_id not in ble_connected_ids:
                 ble.is_available = False
+                continue
+            if live_gatt_ids and device_id in live_gatt_ids:
+                # Connected devices can stop advertising. Do not fabricate a
+                # received packet or erase a real write/connection failure.
+                if ble.last_failure_reason in (None, "stale_advertisement"):
+                    ble.is_available = True
+                    ble.last_failure_reason = None
                 continue
             last = ble.last_success_ts
             if last is None:
