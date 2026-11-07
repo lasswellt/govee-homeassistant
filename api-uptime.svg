@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="192" viewBox="0 0 480 192" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
+<rect x="0.5" y="0.5" width="479" height="191" rx="12" fill="#161b22" stroke="#30363d"/>
+<text x="20" y="34" font-size="11" fill="#8b949e" font-weight="600" text-anchor="start" letter-spacing="1.5">GOVEE API</text>
+<rect x="20" y="44" width="111" height="22" rx="11" fill="#3fb950" fill-opacity="0.16" stroke="#3fb950" stroke-opacity="0.5"/>
+<circle cx="33" cy="55" r="4" fill="#3fb950"/>
+<text x="43" y="59" font-size="12" fill="#3fb950" font-weight="700" text-anchor="start">OPERATIONAL</text>
+<text x="460" y="40" font-size="26" fill="#e6edf3" font-weight="700" text-anchor="end">100.0%</text>
+<text x="460" y="58" font-size="10.5" fill="#8b949e" font-weight="400" text-anchor="end">uptime / 45d</text>
+<rect x="20.0" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="29.8" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="39.7" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="49.5" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="59.4" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="69.2" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="79.1" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="88.9" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="98.8" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="108.6" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="118.4" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="128.3" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="138.1" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="148.0" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="157.8" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="167.7" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="177.5" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="187.4" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="197.2" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="207.0" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="216.9" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="226.7" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="236.6" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="246.4" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="256.3" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="266.1" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="276.0" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="285.8" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="295.6" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="305.5" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="315.3" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="325.2" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="335.0" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="344.9" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="354.7" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="364.6" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="374.4" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="384.2" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="394.1" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="403.9" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="413.8" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="423.6" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="433.5" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="443.3" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<rect x="453.2" y="80" width="6.8" height="24" rx="2" fill="#3fb950"/>
+<text x="20" y="130" font-size="10" fill="#8b949e" font-weight="600" text-anchor="start" letter-spacing="1.2">RESPONSE TIME</text>
+<text x="460" y="130" font-size="10.5" fill="#8b949e" font-weight="400" text-anchor="end">avg 243 ms · last 72 checks</text>
+<defs><linearGradient id="lg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#3fb950" stop-opacity="0.35"/><stop offset="1" stop-color="#3fb950" stop-opacity="0"/></linearGradient></defs>
+<path d="M20,170 L20.0,147.5 L26.2,168.2 L32.4,158.2 L38.6,170.0 L44.8,153.7 L51.0,142.0 L57.2,153.7 L63.4,150.4 L69.6,146.3 L75.8,156.3 L82.0,150.7 L88.2,168.1 L94.4,167.6 L100.6,151.2 L106.8,151.2 L113.0,156.9 L119.2,150.7 L125.4,165.6 L131.5,147.2 L137.7,169.4 L143.9,168.6 L150.1,166.2 L156.3,150.4 L162.5,169.1 L168.7,152.2 L174.9,164.0 L181.1,150.8 L187.3,156.2 L193.5,142.6 L199.7,149.0 L205.9,150.9 L212.1,148.3 L218.3,147.7 L224.5,159.1 L230.7,167.7 L236.9,168.3 L243.1,158.0 L249.3,158.0 L255.5,157.2 L261.7,165.5 L267.9,153.3 L274.1,152.0 L280.3,150.5 L286.5,155.2 L292.7,152.7 L298.9,151.8 L305.1,160.3 L311.3,148.6 L317.5,163.3 L323.7,164.9 L329.9,152.3 L336.1,165.8 L342.3,149.3 L348.5,157.6 L354.6,143.9 L360.8,154.0 L367.0,158.9 L373.2,167.2 L379.4,160.0 L385.6,159.1 L391.8,152.0 L398.0,169.2 L404.2,148.3 L410.4,158.5 L416.6,147.0 L422.8,158.5 L429.0,156.8 L435.2,157.7 L441.4,169.1 L447.6,159.6 L453.8,149.1 L460.0,155.9 L460.0,170 Z" fill="url(#lg)"/>
+<polyline points="20.0,147.5 26.2,168.2 32.4,158.2 38.6,170.0 44.8,153.7 51.0,142.0 57.2,153.7 63.4,150.4 69.6,146.3 75.8,156.3 82.0,150.7 88.2,168.1 94.4,167.6 100.6,151.2 106.8,151.2 113.0,156.9 119.2,150.7 125.4,165.6 131.5,147.2 137.7,169.4 143.9,168.6 150.1,166.2 156.3,150.4 162.5,169.1 168.7,152.2 174.9,164.0 181.1,150.8 187.3,156.2 193.5,142.6 199.7,149.0 205.9,150.9 212.1,148.3 218.3,147.7 224.5,159.1 230.7,167.7 236.9,168.3 243.1,158.0 249.3,158.0 255.5,157.2 261.7,165.5 267.9,153.3 274.1,152.0 280.3,150.5 286.5,155.2 292.7,152.7 298.9,151.8 305.1,160.3 311.3,148.6 317.5,163.3 323.7,164.9 329.9,152.3 336.1,165.8 342.3,149.3 348.5,157.6 354.6,143.9 360.8,154.0 367.0,158.9 373.2,167.2 379.4,160.0 385.6,159.1 391.8,152.0 398.0,169.2 404.2,148.3 410.4,158.5 416.6,147.0 422.8,158.5 429.0,156.8 435.2,157.7 441.4,169.1 447.6,159.6 453.8,149.1 460.0,155.9" fill="none" stroke="#3fb950" stroke-width="1.8" stroke-linejoin="round"/>
+<circle cx="460.0" cy="155.9" r="3" fill="#3fb950"/>
+<text x="20" y="180" font-size="10.5" fill="#8b949e" font-weight="400" text-anchor="start">openapi + app2 · hourly</text>
+<text x="460" y="180" font-size="10.5" fill="#8b949e" font-weight="400" text-anchor="end">updated 2026-11-07 16:19 UTC</text>
+</svg>
