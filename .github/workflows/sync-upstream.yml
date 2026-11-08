@@ -1,0 +1,68 @@
+# .github/workflows/sync-upstream.yml  (in magicmn/govee-homeassistant)
+#
+# Every 6 hours: if lasswellt/govee-homeassistant has published a release that this
+# fork doesn't have yet, merge that release tag into main (keeping your own commits)
+# and publish a release with the same tag name here, so the Marketplace offers it as
+# an update. If the merge conflicts, the run fails and GitHub emails you.
+
+name: Sync upstream release
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  UPSTREAM: lasswellt/govee-homeassistant
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Check for a new upstream release
+        id: up
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh release view --repo "$UPSTREAM" --json tagName -q .tagName)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Already have $tag"
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "New upstream release: $tag"
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Merge upstream release into main
+        if: steps.up.outputs.new == 'true'
+        env:
+          TAG: ${{ steps.up.outputs.tag }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream "https://github.com/$UPSTREAM.git"
+          # Fetch the upstream tag under a private ref so it doesn't clash with our own tag
+          git fetch --no-tags upstream "refs/tags/$TAG:refs/upstream-tags/$TAG"
+          git merge --no-edit -m "Merge upstream $TAG" "refs/upstream-tags/$TAG"
+          git push origin main
+
+      - name: Publish matching release
+        if: steps.up.outputs.new == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.up.outputs.tag }}
+        run: |
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target main \
+            --title "$TAG (+ DIY scene effects)" \
+            --notes "Upstream $UPSTREAM $TAG merged with this fork's changes. Upstream notes: https://github.com/$UPSTREAM/releases/tag/$TAG"
