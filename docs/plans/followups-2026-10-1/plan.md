@@ -7,6 +7,16 @@ Three release days. The nightly 03:00 UTC run releases whatever is on `main`, so
 - **Day A (T-001 to T-011):** device-scoped fixes plus #268. They are independent but share `coordinator.py`, so they run one after another.
 - **Day B (T-012 to T-014):** PR #267 alone. It touches BLE eligibility for every model, so per the broad-behaviour rule it gets its own day. The CI fixes and the H6104-only scoping go into the merge commit, so `main` stays green. The lifecycle bugs follow as separate commits.
 - **Day C (T-015):** #269 alone. It changes what every light's scene select shows, reversing #18, so it lands only after a hands-on try.
+- **Revised 2026-10-28 (user: "everything tonight, finish all issues").** Day A shipped as v2026.10.2. Days B and C are merged into the 2026-10-29 03:00 UTC release, along with the sweep items. The order on `main` is:
+  1. T-012 to T-014: #267, first, so its own-day check still holds.
+  2. T-016: #261 H1A42.
+  3. T-017: PR #270.
+  4. T-018: PR #273.
+  5. T-020: PR #271, which replaces T-015 and T-019. Both stay blocked as superseded, because `tasks.sh` can't remove a task or edit its checks.
+  6. T-021: replies.
+  7. T-022: gates.
+
+  The trade-off accepted: if tonight's release regresses lights, the release that caused it carries #267, #271 and the scoped fixes together, so the hotfix has to bisect.
 
 Key decisions:
 - **#222 evidence.** A gateway thermometer's BFF reading with a device-side `lastTime` newer than the session start counts as a push Govee sent that the session never delivered. That is a prompt with no answer, the same thing the 3-query rule measures. Rejected:
@@ -79,4 +89,5 @@ Key decisions:
 - `docs/plans/followups-2026-10-1/research/research-lights.md`: #261, #240, #213, #239, #269
 - `docs/plans/followups-2026-10-1/research/research-gateway.md`: #236
 - `docs/plans/followups-2026-10-1/research/research-pr267.md`: PR #267 review
+- `docs/research/2026-10-28_post-release-sweep.md`: sweep after v2026.10.2 (#261, #270, #271, #273, #239, #274, #137, dependabot)
 - Diagnostics attachments (untrusted, not committed): session scratchpad `diag-1025/`

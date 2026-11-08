@@ -23,3 +23,9 @@ Ruling: spec-defect; four existing H7130 tests asserted the unverified thermosta
 ## 2026-10-27T01:55:52Z verify T-010 ok=true (dfecc36; 7 briefs; subject amended to carry no #N)
 ## 2026-10-27T01:55:57Z build T-011 start (attempt 1)
 ## 2026-10-27T01:56:41Z verify T-011 ok=true (coverage 95/96/100, flake8, mypy, black, 3.14 suite)
+
+## 2026-10-28T11:34:57Z plan revised after the v2026.10.2 sweep
+Ruling: descope; user 2026-10-28 "everything tonight, finish all issues": Days B and C fold into the 2026-10-29 release; own-day rule for #267/#271 and the #271 hands-on try waived for this night; #267 still merges first (T-015, T-020)
+Ruling: descope; user 2026-10-28 chose to merge PR #271 instead of our own #269 work; T-015 superseded by T-020 (T-015)
+Ruling: spec-defect; T-019's verify named tests/test_select.py, which does not exist; tasks.sh cannot edit verify[], so T-019 is superseded by T-020 with the same scope (T-019, round 0)
+Added: T-016 #261 H1A42, T-017 PR #270, T-018 PR #273, T-020 PR #271, T-021 replies, T-022 gates. Research: docs/research/2026-10-28_post-release-sweep.md

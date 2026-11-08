@@ -1,7 +1,7 @@
 {
   "$schema": "blitz-tasks/1.0",
   "plan": "followups-2026-10-1",
-  "updated": "2026-10-27T01:56:35Z",
+  "updated": "2026-10-28T11:34:25Z",
   "tasks": [
     {
       "id": "T-001",
@@ -741,7 +741,7 @@
     },
     {
       "id": "T-012",
-      "title": "Merge PR #267 (H6104 BLE) alone, with CI fixes and H6104-only scoping in the merge",
+      "title": "Merge PR #267 (H6104 BLE) first today, with CI fixes and H6104-only scoping in the merge",
       "role": "backend",
       "files": [
         "custom_components/govee/coordinator.py",
@@ -825,7 +825,7 @@
     },
     {
       "id": "T-014",
-      "title": "#267: config-entry lifecycle test, other BLE models unchanged, Day B gates",
+      "title": "#267: config-entry lifecycle test, other BLE models unchanged, #267 gates",
       "role": "test",
       "files": [
         "tests/test_h6104_setup_entry.py"
@@ -861,7 +861,7 @@
     },
     {
       "id": "T-015",
-      "title": "#269: scene and DIY selects show None while the light is off (own release day)",
+      "title": "SUPERSEDED by T-020: #269 own implementation",
       "role": "frontend",
       "files": [
         "custom_components/govee/select.py",
@@ -901,12 +901,258 @@
         }
       ],
       "passes": false,
+      "status": "blocked",
+      "blocked_reason": "hard_spec",
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "plan",
+      "notes": "User 2026-10-28: merge PR #271 instead (T-020); own-day and hands-on-try waived by 'everything tonight'."
+    },
+    {
+      "id": "T-016",
+      "title": "#261: H1A42 segment colours over AWS IoT ptReal (PTREAL_SEGMENT_SKUS)",
+      "role": "backend",
+      "files": [
+        "custom_components/govee/const.py",
+        "tests/test_issue_261.py"
+      ],
+      "depends_on": [
+        "T-014"
+      ],
+      "verify": [
+        {
+          "cmd": "grep -qE 'PTREAL_SEGMENT_SKUS: Final = frozenset\\(\\{[^}]*\"H1A42\"' custom_components/govee/const.py",
+          "timeout": 10
+        },
+        {
+          "cmd": "git log --format=%s v2026.10.2..HEAD | grep -qF '(#261)'",
+          "timeout": 10
+        },
+        {
+          "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_issue_261.py tests/test_segment_ptreal.py",
+          "timeout": 300
+        }
+      ],
+      "passes": false,
       "status": "open",
       "blocked_reason": null,
       "attempts": 0,
       "last_verify": null,
       "origin": "plan",
-      "notes": "User decision 2026-10-26: option A, presentation only. current_option returns the None option when state.power_state is False; active_scene stays stored and shows again when power returns by any path; power_state None (unknown) keeps showing the scene. Scene + DIY selects; snapshot select unchanged. Reverses #18 for every light: own release day, after the maintainer tries it on their own lights and writes '#269 tried on own lights: <result>' in progress.md. Commit body says the select now shows None while off (#18 reversed)."
+      "notes": "docs/research/2026-10-28_post-release-sweep.md. Add H1A42 to PTREAL_SEGMENT_SKUS (const.py:220); comment names #261 and the reporter's confirmed frames (seg0 mask 01 00 00, all 15 FF 7F 00). No PTREAL_MAIN_PANEL_BIT entry, no segment override (15 segs). Tests in TWO new files (verify names both): tests/test_segment_ptreal.py = frame bytes from build_segment_color_ptreal (api/ble_packet.py:196) for the H1A42 seg 0 and all 15 segments; tests/test_issue_261.py = coordinator routes an H1A42 SegmentColorCommand over the ptReal passthrough with IoT credentials, and to REST without them (reuse tests/test_cov_coordinator_control.py helpers). Subject: 'fix: H1A42 segment colours go over AWS IoT (#261)'."
+    },
+    {
+      "id": "T-017",
+      "title": "Merge PR #270: H5105 and H5108 report in Fahrenheit",
+      "role": "backend",
+      "files": [
+        "custom_components/govee/const.py",
+        "tests/test_thermometer.py",
+        "docs/govee-protocol-reference.md"
+      ],
+      "depends_on": [
+        "T-016"
+      ],
+      "verify": [
+        {
+          "cmd": "git log --format=%s v2026.10.2..HEAD | grep -q 'Merge PR #270'",
+          "timeout": 10
+        },
+        {
+          "cmd": "python3 -c \"import re,sys; s=open('custom_components/govee/const.py').read(); m=re.search(r'FAHRENHEIT_REPORTING_SKUS: Final = frozenset\\((.*?)\\n\\)', s, re.S); sys.exit(0 if m and 'H5105' in m.group(1) and 'H5108' in m.group(1) else 1)\"",
+          "timeout": 10
+        },
+        {
+          "cmd": "! grep -nE '^(<<<<<<<|>>>>>>>)' custom_components/govee/const.py",
+          "timeout": 10
+        },
+        {
+          "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_thermometer.py",
+          "timeout": 300
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "issue:270",
+      "notes": "Fetch: git fetch -q origin pull/270/head:refs/pr/270. git merge --no-ff refs/pr/270, subject 'Merge PR #270: H5105 and H5108 report in Fahrenheit', body credits bdashrad. One const.py comment-hunk conflict vs MQTT_COLOR_SKUS: keep both. Evidence reviewed in research 2026-10-28 (prs-analyst §1)."
+    },
+    {
+      "id": "T-018",
+      "title": "Merge PR #273: close the Bluetooth discovery card on a manual set-up",
+      "role": "backend",
+      "files": [
+        "custom_components/govee/config_flow.py",
+        "tests/test_config_flow_bluetooth.py"
+      ],
+      "depends_on": [
+        "T-017"
+      ],
+      "verify": [
+        {
+          "cmd": "git log --format=%s v2026.10.2..HEAD | grep -q 'Merge PR #273'",
+          "timeout": 10
+        },
+        {
+          "cmd": "grep -q 'flow\\[\"context\"\\].get(\"source\") == SOURCE_BLUETOOTH' custom_components/govee/config_flow.py",
+          "timeout": 10
+        },
+        {
+          "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_config_flow_bluetooth.py tests/test_config_flow.py",
+          "timeout": 300
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "issue:273",
+      "notes": "Fetch: git fetch -q origin pull/273/head:refs/pr/273. git merge --no-ff refs/pr/273, subject 'Merge PR #273: close the Bluetooth discovery card on a manual set-up', body credits snoack. Clean merge; config_flow.py must stay 100% on the full suite (T-022)."
+    },
+    {
+      "id": "T-019",
+      "title": "SUPERSEDED by T-020 (bad test path in verify): merge PR #271",
+      "role": "frontend",
+      "files": [
+        "custom_components/govee/light.py",
+        "custom_components/govee/select.py",
+        "custom_components/govee/models/state.py",
+        "tests/test_light.py",
+        "tests/test_cov_select.py",
+        "tests/test_models.py"
+      ],
+      "depends_on": [
+        "T-018"
+      ],
+      "verify": [
+        {
+          "cmd": "git log --format=%s v2026.10.2..HEAD | grep -q 'Merge PR #271.*(#269)'",
+          "timeout": 10
+        },
+        {
+          "cmd": "grep -q 'DIY_EFFECT_PREFIX' custom_components/govee/light.py && grep -q 'def _light_is_off' custom_components/govee/select.py && grep -q 'def _async_select_none' custom_components/govee/select.py",
+          "timeout": 10
+        },
+        {
+          "cmd": "! grep -rnE '^(<<<<<<<|>>>>>>>)' custom_components tests",
+          "timeout": 10
+        },
+        {
+          "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= -n auto tests/test_light.py tests/test_cov_select.py tests/test_models.py tests/test_select.py",
+          "timeout": 400
+        }
+      ],
+      "passes": false,
+      "status": "blocked",
+      "blocked_reason": "hard_spec",
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "issue:271",
+      "notes": "Verify named tests/test_select.py, which does not exist; tasks.sh cannot edit verify[]. Replaced by T-020 with the same scope."
+    },
+    {
+      "id": "T-020",
+      "title": "Merge PR #271 (#269): DIY scenes as effects, scene selects read None while off (replaces T-015)",
+      "role": "frontend",
+      "files": [
+        "custom_components/govee/light.py",
+        "custom_components/govee/select.py",
+        "custom_components/govee/models/state.py",
+        "tests/test_light.py",
+        "tests/test_cov_select.py",
+        "tests/test_models.py"
+      ],
+      "depends_on": [
+        "T-018"
+      ],
+      "verify": [
+        {
+          "cmd": "git log --format=%s v2026.10.2..HEAD | grep -q 'Merge PR #271.*(#269)'",
+          "timeout": 10
+        },
+        {
+          "cmd": "grep -q 'DIY_EFFECT_PREFIX' custom_components/govee/light.py && grep -q 'def _light_is_off' custom_components/govee/select.py && grep -q 'def _async_select_none' custom_components/govee/select.py",
+          "timeout": 10
+        },
+        {
+          "cmd": "! grep -rnE '^(<<<<<<<|>>>>>>>)' custom_components tests",
+          "timeout": 10
+        },
+        {
+          "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= -n auto tests/test_light.py tests/test_cov_select.py tests/test_models.py tests/test_cov_light.py",
+          "timeout": 400
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "issue:271",
+      "notes": "User 2026-10-28: merge #271 instead of our T-015, and ship everything tonight (own-day rule waived). Fetch: git fetch -q origin pull/271/head:refs/pr/271. git merge --no-ff refs/pr/271, subject 'Merge PR #271: DIY scenes as light effects, scene selects read None while off (#269)', body credits magicmn. #267 (T-012..T-014) merged first and touches select.py/state.py: resolve conflicts keeping both. Review notes (lights-analyst §3, not blocking): literal 'DIY: ' prefix light.py:82; DIY id collisions in reverse map. Do not change behaviour."
+    },
+    {
+      "id": "T-021",
+      "title": "Queue replies: #239, #274, #137, #266 (close), #258 (close)",
+      "role": "infra",
+      "files": [
+        "docs/release-replies.md"
+      ],
+      "depends_on": [
+        "T-020"
+      ],
+      "verify": [
+        {
+          "cmd": "for n in 239 274 137 266 258; do grep -q \"^## #$n\" docs/release-replies.md || exit 1; done",
+          "timeout": 10
+        },
+        {
+          "cmd": "! git log --format=%s v2026.10.2..HEAD | grep -E 'queue|repl' | grep -qE '#[0-9]'",
+          "timeout": 10
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "plan",
+      "notes": "Briefs from docs/research/2026-10-28_post-release-sweep.md. #239 close:no ask the 4 questions (app straight White->Sunset? colour/brightness after White from HA stays white? off/on unsticks? physically white after failed switch?). #274 close:no link #209, confirm top-level devices empty and key from same account, fresh UI diagnostics download. #137 close:no thank for relay findings; ask for the diagnostics download's recent_multisync data after an open/close; valve control needs the app's open/close payload; ee34 leak lines are debug noise only. #266 close:yes thanks for confirming on v2026.10.2. #258 close:yes thanks for confirming on 17 devices; battery note is Govee-side (syncs over app BLE). No raw frames (F-14 n/a). Commit subject must contain no #N."
+    },
+    {
+      "id": "T-022",
+      "title": "Final gates for tonight: coverage floors, lint, types, 3.14 suite",
+      "role": "test",
+      "files": [
+        "tests/test_issue_261.py"
+      ],
+      "depends_on": [
+        "T-021"
+      ],
+      "verify": [
+        {
+          "cmd": ".cc-sessions/venv312/bin/pytest -q -n auto -p no:cacheprovider -o addopts= --cov=custom_components.govee --cov-report=json:.cc-sessions/cov.json --cov-fail-under=95 tests && .cc-sessions/venv312/bin/python -c \"import json; d=json.load(open('.cc-sessions/cov.json'))['files']; bad=[f for f,v in d.items() if v['summary']['percent_covered']<96]; cf=[v['summary']['percent_covered'] for f,v in d.items() if f.endswith('config_flow.py')][0]; assert not bad and cf==100, (bad, cf)\"",
+          "timeout": 900
+        },
+        {
+          "cmd": ".cc-sessions/venv312/bin/flake8 . && .cc-sessions/venv312/bin/mypy custom_components/govee && .cc-sessions/venv312/bin/black --check .",
+          "timeout": 600
+        },
+        {
+          "cmd": ".cc-sessions/venv314/bin/pytest -q -n auto --no-cov -p no:cacheprovider -o addopts= tests",
+          "timeout": 900
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "plan",
+      "notes": "Gate only; no code unless a gate fails (then fix in the failing task's files). Test-only: it runs the suites."
     }
   ]
 }
