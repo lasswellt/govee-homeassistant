@@ -199,6 +199,15 @@
       "govee_dreamview": {
         "default": "mdi:movie-open"
       },
+      "govee_heater_thermostat": {
+        "default": "mdi:thermostat-box"
+      },
+      "govee_heater_oscillation": {
+        "default": "mdi:arrow-oscillating-off",
+        "state": {
+          "on": "mdi:arrow-oscillating"
+        }
+      },
       "govee_main_light": {
         "default": "mdi:ceiling-light"
       },

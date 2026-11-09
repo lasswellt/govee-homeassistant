@@ -246,6 +246,7 @@ class GoveeDeviceState:
     # Heater state
     heater_temperature: int | None = None  # Target temperature in Celsius
     heater_auto_stop: int | None = None  # Auto-stop setting (0=Maintain, 1=Auto-stop)
+    heater_thermostat: bool | None = None  # thermostatToggle, optimistic only (device never reports it)
     fan_speed: int | None = None  # Fan speed mode value (1=Low, 2=Medium, 3=High)
     # Unit reported by the temperature_setting STRUCT state ("Celsius" /
     # "Fahrenheit"). Heaters like the H713B run in °F internally and report
@@ -693,6 +694,35 @@ class GoveeDeviceState:
             self.toggles["mainLightToggle"] = raw[2] == 0x01
             self.toggles["backgroundLightToggle"] = raw[3] == 0x01
             return True
+        return False
+
+    def update_dreamview_from_frames(self, frames: Iterable[bytes]) -> bool:
+        """Apply the light's own ``aa 05 <mode>`` mode report to DreamView (H66A0, #213).
+
+        Mode ``00`` is video mode (DreamView sync); any other mode means
+        something else is running. The Developer API never returns this, and
+        HA's optimistic ON is otherwise kept across polls, so the device's
+        report is the only way to see a sync started or stopped in the app.
+        Only a full 20-byte frame with a valid XOR checksum counts.
+
+        Args:
+            frames: Decoded (not base64) frames from ``op.command``.
+
+        Returns:
+            True if ``dreamview_enabled`` changed.
+        """
+        for raw in frames:
+            if len(raw) != 20 or raw[0] != 0xAA or raw[1] != 0x05:
+                continue
+            checksum = 0
+            for byte in raw[:19]:
+                checksum ^= byte
+            if checksum != raw[19]:
+                continue
+            enabled = raw[2] == 0x00
+            changed = self.dreamview_enabled != enabled
+            self.dreamview_enabled = enabled
+            return changed
         return False
 
     def update_ceiling_fan_from_frames(self, frames: Iterable[bytes]) -> bool:

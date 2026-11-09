@@ -17,10 +17,13 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
+    HEATER_AUTO_STOP_STRUCT_SKUS,
     SUFFIX_BACKGROUND_LIGHT,
     SUFFIX_BOTTOM_LIGHT,
     SUFFIX_DREAMVIEW,
     SUFFIX_HEATER_AUTO_STOP,
+    SUFFIX_HEATER_OSCILLATION,
+    SUFFIX_HEATER_THERMOSTAT,
     SUFFIX_LIGHT_ZONE,
     SUFFIX_MAIN_LIGHT,
     SUFFIX_MUSIC_MODE,
@@ -36,6 +39,7 @@ from .entity import GoveeEntity
 from .models import (
     GoveeDevice,
     MusicModeCommand,
+    OscillationCommand,
     PowerCommand,
     TemperatureSettingCommand,
     ToggleCommand,
@@ -123,6 +127,16 @@ async def async_setup_entry(
         if device.supports_thermostat_toggle or device.supports_temperature_setting_auto_stop:
             entities.append(GoveeAutoStopSwitchEntity(coordinator, device))
             _LOGGER.debug("Created auto-stop switch entity for %s", device.name)
+
+        if _auto_stop_uses_struct(device) and device.supports_thermostat_toggle:
+            entities.append(GoveeHeaterThermostatSwitchEntity(coordinator, device))
+            _LOGGER.debug("Created thermostat switch entity for %s", device.name)
+
+        # Heaters that advertise oscillationToggle (H7130) get no fan entity,
+        # so oscillation is a switch (issue #265).
+        if device.is_heater and device.supports_oscillation:
+            entities.append(GoveeHeaterOscillationSwitchEntity(coordinator, device))
+            _LOGGER.debug("Created oscillation switch entity for %s", device.name)
 
         # Minimal power control for heaters that don't yet have a
         # climate platform. Humidifiers/dehumidifiers now have their own
@@ -782,6 +796,11 @@ class GoveeDreamViewSwitchEntity(GoveeEntity, SwitchEntity):
         self.async_write_ha_state()
 
 
+def _auto_stop_uses_struct(device: GoveeDevice) -> bool:
+    """True for SKUs whose Auto Stop is the targetTemperature STRUCT field, when it is advertised (#265)."""
+    return device.sku.upper() in HEATER_AUTO_STOP_STRUCT_SKUS and device.supports_temperature_setting_auto_stop
+
+
 class GoveeAutoStopSwitchEntity(GoveeEntity, SwitchEntity, RestoreEntity):
     """Govee heater auto-stop toggle switch entity.
 
@@ -831,9 +850,11 @@ class GoveeAutoStopSwitchEntity(GoveeEntity, SwitchEntity, RestoreEntity):
         ToggleCommand. Devices that carry ``autoStop`` inside the
         ``targetTemperature`` STRUCT need a TemperatureSettingCommand — we
         must send the current target temperature alongside so the write
-        doesn't clobber it (issue #29).
+        doesn't clobber it (issue #29). SKUs in ``HEATER_AUTO_STOP_STRUCT_SKUS``
+        advertise both, but their thermostatToggle is never reported, so Auto
+        Stop uses the STRUCT field (issue #265).
         """
-        if self._device.supports_thermostat_toggle:
+        if self._device.supports_thermostat_toggle and not _auto_stop_uses_struct(self._device):
             return await self.coordinator.async_control_device(
                 self._device_id,
                 ToggleCommand(toggle_instance=INSTANCE_THERMOSTAT_TOGGLE, enabled=enabled),
@@ -864,6 +885,84 @@ class GoveeAutoStopSwitchEntity(GoveeEntity, SwitchEntity, RestoreEntity):
             raise self._command_failed()
         self._is_on = False
         self.async_write_ha_state()
+
+
+class GoveeHeaterThermostatSwitchEntity(GoveeEntity, SwitchEntity, RestoreEntity):
+    """Thermostat toggle for heaters whose Auto Stop uses the STRUCT field (#265).
+
+    The device never reports ``thermostatToggle``, so the state is optimistic
+    and restored across restarts.
+    """
+
+    _attr_translation_key = "govee_heater_thermostat"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(
+        self,
+        coordinator: GoveeCoordinator,
+        device: GoveeDevice,
+    ) -> None:
+        """Initialize the thermostat switch entity."""
+        super().__init__(coordinator, device)
+        self._attr_unique_id = f"{device.device_id}{SUFFIX_HEATER_THERMOSTAT}"
+        self._is_on = False
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the last known state on startup."""
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state and last_state.state in ("on", "off"):
+            self._is_on = last_state.state == "on"
+            state = self.coordinator.get_state(self._device_id)
+            if state is not None and state.heater_thermostat is None:
+                state.heater_thermostat = self._is_on
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if the thermostat is on."""
+        state = self.device_state
+        if state and state.heater_thermostat is not None:
+            return state.heater_thermostat
+        return self._is_on
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn the thermostat on."""
+        await self._async_send_command(ToggleCommand(toggle_instance=INSTANCE_THERMOSTAT_TOGGLE, enabled=True))
+        self._is_on = True
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn the thermostat off."""
+        await self._async_send_command(ToggleCommand(toggle_instance=INSTANCE_THERMOSTAT_TOGGLE, enabled=False))
+        self._is_on = False
+
+
+class GoveeHeaterOscillationSwitchEntity(GoveeEntity, SwitchEntity):
+    """Oscillation toggle for heaters that advertise ``oscillationToggle``."""
+
+    _attr_translation_key = "govee_heater_oscillation"
+
+    def __init__(
+        self,
+        coordinator: GoveeCoordinator,
+        device: GoveeDevice,
+    ) -> None:
+        """Initialize the oscillation switch entity."""
+        super().__init__(coordinator, device)
+        self._attr_unique_id = f"{device.device_id}{SUFFIX_HEATER_OSCILLATION}"
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return True if the heater is oscillating."""
+        state = self.device_state
+        return state.oscillating if state else None
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn oscillation on."""
+        await self._async_send_command(OscillationCommand(oscillating=True))
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn oscillation off."""
+        await self._async_send_command(OscillationCommand(oscillating=False))
 
 
 class GoveeAppliancePowerSwitchEntity(GoveeEntity, SwitchEntity):

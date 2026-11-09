@@ -75,6 +75,9 @@ def _coordinator_stub(**overrides):
     coordinator.lan_unmatched_count = 0
     coordinator.mqtt_status_query_strikes = []
     coordinator.mqtt_status_queries_refused = False
+    coordinator.mqtt_missed_pushes_since_connect = 0
+    coordinator.has_device_topic = lambda _did: False
+    coordinator.gateway_route = lambda _did: None
     coordinator.command_confirm_counters = None
     for key, value in overrides.items():
         setattr(coordinator, key, value)
@@ -1104,3 +1107,32 @@ async def test_command_confirm_counters_with_the_id_redacted() -> None:
 
     off = await async_get_config_entry_diagnostics(MagicMock(), _entry_stub(_coordinator_stub()))
     assert off["command_confirm"] is None
+
+
+@pytest.mark.asyncio
+async def test_topic_ownership_and_missed_pushes_without_topics() -> None:
+    """#222: a download shows whose AWS IoT topic it is and the missed-push count, never a topic."""
+    mqtt_client = MagicMock()
+    mqtt_client.available = True
+    mqtt_client.connected = True
+    mqtt_client.last_messages = {}
+    mqtt_client.recent_multisync = []
+    mqtt_client.recent_probe_frames = []
+    hub_child = "AA:BB:CC:DD:EE:FF:53:10"
+    device = MagicMock(sku="H5310", device_type="devices.types.thermometer", is_group=False, capabilities=[])
+    device.name = "Greenhouse"
+    coordinator = _coordinator_stub(
+        mqtt_client=mqtt_client,
+        devices={hub_child: device},
+        mqtt_missed_pushes_since_connect=2,
+        has_device_topic=lambda _did: False,
+        gateway_route=lambda did: {"device": "hub", "sku": "H5044", "topic": "GA/secret-topic"},
+    )
+
+    out = await async_get_config_entry_diagnostics(MagicMock(), _entry_stub(coordinator))
+
+    assert out["mqtt"]["missed_gateway_pushes_since_connect"] == 2
+    (record,) = out["devices"].values()
+    assert record["has_mqtt_topic"] is False
+    assert record["has_gateway_route"] is True
+    assert "secret-topic" not in json.dumps(out, default=str)

@@ -11,6 +11,7 @@ switch.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from unittest.mock import AsyncMock, MagicMock
 
@@ -350,10 +351,16 @@ class TestSetupEntry:
         (music,) = [e for e in added if isinstance(e, GoveeMusicModeSwitchEntity)]
         assert music._use_rest_api is False
 
-    @pytest.mark.parametrize("heater", [_heater_h7130, _heater_h713c])
-    async def test_both_heater_shapes_get_auto_stop_and_power(self, heater):
+    @pytest.mark.parametrize(
+        ("heater", "extra"),
+        [(_heater_h7130, ["GoveeHeaterThermostatSwitchEntity"]), (_heater_h713c, [])],
+    )
+    async def test_both_heater_shapes_get_auto_stop_and_power(self, heater, extra):
         added = await self._setup(heater())
-        assert sorted(_names(added)) == ["GoveeAppliancePowerSwitchEntity", "GoveeAutoStopSwitchEntity"]
+        # The H7130 also gets its own Thermostat switch (#265).
+        assert sorted(_names(added)) == sorted(
+            ["GoveeAppliancePowerSwitchEntity", "GoveeAutoStopSwitchEntity", *extra]
+        )
 
     @pytest.mark.parametrize("appliance", [_kettle, _aroma_diffuser])
     async def test_kettle_and_diffuser_get_a_power_switch(self, appliance):
@@ -930,7 +937,8 @@ class TestAutoStopSwitch:
         assert entity.is_on is False
 
     async def test_toggle_shape_sends_thermostat_toggle(self):
-        device = _heater_h7130()
+        # A non-H7130 SKU keeps thermostatToggle; the H7130 uses the STRUCT field (#265).
+        device = dataclasses.replace(_heater_h7130(), sku="H713B")
         entity, coordinator = self._entity(device, _online_state(device))
         await entity.async_turn_on()
         cmd = coordinator.async_control_device.call_args[0][1]

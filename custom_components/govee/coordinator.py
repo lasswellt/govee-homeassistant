@@ -76,6 +76,7 @@ from .api.lan_client import (
 )
 from .api.lan_control import command_to_lan, lan_brightness_to_device
 from .const import (
+    HEATER_AUTO_STOP_STRUCT_SKUS,
     CONF_API_TEMPERATURE_UNIT,
     CONF_EMAIL,
     CONF_CONFIRM_COMMANDS,
@@ -91,6 +92,7 @@ from .const import (
     DEFAULT_DAILY_REQUEST_BUDGET,
     KETTLE_FOLLOWUP_MIN_REMAINING,
     DEFAULT_ENABLE_MQTT_CONTROL,
+    MQTT_COLOR_SKUS,
     DEFAULT_MQTT_STATUS_INTERVAL,
     DEFAULT_PROBE_POLL_INTERVAL,
     DEFAULT_WATER_DETECTOR_POLL_INTERVAL,
@@ -126,11 +128,15 @@ from .const import (
     MQTT_STATUS_QUERY_SPACING,
     OPTIMISTIC_GRACE_CAP_SECONDS,
     POWER_MONITORING_STATUS_INTERVAL,
+    PROBE_LIMITS_READ_EVERY,
+    PROBE_PACKET_SPACING,
     REQUEST_STATUS_MIN_INTERVAL,
     MQTT_SILENT_CHECK_DELAY,
+    MQTT_SILENT_MIN_MISSED_PUSHES,
     MQTT_SILENT_MIN_QUERIES,
     REACHABLE_PUSH_WINDOW,
     PTREAL_DREAMVIEW_SKUS,
+    DREAMVIEW_STATE_FROM_FRAMES_SKUS,
     PTREAL_LIGHT_ZONE_SKUS,
     PTREAL_MAIN_PANEL_BIT,
     PTREAL_RING_MASK,
@@ -399,8 +405,19 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
     _mqtt_silence_unsub: CALLBACK_TYPE | None = None
     _mqtt_silent_reconnected = False
     _mqtt_silent_reported = False
+    # Gateway readings the cloud received while the session got nothing, the
+    # last device-side lastTime seen per thermometer, and a guard so the timer
+    # and the BFF refresh never handle one silent session twice (#222).
+    _mqtt_missed_pushes_since_connect = 0
+    _bff_last_time_seen: dict[str, int] = {}
+    _mqtt_silence_handling = False
     # Confirm-and-resend for light commands, when the option is on (#245).
     _command_confirmer: CommandConfirmer | None = None
+    # Probe polling (#266): sweeps run so far (limits are read on every Nth),
+    # and the running timer-driven sweep, cancelled on shutdown. Class
+    # defaults for the same reason as above.
+    _probe_poll_tick = 0
+    _probe_poll_task: asyncio.Task[None] | None = None
 
     def __init__(
         self,
@@ -629,6 +646,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # lastTime so the 5-minute account poll can't overwrite a fresher
         # frame with the cloud's older copy of it (#151).
         self._thermo_frame_ts: dict[str, int] = {}
+        self._bff_last_time_seen = {}
         # Last time the account device list was re-checked for newly added
         # devices (#101). Seeded to "now" so the first re-check waits a full
         # interval rather than firing right after setup discovery.
@@ -1125,6 +1143,15 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
     def device_topic_count(self) -> int:
         """Number of devices with a resolved MQTT publish topic."""
         return len(self._device_topics)
+
+    def has_device_topic(self, device_id: str) -> bool:
+        """Whether the device has its own MQTT publish topic, for diagnostics (#222)."""
+        return device_id in self._device_topics
+
+    @property
+    def mqtt_missed_pushes_since_connect(self) -> int:
+        """Gateway readings that reached the cloud but not this MQTT session (#222)."""
+        return self._mqtt_missed_pushes_since_connect
 
     @property
     def gateway_route_count(self) -> int:
@@ -1874,6 +1901,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                     )
                     continue
 
+                if self._iot_credentials and device.sku.upper() in MQTT_COLOR_SKUS:
+                    # #240: the Platform API omits colorRgb for these SKUs; colour is sent over AWS IoT.
+                    device = device.with_synthetic_color_rgb()
+
                 _LOGGER.debug("Adding device to coordinator: %s", device.device_id)
                 self._devices[device.device_id] = device
                 # Create empty state for each device
@@ -2542,6 +2573,49 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             return
         self._sno_to_thermo_id[(hub_device_id, sno)] = device_id
 
+    def _note_bff_push_evidence(self, device_id: str, sensor: dict[str, Any]) -> None:
+        """Count a gateway reading the cloud got while this MQTT session got nothing (#222).
+
+        The hub pushes each bridged thermometer reading on the account topic
+        before the cloud copy reaches the BFF list. A reading newer than the
+        last one seen and than the session's start, with no inbound message
+        since connect, is a push Govee sent that this session did not deliver.
+        The first sighting of a device only seeds the comparison.
+        """
+        last_time = sensor.get("last_time")
+        if isinstance(last_time, bool) or not isinstance(last_time, int) or last_time <= 0:
+            return
+        previous = self._bff_last_time_seen.get(device_id)
+        self._bff_last_time_seen[device_id] = last_time
+        if previous is None or last_time <= previous:
+            return
+        sno = sensor.get("sno")
+        if not sensor.get("hub_device_id") or not isinstance(sno, int) or isinstance(sno, bool):
+            return
+        client = self._mqtt_client
+        since = client.connected_since if client is not None and client.connected else None
+        if since is None or client is None or client.inbound_total > self._mqtt_inbound_at_connect:
+            return
+        seconds = last_time / 1000 if last_time > 10**11 else last_time
+        if seconds <= since.timestamp():
+            return
+        self._mqtt_missed_pushes_since_connect += 1
+
+    async def _async_check_missed_pushes(self) -> None:
+        """Handle a silent session proven by missed gateway pushes; the one-shot timer may be long gone (#222)."""
+        if self._mqtt_missed_pushes_since_connect < MQTT_SILENT_MIN_MISSED_PUSHES:
+            return
+        client = self._mqtt_client
+        if client is None or not client.connected or client.inbound_total > self._mqtt_inbound_at_connect:
+            return
+        since = client.connected_since
+        if since is None or (datetime.now(timezone.utc) - since).total_seconds() < MQTT_SILENT_CHECK_DELAY:
+            return
+        await self._async_handle_silent_session(self._missed_pushes_evidence())
+
+    def _missed_pushes_evidence(self) -> str:
+        return f"while {self._mqtt_missed_pushes_since_connect} gateway readings reached the cloud"
+
     async def _discover_bff_thermometers(self) -> None:
         """Discover thermo-hygrometers (H5301) via the BFF device list (issue #86).
 
@@ -2700,6 +2774,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             device_id = sensor["device_id"]
             self._note_display_unit(device_id, sensor)
             self._note_bff_last_measurement(device_id, sensor)
+            self._note_bff_push_evidence(device_id, sensor)
 
             # A device parked on the Developer poll because the BFF had nothing
             # for it (#151) takes over here as soon as a reading appears.
@@ -2806,6 +2881,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
         if changed:
             self.async_set_updated_data(self._states)
+        await self._async_check_missed_pushes()
 
     def register_leak_hubs(self) -> None:
         """Register each leak sensor's hub as a device.
@@ -3311,13 +3387,14 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         """Arm or disarm live polling for one probe thermometer.
 
         Driven by the per-device switch entity. Enabling fires one immediate
-        read burst so the entities populate right away instead of staying
+        read burst for that device (temperatures and limits, whatever the
+        shared tick) so the entities populate right away instead of staying
         unknown until the first tick.
         """
         if enabled:
             self._probe_polling_enabled.add(device_id)
             self._config_entry.async_create_background_task(
-                self.hass, self._poll_probe_thermometers(), name="govee_probe_poll_now"
+                self.hass, self._poll_probe_thermometers(only_device_id=device_id), name="govee_probe_poll_now"
             )
             self._schedule_probe_poll()
         else:
@@ -3330,26 +3407,55 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         """Return True while live polling is armed for this device."""
         return device_id in self._probe_polling_enabled
 
-    def _schedule_probe_poll(self) -> None:
-        """Schedule the next probe read, replacing any pending timer."""
+    def _schedule_probe_poll(self, delay: float | None = None) -> None:
+        """Schedule the next probe read, replacing any pending timer.
+
+        Args:
+            delay: Seconds until the sweep; defaults to the configured interval.
+        """
         if self._probe_poll_unsub:
             self._probe_poll_unsub()
-        self._probe_poll_unsub = async_call_later(self.hass, self._probe_poll_interval, self._probe_poll_callback)
+        self._probe_poll_unsub = async_call_later(
+            self.hass, self._probe_poll_interval if delay is None else delay, self._probe_poll_callback
+        )
 
     async def _probe_poll_callback(self, _now: Any = None) -> None:
-        """Periodic callback: read every armed probe, then re-arm the timer."""
+        """Timer callback: run the sweep as a tracked task so unload can cancel it."""
+        self._probe_poll_task = self._config_entry.async_create_background_task(
+            self.hass, self._run_probe_sweep(), name="govee_probe_poll"
+        )
+
+    async def _run_probe_sweep(self) -> None:
+        """Sweep every armed probe, then re-arm so sweeps start one interval apart.
+
+        The sweep is paced (PROBE_PACKET_SPACING between packets) and can take
+        a while on a many-probe device; the next timer is shortened by the time
+        it took, but never below one packet spacing.
+        """
+        started = time.monotonic()
         await self._poll_probe_thermometers()
         if self._probe_polling_enabled:
-            self._schedule_probe_poll()
+            elapsed = time.monotonic() - started
+            self._schedule_probe_poll(max(PROBE_PACKET_SPACING, self._probe_poll_interval - elapsed))
 
-    async def _poll_probe_thermometers(self) -> None:
-        """Read current values and limits from every armed probe thermometer.
+    async def _poll_probe_thermometers(self, only_device_id: str | None = None) -> None:
+        """Read current values (and, every sixth sweep, limits) from armed probes.
 
-        One read per probe — the per-probe ``0x24`` reply is the only response
+        One read per probe: the per-probe ``0x24`` reply is the only response
         that could be provoked. The six-value status frame arrives unprompted
         on power-on and when an app session opens; no request was found that
-        triggers it. Limits change rarely but are read on the same tick, which
-        costs two more small packets and keeps the number entities honest.
+        triggers it. Per device every temperature read goes out first, so a
+        slow answer cannot starve a later probe; the limits reads (two more
+        small packets per probe, rarely changing) follow only on ticks where
+        ``tick % PROBE_LIMITS_READ_EVERY == 0``, which includes the first.
+        Packets are PROBE_PACKET_SPACING seconds apart, because a probe
+        answers only the first of several back-to-back requests (#266). After
+        each wait the sweep stops if MQTT dropped, and skips a device that was
+        disarmed meanwhile.
+
+        Args:
+            only_device_id: Read just this device, limits included, without
+                advancing the shared tick (the immediate read on arming).
         """
         if not self._probe_polling_enabled:
             return
@@ -3357,13 +3463,33 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if client is None or not client.connected:
             return
 
-        for device_id in list(self._probe_polling_enabled):
+        if only_device_id is None:
+            read_limits = self._probe_poll_tick % PROBE_LIMITS_READ_EVERY == 0
+            self._probe_poll_tick += 1
+            targets = list(self._probe_polling_enabled)
+        else:
+            read_limits = True
+            targets = [only_device_id]
+
+        first_packet = True
+        for device_id in targets:
             device = self._devices.get(device_id)
             if device is None:
                 continue
-            for probe in probes_for_sku(device.sku):
-                await self._ble_manager.async_send_ble_packet(device_id, device.sku, build_probe_read_packet(probe))
-                await self._ble_manager.async_send_ble_packet(device_id, device.sku, build_limits_read_packet(probe))
+            probes = probes_for_sku(device.sku)
+            packets = [build_probe_read_packet(probe) for probe in probes]
+            if read_limits:
+                packets.extend(build_limits_read_packet(probe) for probe in probes)
+            for packet in packets:
+                if not first_packet:
+                    await asyncio.sleep(PROBE_PACKET_SPACING)
+                    client = self.mqtt_client
+                    if client is None or not client.connected:
+                        return
+                    if device_id not in self._probe_polling_enabled:
+                        break
+                first_packet = False
+                await self._ble_manager.async_send_ble_packet(device_id, device.sku, packet)
 
     @property
     def _mqtt_status_poll_interval(self) -> int:
@@ -3766,6 +3892,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # in an ``aa 30`` frame (issue #223).
         if device is not None and device.sku.upper() in PTREAL_LIGHT_ZONE_SKUS:
             state.update_light_zones_from_frames(self._op_frames_from(state_data))
+        # The H66A0 reports its mode in an ``aa 05`` frame; that real report
+        # replaces HA's optimistic DreamView flag (issue #213).
+        if device is not None and device.sku.upper() in DREAMVIEW_STATE_FROM_FRAMES_SKUS and device.supports_dreamview:
+            state.update_dreamview_from_frames(self._op_frames_from(state_data))
         if device is not None and device.supports_pump_state:
             frames = self._op_frames_from(state_data)
             state.update_pump_state_from_frames(frames)
@@ -3858,6 +3988,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         """Start the silent-session check for the session that just came up (#222)."""
         client = self._mqtt_client
         self._mqtt_queries_since_connect = 0
+        self._mqtt_missed_pushes_since_connect = 0
         self._mqtt_inbound_at_connect = client.inbound_total if client is not None else 0
         if self._mqtt_silence_unsub is not None:
             self._mqtt_silence_unsub()
@@ -3873,8 +4004,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
     async def _async_check_mqtt_silence(self, _now: Any = None) -> None:
         """Reconnect a silent session once, then raise the mqtt_silent repair (#222).
 
-        Silent means connected, at least MQTT_SILENT_MIN_QUERIES status queries
-        sent since the session came up, and not one inbound message. A quiet
+        Silent means connected, not one inbound message since the session came
+        up, and either at least MQTT_SILENT_MIN_QUERIES status queries sent or
+        MQTT_SILENT_MIN_MISSED_PUSHES gateway readings that reached the cloud. A quiet
         account with the re-query off, or one AWS IoT refuses status queries
         for (#259), sends none, so it never counts as silent.
         """
@@ -3885,23 +4017,42 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if client.inbound_total > self._mqtt_inbound_at_connect:
             self._note_mqtt_inbound()
             return
-        if self._mqtt_queries_since_connect < MQTT_SILENT_MIN_QUERIES:
+        if self._mqtt_queries_since_connect >= MQTT_SILENT_MIN_QUERIES:
+            evidence = f"despite {self._mqtt_queries_since_connect} status queries"
+        elif self._mqtt_missed_pushes_since_connect >= MQTT_SILENT_MIN_MISSED_PUSHES:
+            evidence = self._missed_pushes_evidence()
+        else:
             return
-        minutes = MQTT_SILENT_CHECK_DELAY // 60
-        if not self._mqtt_silent_reconnected:
-            self._mqtt_silent_reconnected = True
-            _LOGGER.warning(
-                "The AWS IoT session got no message in %d minutes despite %d status queries; reconnecting once",
-                minutes,
-                self._mqtt_queries_since_connect,
-            )
-            # async_restart only reconnects for changed credentials.
-            await client.async_stop()
-            await client.async_start()
+        await self._async_handle_silent_session(evidence)
+
+    async def _async_handle_silent_session(self, evidence: str) -> None:
+        """Reconnect the silent session once, then raise the repair (#222).
+
+        Args:
+            evidence: Phrase naming what proved the silence, for the log.
+        """
+        if self._mqtt_silence_handling:
             return
-        if not self._mqtt_silent_reported:
-            self._mqtt_silent_reported = True
-            async_create_mqtt_silent_issue(self.hass, self._config_entry, minutes)
+        self._mqtt_silence_handling = True
+        try:
+            client = self._mqtt_client
+            if client is None:
+                return
+            minutes = MQTT_SILENT_CHECK_DELAY // 60
+            if not self._mqtt_silent_reconnected:
+                self._mqtt_silent_reconnected = True
+                _LOGGER.warning(
+                    "The AWS IoT session got no message in %d minutes %s; reconnecting once", minutes, evidence
+                )
+                # async_restart only reconnects for changed credentials.
+                await client.async_stop()
+                await client.async_start()
+                return
+            if not self._mqtt_silent_reported:
+                self._mqtt_silent_reported = True
+                async_create_mqtt_silent_issue(self.hass, self._config_entry, minutes)
+        finally:
+            self._mqtt_silence_handling = False
 
     @callback
     def _on_mqtt_disconnected(self) -> None:
@@ -4816,6 +4967,8 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                     state.heater_temperature = existing_state.heater_temperature
                 if existing_state.heater_auto_stop is not None and state.heater_auto_stop is None:
                     state.heater_auto_stop = existing_state.heater_auto_stop
+                if existing_state.heater_thermostat is not None and state.heater_thermostat is None:
+                    state.heater_thermostat = existing_state.heater_thermostat
                 if existing_state.device_temperature_unit is not None and state.device_temperature_unit is None:
                     state.device_temperature_unit = existing_state.device_temperature_unit
                 if device.decodes_kettle_frames:
@@ -5331,8 +5484,13 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             # A publish is never acknowledged, so only devices that have
             # answered on AWS IoT this session qualify: some firmware (H6163)
             # never listens there, and its commands would vanish (#198).
+            # MQTT_COLOR_SKUS (#240) have no REST colour at all, so their colour
+            # goes over AWS IoT even with the control option off.
             if (
-                self._enable_mqtt_control
+                (
+                    self._enable_mqtt_control
+                    or (isinstance(command, ColorCommand) and device.sku.upper() in MQTT_COLOR_SKUS)
+                )
                 and self.mqtt_connected
                 and not device.is_group
                 and self._mqtt_heard_from(device_id)
@@ -6295,6 +6453,11 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             else:
                 _LOGGER.debug("Clearing %s for %s (device turned off)", label, device_id)
 
+    def _is_heater(self, device_id: str) -> bool:
+        """Return True when the device is a heater."""
+        device = self._devices.get(device_id)
+        return device is not None and device.is_heater
+
     def _apply_optimistic_update(
         self,
         device_id: str,
@@ -6339,8 +6502,14 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         elif isinstance(command, TemperatureSettingCommand):
             state.heater_temperature = command.temperature
             state.heater_auto_stop = command.auto_stop
+            if self._is_heater(device_id):
+                # The heater switches itself on for a setpoint write (#265).
+                state.apply_optimistic_power(True)
         elif isinstance(command, WorkModeCommand):
             state.apply_optimistic_work_mode(command.work_mode, command.mode_value)
+            if self._is_heater(device_id):
+                # Same for a heat-level write (#265); fans and purifiers keep their power.
+                state.apply_optimistic_power(True)
         elif isinstance(command, OscillationCommand):
             state.apply_optimistic_oscillation(command.oscillating)
         elif isinstance(command, MusicModeCommand):
@@ -6362,7 +6531,11 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             if command.toggle_instance == INSTANCE_DREAMVIEW:
                 state.apply_optimistic_dreamview(command.enabled)
             elif command.toggle_instance == INSTANCE_THERMOSTAT_TOGGLE:
-                state.heater_auto_stop = 1 if command.enabled else 0
+                thermostat_device = self._devices.get(device_id)
+                if thermostat_device is not None and thermostat_device.sku.upper() in HEATER_AUTO_STOP_STRUCT_SKUS:
+                    state.heater_thermostat = command.enabled
+                else:
+                    state.heater_auto_stop = 1 if command.enabled else 0
             elif command.toggle_instance == INSTANCE_FAN_TOGGLE:
                 state.ceiling_fan_on = command.enabled
             elif command.toggle_instance == INSTANCE_REVERSE_AIRFLOW:
@@ -6536,6 +6709,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             self._wd_poll_unsub()
             self._wd_poll_unsub = None
         # Cancel probe-thermometer polling
+        if self._probe_poll_task and not self._probe_poll_task.done():
+            self._probe_poll_task.cancel()
+        self._probe_poll_task = None
         if self._probe_poll_unsub:
             self._probe_poll_unsub()
             self._probe_poll_unsub = None

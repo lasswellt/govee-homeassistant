@@ -361,7 +361,8 @@ class GoveeHeaterTemperatureNumber(GoveeEntity, RestoreNumber):
         Args:
             value: Temperature value in Celsius.
         """
-        temperature = int(value)
+        # round, not int: 69.8 °F arrives as 20.999999999999996 °C (#265).
+        temperature = round(min(max(value, self.native_min_value), self.native_max_value))
 
         # Preserve the current auto_stop setting so the API doesn't ignore the
         # command: polled, or the switch's restored/last set value (both live

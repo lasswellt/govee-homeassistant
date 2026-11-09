@@ -235,6 +235,11 @@ def _device_diag(
             "ble": coordinator.is_ble_available(device_id),
         },
         "transport_health": _transport_health(coordinator, device_id),
+        # Whether the device has its own AWS IoT topic or only its gateway's
+        # (booleans only, never the topic), so a download shows which device
+        # the account's topics belong to (#222).
+        "has_mqtt_topic": coordinator.has_device_topic(device_id),
+        "has_gateway_route": coordinator.gateway_route(device_id) is not None,
         # How segment_count was derived (parser, size.max clamp, SKU override),
         # so an over-reported count is diagnosable from a download alone.
         "segment_resolution": device.segment_count_resolution,
@@ -293,6 +298,9 @@ def _runtime_diag(coordinator: GoveeCoordinator) -> dict[str, Any]:
             # Whether the sweep stopped because AWS IoT refuses every status
             # query on the account, not one device's.
             "status_queries_refused": coordinator.mqtt_status_queries_refused,
+            # Gateway readings that reached the cloud while this session got
+            # nothing: the silence evidence for hub-only accounts (#222).
+            "missed_gateway_pushes_since_connect": coordinator.mqtt_missed_pushes_since_connect,
             # Every inbound account-topic message, counted before any
             # filtering, and the last device-attributed state message — lets
             # a download tell a completely silent session (no inbound at

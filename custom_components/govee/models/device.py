@@ -1399,6 +1399,22 @@ class GoveeDevice:
                 return cap
         return None
 
+    def with_synthetic_color_rgb(self) -> GoveeDevice:
+        """Return a copy with a colorRgb capability added when the API omitted it (#240).
+
+        Returns:
+            This device unchanged when it already has colorRgb, else a copy
+            with a synthesised INTEGER 0..16777215 colorRgb capability.
+        """
+        if self.supports_rgb:
+            return self
+        cap = GoveeCapability(
+            type=CAPABILITY_COLOR_SETTING,
+            instance=INSTANCE_COLOR_RGB,
+            parameters={"dataType": "INTEGER", "range": {"min": 0, "max": 16777215}},
+        )
+        return replace(self, capabilities=(*self.capabilities, cap))
+
     @classmethod
     def from_api_response(cls, data: dict[str, Any]) -> GoveeDevice:
         """Create GoveeDevice from API response data.

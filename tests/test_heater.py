@@ -733,11 +733,14 @@ class TestAutoStopSwitchEntity:
     @pytest.fixture
     def auto_stop_entity(self, mock_coordinator, mock_heater_device):
         """Create an auto-stop switch entity for testing."""
+        import dataclasses
+
         from custom_components.govee.switch import GoveeAutoStopSwitchEntity
 
+        # A non-H7130 SKU: the H7130 sends the STRUCT autoStop field instead (#265).
         entity = GoveeAutoStopSwitchEntity(
             coordinator=mock_coordinator,
-            device=mock_heater_device,
+            device=dataclasses.replace(mock_heater_device, sku="H713B"),
         )
         entity.hass = MagicMock()
         entity.async_write_ha_state = MagicMock()

@@ -285,6 +285,12 @@
       "govee_heater_auto_stop": {
         "name": "Auto stop"
       },
+      "govee_heater_thermostat": {
+        "name": "Thermostat"
+      },
+      "govee_heater_oscillation": {
+        "name": "Oscillation"
+      },
       "govee_appliance_power": {
         "name": "Power"
       },
@@ -725,7 +731,7 @@
     },
     "mqtt_silent": {
       "title": "Govee real-time updates are silent for {entry_title}",
-      "description": "The real-time (AWS IoT) session for {entry_title} is connected, but in {minutes} minutes not one message arrived, although the integration asked the devices for their status several times. Reconnecting once did not help. Everything keeps working over polling.\n\nThis usually means the saved account sign-in no longer gets updates. Go to the integration page and select **Reconfigure** to sign in again, which fetches fresh real-time credentials. This repair clears itself as soon as a real-time message arrives."
+      "description": "The real-time (AWS IoT) session for {entry_title} is connected, but in {minutes} minutes not one message arrived, although new readings from your devices reached Govee's cloud or the integration asked them for their status. Reconnecting once did not help. Everything keeps working over polling.\n\nThis usually means the saved account sign-in no longer gets updates. Go to the integration page and select **Reconfigure** to sign in again, which fetches fresh real-time credentials. This repair clears itself as soon as a real-time message arrives."
     },
     "mqtt_2fa_required": {
       "title": "Govee account requires verification",

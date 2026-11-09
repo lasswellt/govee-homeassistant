@@ -357,6 +357,11 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
                 )
             scene_id, scene_name = scene_info
             await self._async_send_command(SceneCommand(scene_id=scene_id, scene_name=scene_name))
+            # The scene turns the light on and sets its colours, but not the
+            # brightness, so a requested brightness goes after it
+            if ATTR_BRIGHTNESS in kwargs:
+                device_brightness = self._ha_to_device_brightness(kwargs[ATTR_BRIGHTNESS])
+                await self._async_send_command(BrightnessCommand(brightness=device_brightness))
             return
 
         # Handle brightness
