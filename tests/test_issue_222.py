@@ -125,6 +125,28 @@ class TestSilence:
         assert coord._mqtt_silent_reconnected is False
 
     @pytest.mark.asyncio
+    async def test_repair_cleared_after_reload(self, sleeps, issues):
+        _created, deleted = issues
+        coord, _client, _ = _silent_coord()
+        # A fresh coordinator never raised the repair itself.
+        assert coord._mqtt_silent_reported is False
+
+        coord._on_mqtt_state_update("unknown-device", {})
+        coord._on_mqtt_state_update("unknown-device", {})
+
+        deleted.assert_called_once_with(coord.hass, coord._config_entry)
+
+    @pytest.mark.asyncio
+    async def test_repair_cleared_when_inbound_resumes(self, sleeps, issues):
+        _created, deleted = issues
+        coord, client, _ = _silent_coord()
+        client.inbound_total = 4
+
+        await coord._async_check_mqtt_silence()
+
+        deleted.assert_called_once_with(coord.hass, coord._config_entry)
+
+    @pytest.mark.asyncio
     async def test_inbound_since_connect_is_not_silent(self, sleeps, issues):
         created, _deleted = issues
         coord, client, _ = _silent_coord()

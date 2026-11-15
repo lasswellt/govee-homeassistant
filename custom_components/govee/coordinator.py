@@ -425,6 +425,8 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
     _mqtt_silence_unsub: CALLBACK_TYPE | None = None
     _mqtt_silent_reconnected = False
     _mqtt_silent_reported = False
+    # True until a session arms the check, so only a live session clears the repair.
+    _mqtt_silent_cleared = True
     # Gateway readings the cloud received while the session got nothing, the
     # last device-side lastTime seen per thermometer, and a guard so the timer
     # and the BFF refresh never handle one silent session twice (#222).
@@ -4206,6 +4208,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         client = self._mqtt_client
         self._mqtt_queries_since_connect = 0
         self._mqtt_missed_pushes_since_connect = 0
+        self._mqtt_silent_cleared = False
         self._mqtt_inbound_at_connect = client.inbound_total if client is not None else 0
         if self._mqtt_silence_unsub is not None:
             self._mqtt_silence_unsub()
@@ -4217,8 +4220,12 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
     def _note_mqtt_inbound(self) -> None:
         """A message arrived: the session is not silent, so clear the watchdog state."""
         self._mqtt_silent_reconnected = False
-        if self._mqtt_silent_reported:
-            self._mqtt_silent_reported = False
+        self._mqtt_silent_reported = False
+        # The repair outlives a reload (it is not persistent but the registry is
+        # per-run state of the old coordinator), so delete it idempotently, once
+        # per session rather than on every message (#282).
+        if not self._mqtt_silent_cleared:
+            self._mqtt_silent_cleared = True
             async_delete_mqtt_silent_issue(self.hass, self._config_entry)
 
     async def _async_check_mqtt_silence(self, _now: Any = None) -> None:
@@ -4273,6 +4280,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 return
             if not self._mqtt_silent_reported:
                 self._mqtt_silent_reported = True
+                self._mqtt_silent_cleared = False
                 async_create_mqtt_silent_issue(self.hass, self._config_entry, minutes)
         finally:
             self._mqtt_silence_handling = False
