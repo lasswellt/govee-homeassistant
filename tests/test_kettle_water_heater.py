@@ -38,7 +38,6 @@ from custom_components.govee.switch import GoveeAppliancePowerSwitchEntity
 from custom_components.govee import water_heater as water_heater_module
 from custom_components.govee.water_heater import (
     GoveeKettleWaterHeater,
-    _LegacyKettleWaterHeater,
     _NativeKettleWaterHeater,
 )
 
@@ -52,6 +51,9 @@ from .kettle_samples import (
     mqtt_frames,
 )
 from .test_setup_entry import _setup_entry
+
+_LegacyKettleWaterHeater = getattr(water_heater_module, "_LegacyKettleWaterHeater", None)
+legacy_only = pytest.mark.skipif(_LegacyKettleWaterHeater is None, reason="core has native temperatures")
 
 OPERATIONS = [
     "off",
@@ -288,6 +290,7 @@ class TestNativeTemperature:
         installed = hasattr(water_heater_module.WaterHeaterEntity, "native_temperature_unit")
         assert water_heater_module._NATIVE_TEMPERATURE is installed
         assert GoveeKettleWaterHeater is (_NativeKettleWaterHeater if installed else _LegacyKettleWaterHeater)
+        assert (_LegacyKettleWaterHeater is None) is installed
 
     @pytest.mark.parametrize(("fahrenheit", "unit"), [(True, "\u00b0F"), (False, "\u00b0C")])
     def test_native_properties(self, fahrenheit, unit):
@@ -303,6 +306,7 @@ class TestNativeTemperature:
         old = ("temperature_unit", "current_temperature", "target_temperature")
         assert self._implemented(_NativeKettleWaterHeater, old) == []
 
+    @legacy_only
     def test_legacy_class_does_not_implement_the_native_names(self):
         new = ("native_temperature_unit", "native_current_temperature", "native_target_temperature")
         assert self._implemented(_LegacyKettleWaterHeater, new) == []

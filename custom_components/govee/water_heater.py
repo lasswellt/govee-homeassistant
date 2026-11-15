@@ -174,9 +174,8 @@ class _KettleWaterHeaterBase(KettleModeMixin, WaterHeaterEntity):
         """Set the target, in the entity's unit; this selects manual.
 
         Setting the target puts the kettle in manual, so a target together
-        with any other mode is refused. Assumption: on HA 2026.11 the service
-        value is still in the entity's native unit (the change notes are
-        silent), so the clamp and the command stay in that unit.
+        with any other mode is refused. Core converts the service value to the
+        entity's native unit first, so the clamp and the command stay in it.
         """
         operation_mode = kwargs.get(ATTR_OPERATION_MODE)
         temperature = kwargs.get(ATTR_TEMPERATURE)
@@ -191,25 +190,6 @@ class _KettleWaterHeaterBase(KettleModeMixin, WaterHeaterEntity):
         state = self.device_state
         if operation_mode is not None and self._has_power and state is not None and not state.power_state:
             await self._async_send_command(PowerCommand(power_on=True))
-
-
-class _LegacyKettleWaterHeater(_KettleWaterHeaterBase):
-    """Cores before 2026.11: the original property names."""
-
-    @property
-    def temperature_unit(self) -> str:
-        """The kettle's own unit."""
-        return self._kettle_unit
-
-    @property
-    def current_temperature(self) -> float | None:
-        """Water temperature, in the entity's unit."""
-        return self._water_temperature
-
-    @property
-    def target_temperature(self) -> float | None:
-        """Target temperature, in the entity's unit."""
-        return self._target
 
 
 class _NativeKettleWaterHeater(_KettleWaterHeaterBase):
@@ -231,4 +211,28 @@ class _NativeKettleWaterHeater(_KettleWaterHeaterBase):
         return self._target
 
 
-GoveeKettleWaterHeater = _NativeKettleWaterHeater if _NATIVE_TEMPERATURE else _LegacyKettleWaterHeater
+GoveeKettleWaterHeater: type[_KettleWaterHeaterBase]
+if _NATIVE_TEMPERATURE:
+    GoveeKettleWaterHeater = _NativeKettleWaterHeater
+else:
+    # Defined only here: on 2026.11+ merely subclassing with the old names
+    # makes the core log the deprecation warnings (#284).
+    class _LegacyKettleWaterHeater(_KettleWaterHeaterBase):
+        """Cores before 2026.11: the original property names."""
+
+        @property
+        def temperature_unit(self) -> str:
+            """The kettle's own unit."""
+            return self._kettle_unit
+
+        @property
+        def current_temperature(self) -> float | None:
+            """Water temperature, in the entity's unit."""
+            return self._water_temperature
+
+        @property
+        def target_temperature(self) -> float | None:
+            """Target temperature, in the entity's unit."""
+            return self._target
+
+    GoveeKettleWaterHeater = _LegacyKettleWaterHeater
