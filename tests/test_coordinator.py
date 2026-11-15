@@ -1569,6 +1569,8 @@ class TestTryBleCommand:
         from custom_components.govee.coordinator import GoveeCoordinator
 
         coord = object.__new__(GoveeCoordinator)
+        coord._ble_connect_backoff_until = {}
+        coord._ble_connect_failures = {}
         coord._ble_devices = {}
         coord._transport = TransportHealthTracker()
         coord._devices = {}

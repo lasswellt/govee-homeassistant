@@ -561,6 +561,11 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # BLE command allowlist" — avoid spamming the log on every advert.
         self._ble_ignored_skus_logged: set[str] = set()
 
+        # Per-device BLE connect back-off (#246): a failing link (no free
+        # connection slot, out of range) must not cost every command a retry.
+        self._ble_connect_backoff_until: dict[str, float] = {}
+        self._ble_connect_failures: dict[str, int] = {}
+
         # BLE advertisement subscription + correlation handler (audit H1).
         self._ble_handler = BleAdvertisementHandler(self)
 
@@ -5686,7 +5691,12 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             # BLE-first dispatch: if a BLE transport is available for this
             # device, try it before the cloud REST API. BLE is ~10x faster
             # (~50ms local vs ~500ms cloud) and works when internet is down.
-            if HAS_BLUETOOTH and device_id in self._ble_devices and self._ble_write_eligible(device_id):
+            if (
+                HAS_BLUETOOTH
+                and device_id in self._ble_devices
+                and self._ble_write_eligible(device_id)
+                and not self._lan_can_carry(device_id, device, command)
+            ):
                 if await self._try_ble_command(device_id, command):
                     if device.sku == "H6104":
                         self._h6104_last_write[device_id] = dt_util.utcnow()
@@ -6382,6 +6392,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         advertisement (device out of range / asleep) would otherwise be sent to
         blindly and never fall through to LAN/MQTT/REST (#198).
         """
+        until = self._ble_connect_backoff_until.get(device_id)
+        if until is not None and time.monotonic() < until:
+            return False
         health = self._transport.get(device_id, "ble")
         if self._h6104_idle_reconnect_eligible(device_id):
             return True
@@ -6390,6 +6403,31 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             if client is not None and client.supports_readback is True and client.is_connected is True:
                 return True
         return health is not None and health.is_available
+
+    def _lan_can_carry(self, device_id: str, device: GoveeDevice, command: DeviceCommand) -> bool:
+        """Return True when a healthy LAN transport can carry this command (#246).
+
+        BLE is then skipped: LAN is acknowledged by a readback and does not
+        compete for the lamp's few Bluetooth connection slots.
+        """
+        if self._lan_client is None or device.is_group or looks_like_group_id(device_id):
+            return False
+        if device_id not in self._lan_devices:
+            return False
+        if command_to_lan(command, device.sku, device.brightness_range) is None:
+            return False
+        health = self._transport.get(device_id, "lan")
+        if device_id not in self._lan_write_only and (health is None or not health.is_available):
+            return False
+        return not self._lan_writes_suppressed(device_id)
+
+    def _ble_backoff_start(self, device_id: str) -> None:
+        """Back off BLE after a failed write: 300 s, doubling per consecutive failure, cap 3600 s (#246)."""
+        failures = self._ble_connect_failures.get(device_id, 0) + 1
+        self._ble_connect_failures[device_id] = failures
+        delay = min(300.0 * 2 ** (failures - 1), 3600.0)
+        self._ble_connect_backoff_until[device_id] = time.monotonic() + delay
+        _LOGGER.debug("BLE backed off for %s for %.0f s after %d consecutive failures", device_id, delay, failures)
 
     async def _try_ble_command(self, device_id: str, command: DeviceCommand) -> bool:
         """Attempt to send a command via BLE. Returns True on success.
@@ -6463,8 +6501,11 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             )
             self._record_transport_failure(device_id, "ble", str(err))
             self._record_local_command(device_id, ble_sku, "ble", command, delivered=False, detail=str(err))
+            self._ble_backoff_start(device_id)
             return False
         else:
+            self._ble_connect_failures.pop(device_id, None)
+            self._ble_connect_backoff_until.pop(device_id, None)
             _LOGGER.debug("BLE command succeeded for %s: %s", device_id, type(command).__name__)
             # BLE writes are unacked (response=False), so this is a send, not a
             # confirmed receive — `last_success_ts` is the advertisement clock

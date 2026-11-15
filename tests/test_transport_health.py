@@ -21,6 +21,8 @@ from custom_components.govee.transport_health import TransportHealthTracker
 def _bare_coordinator() -> GoveeCoordinator:
     """Construct a coordinator without running DataUpdateCoordinator.__init__."""
     coord = object.__new__(GoveeCoordinator)
+    coord._ble_connect_backoff_until = {}
+    coord._ble_connect_failures = {}
     coord._devices = {}
     coord._states = {}
     coord._ble_devices = {}
