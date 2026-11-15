@@ -1,8 +1,8 @@
-"""Water heater platform for the Govee H7175 kettle.
+"""Water heater platform for the Govee H7175 and H7170 kettles.
 
-One ``water_heater`` entity per H7175, with the target temperature, the brew
-modes and power. Other kettles (H717A, H7170) keep their power switch and
-temperature sensor only.
+One ``water_heater`` entity per decoded kettle (``KETTLE_FRAME_SKUS``), with the
+target temperature, the brew modes and power. Other kettles (H717A) keep their
+power switch and temperature sensor only.
 
 Units. The entity works in the unit the kettle reports (see
 :meth:`KettleManager.reports_fahrenheit`) and Home Assistant converts for

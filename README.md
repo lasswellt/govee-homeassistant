@@ -308,7 +308,7 @@ Some gateway‑bridged sensors are listed by Govee with no reading attached. Whe
 
 All kettles get a power switch and a water‑temperature sensor whose unit follows what the kettle declares, even when the API‑unit option is set.
 
-**H7175.** A **water heater** entity carries the target temperature, the brew modes and power; the existing power switch keeps its entity and is named "Power". Mode states are fixed keys, shown translated: `off`, `custom_1`–`custom_4`, `green_tea`, `oolong_tea`, `coffee`, `black_tea_boil` and `manual` (a target set directly, with no preset). Choosing a mode while the kettle is off switches it on in that mode; setting the target selects `manual`. A **Brew mode** selector offers the same keys and only selects the mode, as the Govee app does; its options are what automations and dashboard buttons should use (`select.select_option` with `option: green_tea`, ...).
+**H7175 and H7170.** A **water heater** entity carries the target temperature, the brew modes and power; the existing power switch keeps its entity and is named "Power". Mode states are fixed keys, shown translated: `off`, `custom_1`–`custom_4`, `green_tea`, `oolong_tea`, `coffee`, `black_tea_boil` and `manual` (a target set directly, with no preset). Choosing a mode while the kettle is off switches it on in that mode; setting the target selects `manual`. A **Brew mode** selector offers the same keys and only selects the mode, as the Govee app does; its options are what automations and dashboard buttons should use (`select.select_option` with `option: green_tea`, ...).
 
 A kettle starts heating on command but does not report until asked, so after a command the integration re‑reads it twice (after 5 and 20 seconds) and polls a heating kettle every cycle, both only while the daily request budget allows. A value the kettle pushed, or a command just set, is kept over a cloud read that still shows the old value for up to 45 seconds.
 
@@ -316,7 +316,7 @@ With account login the kettle's real‑time push updates the water temperature a
 
 **Custom slot labels.** Govee's API only calls the custom slots Custom 1–4. In ⚙️ Configure → *Kettle slot labels* you can give them labels (for example the names from the Govee app). Labels are display text only: the mode stays `custom_1`–`custom_4`, so automations keep working when a label changes, and the labels appear in the water heater's and Brew mode selector's `labels` attribute for dashboards.
 
-The H717A and H7170 keep their power switch and temperature sensor; their frames are unknown.
+The H717A keeps its power switch and temperature sensor; its frames are unknown. The H7170 shares the H7175 frames (verified on hardware); its button events are not confirmed.
 
 ---
 

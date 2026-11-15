@@ -77,11 +77,13 @@ class TestFrames:
 
 
 class TestModel:
-    @pytest.mark.parametrize(
-        ("sku", "decoded"), [("H7175", True), ("h7175", True), ("H717A", False), ("H7170", False)]
-    )
-    def test_only_the_h7175_is_decoded(self, sku, decoded):
+    @pytest.mark.parametrize(("sku", "decoded"), [("H7175", True), ("h7175", True), ("H717A", False), ("H7170", True)])
+    def test_only_frame_kettles_are_decoded(self, sku, decoded):
         assert _device(sku).decodes_kettle_frames is decoded
+
+    def test_h7170_device_decodes_kettle_frames(self):
+        device = GoveeDevice.from_api_response({**H7175_DEVICE, "sku": "H7170"})
+        assert device.decodes_kettle_frames is True
 
     def test_needs_a_kettle(self):
         light = GoveeDevice.from_api_response({**H7175_DEVICE, "type": "devices.types.light"})

@@ -41,10 +41,11 @@ PRESENCE_SENSOR_SKUS = frozenset({"H5127"})
 PUMP_DEHUMIDIFIER_SKUS = frozenset({"H7152"})
 
 # Kettles whose AWS IoT push (``sta`` temperatures and BLE-format status
-# frames, see kettle/frames.py) is decoded. Verified on the H7175 only: other
-# kettles (H717A, H7170) share the capability family but their frames are
-# unknown, so their pushes are handled as before.
-KETTLE_FRAME_SKUS = frozenset({"H7175"})
+# frames, see kettle/frames.py) is decoded. Verified on the H7175 and the
+# H7170 (#278, same frames, correct 104-212 F on hardware): the H717A shares
+# the capability family but its frames are unknown, so its pushes are handled
+# as before.
+KETTLE_FRAME_SKUS = frozenset({"H7170", "H7175"})
 
 # Smart outlets that report live voltage/current/power/energy over AWS IoT
 # push frames rather than any capability (issue #200). Detection is
