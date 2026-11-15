@@ -620,6 +620,11 @@ class GoveeDeviceState:
 
         if "onOff" in data and not ceiling_fan:
             self.power_state = bool(data["onOff"])
+            if not self.power_state:
+                # Music mode ends with power (#286)
+                self.music_mode_enabled = False
+                self.music_mode_value = None
+                self.music_mode_name = None
 
         if "brightness" in data:
             parsed_brightness = _coerce_int(data["brightness"])
@@ -925,6 +930,11 @@ class GoveeDeviceState:
         """Apply optimistic power state update."""
         self.power_state = power_on
         self._stamp_optimistic()
+        if not power_on:
+            # Music mode ends with power (#286)
+            self.music_mode_enabled = False
+            self.music_mode_value = None
+            self.music_mode_name = None
 
     def apply_optimistic_brightness(self, brightness: int) -> None:
         """Apply optimistic brightness update."""
@@ -939,6 +949,10 @@ class GoveeDeviceState:
         # Setting a color overrides any running scene
         self.active_scene = None
         self.active_scene_name = None
+        # ...and music mode (#286)
+        self.music_mode_enabled = False
+        self.music_mode_value = None
+        self.music_mode_name = None
 
     def apply_optimistic_color_temp(self, kelvin: int) -> None:
         """Apply optimistic color temperature update."""
@@ -948,6 +962,10 @@ class GoveeDeviceState:
         # Setting color temp overrides any running scene
         self.active_scene = None
         self.active_scene_name = None
+        # ...and music mode (#286)
+        self.music_mode_enabled = False
+        self.music_mode_value = None
+        self.music_mode_name = None
 
     def apply_optimistic_scene(self, scene_id: str, scene_name: str | None = None) -> None:
         """Apply optimistic scene activation.

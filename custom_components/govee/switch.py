@@ -668,8 +668,9 @@ class GoveeMusicModeSwitchEntity(GoveeEntity, SwitchEntity):
     def is_on(self) -> bool:
         """Return True if music mode is on."""
         state = self.device_state
-        if state and state.music_mode_enabled is not None:
-            return state.music_mode_enabled
+        if state:
+            # The state is authoritative; None means music mode is not running (#286)
+            self._is_on = bool(state.music_mode_enabled)
         return self._is_on
 
     async def async_turn_on(self, **kwargs: Any) -> None:

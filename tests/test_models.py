@@ -939,6 +939,14 @@ class TestGoveeDeviceState:
         assert state.active_scene is None
         assert state.active_scene_name is None
 
+    def test_music_mode_cleared_by_mqtt_power_off(self):
+        """An MQTT power-off push ends music mode (#286)."""
+        state = GoveeDeviceState.create_empty("test_id")
+        state.apply_optimistic_music_mode(True)
+        state.update_from_mqtt({"onOff": 0})
+        assert state.music_mode_enabled is False
+        assert state.music_mode_value is None
+
     def test_scene_clears_color_and_color_temp(self):
         """Test activating scene clears stale color and color temp.
 

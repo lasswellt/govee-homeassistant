@@ -35,6 +35,7 @@ from custom_components.govee.models import (
     GoveeDevice,
     GoveeDeviceState,
     MusicModeCommand,
+    RGBColor,
     PowerCommand,
     TemperatureSettingCommand,
     ToggleCommand,
@@ -761,16 +762,60 @@ class TestMusicModeSwitch:
         entity._is_on = optimistic
         assert entity.is_on is expected
 
-    def test_is_on_falls_back_to_optimistic(self):
-        entity, _, _ = self._entity(use_rest_api=True, state=_online_state(_struct_music_light()))
+    def test_music_switch_off_after_power_off(self):
+        state = _online_state(_struct_music_light())
+        state.apply_optimistic_music_mode(True)
+        entity, _, _ = self._entity(use_rest_api=True, state=state)
         entity._is_on = True
         assert entity.is_on is True
+        state.apply_optimistic_power(False)
+        assert entity.is_on is False
+        assert entity._is_on is False
+
+    def test_music_switch_off_after_color(self):
+        state = _online_state(_struct_music_light())
+        state.apply_optimistic_music_mode(True)
+        entity, _, _ = self._entity(use_rest_api=True, state=state)
+        entity._is_on = True
+        state.apply_optimistic_color(RGBColor(255, 0, 0))
+        assert entity.is_on is False
+
+    def test_music_switch_off_after_color_temp(self):
+        state = _online_state(_struct_music_light())
+        state.apply_optimistic_music_mode(True)
+        entity, _, _ = self._entity(use_rest_api=True, state=state)
+        entity._is_on = True
+        state.apply_optimistic_color_temp(4000)
+        assert entity.is_on is False
+
+    def test_music_switch_stays_on_after_brightness(self):
+        state = _online_state(_struct_music_light())
+        state.apply_optimistic_music_mode(True)
+        entity, _, _ = self._entity(use_rest_api=True, state=state)
+        state.apply_optimistic_brightness(40)
+        assert entity.is_on is True
+
+    def test_is_on_falls_back_to_optimistic_without_state(self):
+        entity, _, _ = self._entity(use_rest_api=True, state=None)
+        entity._is_on = True
+        assert entity.is_on is True
+
+    def test_is_on_false_when_state_unreported(self):
+        entity, _, _ = self._entity(use_rest_api=True, state=_online_state(_struct_music_light()))
+        entity._is_on = True
+        assert entity.is_on is False
 
     async def test_rest_turn_on_reuses_reported_sensitivity_and_mode(self):
         state = _online_state(_struct_music_light())
         state.music_sensitivity = 80
         state.music_mode_value = 6
         entity, coordinator, device = self._entity(use_rest_api=True, state=state)
+
+        async def _accept(_device_id, _command):
+            state.apply_optimistic_music_mode_struct(6, 80)  # the coordinator's optimistic update
+            return True
+
+        coordinator.async_control_device = AsyncMock(side_effect=_accept)
 
         await entity.async_turn_on()
 
