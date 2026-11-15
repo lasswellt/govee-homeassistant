@@ -1,7 +1,7 @@
 {
   "$schema": "blitz-tasks/1.0",
   "plan": "nov-sweep",
-  "updated": "2026-11-15T03:18:26Z",
+  "updated": "2026-11-15T03:19:17Z",
   "tasks": [
     {
       "id": "T-001",
@@ -1425,7 +1425,7 @@
       "blocked_reason": null,
       "attempts": 0,
       "last_verify": {
-        "ts": "2026-11-15T02:11:39Z",
+        "ts": "2026-11-15T03:19:17Z",
         "ok": true,
         "failed": "",
         "tail": "",
@@ -1433,30 +1433,30 @@
           {
             "cmd": ".cc-sessions/venv312/bin/pytest -q -n auto -p no:cacheprovider -o addopts= --cov=custom_components.govee --cov-report=json:.cc-sessions/cov.json --cov-fail-under=95 tests && .cc-sessions/venv312/bin/python -c \"import json; d=json.load(open('.cc-sessions/cov.json'))['files']; bad=[f for f,v in d.items() if v['summary']['percent_covered']<96]; cf=[v['summary']['percent_covered'] for f,v in d.items() if f.endswith('config_flow.py')][0]; assert not bad and cf==100, (bad, cf)\"",
             "exit": 0,
-            "duration_ms": 35646,
-            "tail": " 93%]\n........................................................................ [ 94%]\n........................................................................ [ 96%]\n........................................................................ [ 97%]\n........................../home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/coverage/inorout.py:524: CoverageWarning: Module custom_components.govee was previously imported, but not measured (module-not-measured)\n  self.warn(msg, slug=\"module-not-measured\")\n....../home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/coverage/inorout.py:524: CoverageWarning: Module custom_components.govee was previously imported, but not measured (module-not-measured)\n  self.warn(msg, slug=\"module-not-measured\")\n....../home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/coverage/inorout.py:524: CoverageWarning: Module custom_components.govee was previously imported, but not measured (module-not-measured)\n  self.warn(msg, slug=\"module-not-measured\")\n../home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/coverage/inorout.py:524: CoverageWarning: Module custom_components.govee was previously imported, but not measured (module-not-measured)\n  self.warn(msg, slug=\"module-not-measured\")\n..../home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/coverage/inorout.py:524: CoverageWarning: Module custom_components.govee was previously imported, but not measured (module-not-measured)\n  self.warn(msg, slug=\"module-not-measured\")\n............................ [ 99%]\n..............................                                           [100%]\n\n---------- coverage: platform linux, python 3.12.14-final-0 ----------\nCoverage JSON written to file .cc-sessions/cov.json\n\nRequired test coverage of 95% reached. Total coverage: 99.74%\n4566 passed in 34.20s",
-            "recorded_at": "2026-11-15T02:11:25Z"
+            "duration_ms": 29297,
+            "tail": "................................... [ 87%]\n........................................................................ [ 89%]\n........................................................................ [ 90%]\n........................................................................ [ 92%]\n........................................................................ [ 94%]\n........................................................................ [ 95%]\n........................................................................ [ 97%]\n........................................................................ [ 98%]\n............../home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/coverage/inorout.py:524: CoverageWarning: Module custom_components.govee was previously imported, but not measured (module-not-measured)\n  self.warn(msg, slug=\"module-not-measured\")\n....../home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/coverage/inorout.py:524: CoverageWarning: Module custom_components.govee was previously imported, but not measured (module-not-measured)\n  self.warn(msg, slug=\"module-not-measured\")\n/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/coverage/inorout.py:524: CoverageWarning: Module custom_components.govee was previously imported, but not measured (module-not-measured)\n  self.warn(msg, slug=\"module-not-measured\")\n.........../home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/coverage/inorout.py:524: CoverageWarning: Module custom_components.govee was previously imported, but not measured (module-not-measured)\n  self.warn(msg, slug=\"module-not-measured\")\n............................              [100%]\n\n---------- coverage: platform linux, python 3.12.14-final-0 ----------\nCoverage JSON written to file .cc-sessions/cov.json\n\nRequired test coverage of 95% reached. Total coverage: 99.74%\n4595 passed in 27.71s",
+            "recorded_at": "2026-11-15T03:19:03Z"
           },
           {
             "cmd": ".cc-sessions/venv312/bin/flake8 . && .cc-sessions/venv312/bin/mypy custom_components/govee && .cc-sessions/venv312/bin/black --check .",
             "exit": 0,
-            "duration_ms": 970,
+            "duration_ms": 966,
             "tail": "Success: no issues found in 58 source files\nAll done! ✨ 🍰 ✨\n205 files would be left unchanged.",
-            "recorded_at": "2026-11-15T02:11:26Z"
+            "recorded_at": "2026-11-15T03:19:04Z"
           },
           {
             "cmd": ".cc-sessions/venv314/bin/pytest -q -n auto --no-cov -p no:cacheprovider -o addopts= tests",
             "exit": 0,
-            "duration_ms": 13318,
-            "tail": "....................................... [ 63%]\n........................................................................ [ 64%]\n........................................................................ [ 66%]\n........................................................................ [ 67%]\n........................................................................ [ 69%]\n........................................................................ [ 70%]\n........................................................................ [ 72%]\n........................................................................ [ 74%]\n........................................................................ [ 75%]\n........................................................................ [ 77%]\n........................................................................ [ 78%]\n........................................................................ [ 80%]\n........................................................................ [ 81%]\n........................................................................ [ 83%]\n........................................................................ [ 85%]\n........................................................................ [ 86%]\n........................................................................ [ 88%]\n........................................................................ [ 89%]\n........................................................................ [ 91%]\n..s..................................................................... [ 93%]\n........................................................................ [ 94%]\n........................................................................ [ 96%]\n........................................................................ [ 97%]\n........................................................................ [ 99%]\n..............................                                           [100%]\n4565 passed, 1 skipped in 11.32s",
-            "recorded_at": "2026-11-15T02:11:39Z"
+            "duration_ms": 12856,
+            "tail": "....................................... [ 62%]\n........................................................................ [ 64%]\n........................................................................ [ 65%]\n........................................................................ [ 67%]\n........................................................................ [ 68%]\n........................................................................ [ 70%]\n........................................................................ [ 72%]\n........................................................................ [ 73%]\n........................................................................ [ 75%]\n........................................................................ [ 76%]\n........................................................................ [ 78%]\n........................................................................ [ 79%]\n........................................................................ [ 81%]\n........................................................................ [ 83%]\n........................................................................ [ 84%]\n........................................................................ [ 86%]\n........................................................................ [ 87%]\n........................................................................ [ 89%]\n........................................................................ [ 90%]\n.................................s...................................... [ 92%]\n........................................................................ [ 94%]\n........................................................................ [ 95%]\n........................................................................ [ 97%]\n........................................................................ [ 98%]\n...........................................................              [100%]\n4594 passed, 1 skipped in 10.70s",
+            "recorded_at": "2026-11-15T03:19:17Z"
           },
           {
             "cmd": "test -z \"$(git log origin/main..HEAD --oneline)\"",
             "exit": 0,
             "duration_ms": 6,
             "tail": "",
-            "recorded_at": "2026-11-15T02:11:39Z"
+            "recorded_at": "2026-11-15T03:19:17Z"
           }
         ]
       },

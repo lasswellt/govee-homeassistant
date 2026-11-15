@@ -59,3 +59,5 @@ PR #271 tried on own lights: NOT tried; maintainer waived the hands-on gate 2026
 Ruling: descope; hands-on gate for #271 waived by the maintainer; release authorised tonight with #271 included (T-015, round 0)
 ## 2026-11-15T03:17:26Z build T-015 start (attempt 1)
 ## 2026-11-15T03:18:26Z verify T-015 ok=true (1ced350; Merge PR #271 without sync-upstream.yml; full suite 4595)
+## 2026-11-15T03:36:18Z verify T-021 ok=true (with #271: coverage 99.74 %, min 96.88 %, lint/types/3.14 clean)
+## 2026-11-15T03:36:18Z released v2026.11.0 via daily-release workflow_dispatch 43672193539 (maintainer: 'just release it'); reply queue posted and cleared (c79314c)
