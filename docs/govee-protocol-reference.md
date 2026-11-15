@@ -2554,7 +2554,7 @@ Same capability shape as the H5179 thermometer family — detection is capabilit
 }
 ```
 
-Unit caveat (confirmed across #78, #85, #91): Govee's API returns the temperature in **whatever unit the device is set to in the Govee app** (often °F) and includes **no unit field**. A device reporting `sensorTemperature: 84.2` is 84.2 °F (≈ 29 °C), not Celsius. The integration cannot auto-detect this; the "Temperature unit from Govee API" option (added v2026.5.7, default `celsius`) selects how raw readings are interpreted. SKUs observed reporting °F without unit metadata: **H5103, H5107, H5109, H5110, H5179, HS5106, HS5108**.
+Unit caveat (confirmed across #78, #85, #91): Govee's API returns the temperature in **whatever unit the device is set to in the Govee app** (often °F) and includes **no unit field**. A device reporting `sensorTemperature: 84.2` is 84.2 °F (≈ 29 °C), not Celsius. The integration cannot auto-detect this; the "Temperature unit from Govee API" option (added v2026.5.7, default `celsius`) selects how raw readings are interpreted. SKUs observed reporting °F without unit metadata: **H5103, H5105, H5107, H5108, H5109, H5110, H5179, HS5106, HS5108**.
 
 #### H5059 — Water Leak Sensor (`devices.types.sensor`)
 
