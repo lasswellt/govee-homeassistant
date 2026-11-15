@@ -2,28 +2,36 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.components.light import ColorMode
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.components.light import ATTR_EFFECT, ColorMode, LightEntityFeature
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
-from custom_components.govee.light import GoveeLightEntity
+from custom_components.govee.light import DIY_EFFECT_PREFIX, GoveeLightEntity
 from custom_components.govee.models import (
     BrightnessCommand,
+    ColorCommand,
+    ColorTempCommand,
     GoveeCapability,
     GoveeDevice,
+    GoveeDeviceState,
     RGBColor,
     SceneCommand,
 )
 from custom_components.govee.models.device import (
     CAPABILITY_COLOR_SETTING,
+    CAPABILITY_DYNAMIC_SCENE,
     CAPABILITY_ON_OFF,
     CAPABILITY_RANGE,
+    DEVICE_TYPE_LIGHT,
     INSTANCE_BRIGHTNESS,
     INSTANCE_COLOR_RGB,
     INSTANCE_COLOR_TEMP,
+    INSTANCE_DIY,
     INSTANCE_POWER,
+    INSTANCE_SCENE,
 )
 
 
@@ -284,6 +292,326 @@ class TestLightEffectSupport:
 
         mock_coordinator.async_get_scenes.assert_not_called()
         assert entity.effect_list is None
+
+
+@pytest.fixture
+def diy_capability() -> GoveeCapability:
+    """The DIY scene capability as the device list reports it."""
+    return GoveeCapability(type=CAPABILITY_DYNAMIC_SCENE, instance=INSTANCE_DIY, parameters={})
+
+
+@pytest.fixture
+def mock_diy_light_device(light_capabilities, diy_capability) -> GoveeDevice:
+    """A light with both catalog scenes and DIY scenes (like the H1630)."""
+    return GoveeDevice(
+        device_id="AA:BB:CC:DD:EE:FF:00:44",
+        sku="H1630",
+        name="Lantern",
+        device_type=DEVICE_TYPE_LIGHT,
+        capabilities=light_capabilities + (diy_capability,),
+        is_group=False,
+    )
+
+
+@pytest.fixture
+def mock_diy_only_device(light_capabilities, diy_capability) -> GoveeDevice:
+    """A light with DIY scenes but no catalog scene capability."""
+    capabilities = tuple(cap for cap in light_capabilities if cap.instance != INSTANCE_SCENE)
+    return GoveeDevice(
+        device_id="AA:BB:CC:DD:EE:FF:00:55",
+        sku="H6000",
+        name="DIY Only",
+        device_type=DEVICE_TYPE_LIGHT,
+        capabilities=capabilities + (diy_capability,),
+        is_group=False,
+    )
+
+
+@pytest.fixture
+def mock_diy_scenes() -> list[dict[str, Any]]:
+    """DIY scene data: the ID sits directly in "value"."""
+    return [
+        {"name": "Campfire", "value": 101},
+        {"name": "Sunset", "value": 102},
+    ]
+
+
+@pytest.fixture
+def diy_state(mock_diy_light_device) -> GoveeDeviceState:
+    """A real state object, so the optimistic transitions are exercised."""
+    state = GoveeDeviceState.create_empty(mock_diy_light_device.device_id)
+    state.power_state = True
+    state.color = RGBColor(255, 128, 64)
+    return state
+
+
+@pytest.fixture
+def diy_coordinator(mock_diy_light_device, diy_state, mock_scenes, mock_diy_scenes):
+    """Coordinator mock whose DIY send applies the optimistic state like the real one."""
+    coordinator = MagicMock()
+    coordinator.devices = {mock_diy_light_device.device_id: mock_diy_light_device}
+    coordinator.get_state.return_value = diy_state
+    coordinator.async_get_scenes = AsyncMock(return_value=mock_scenes)
+    coordinator.async_get_diy_scenes = AsyncMock(return_value=mock_diy_scenes)
+
+    async def control(device_id, command):
+        if isinstance(command, SceneCommand):
+            diy_state.apply_optimistic_scene(str(command.scene_id), command.scene_name)
+        elif isinstance(command, ColorCommand):
+            diy_state.apply_optimistic_color(command.color)
+        elif isinstance(command, ColorTempCommand):
+            diy_state.apply_optimistic_color_temp(command.kelvin)
+        return True
+
+    async def send_diy(device_id, scene_id, scene_name=""):
+        diy_state.apply_optimistic_diy_scene(str(scene_id))
+        return True
+
+    coordinator.async_control_device = AsyncMock(side_effect=control)
+    coordinator.async_send_diy_scene = AsyncMock(side_effect=send_diy)
+    return coordinator
+
+
+async def _add_to_hass(entity: GoveeLightEntity) -> None:
+    """Run async_added_to_hass without the HA base-class machinery."""
+    with (
+        patch.object(GoveeLightEntity.__bases__[0], "async_added_to_hass", new_callable=AsyncMock),
+        patch.object(entity, "async_get_last_state", new_callable=AsyncMock, return_value=None),
+    ):
+        await entity.async_added_to_hass()
+
+
+class TestLightDIYEffects:
+    """DIY scenes exposed as light effects next to the catalog scenes."""
+
+    def test_effect_feature_for_device_with_only_diy_scenes(self, diy_coordinator, mock_diy_only_device):
+        """A DIY scene capability alone is enough for an effect list."""
+        entity = GoveeLightEntity(diy_coordinator, mock_diy_only_device, enable_scenes=True)
+        assert entity.supported_features & LightEntityFeature.EFFECT
+
+    def test_no_effect_feature_when_diy_option_disabled(self, diy_coordinator, mock_diy_only_device):
+        """The enable_diy_scenes option turns the DIY effects off."""
+        entity = GoveeLightEntity(diy_coordinator, mock_diy_only_device, enable_scenes=True, enable_diy_scenes=False)
+        assert not entity.supported_features & LightEntityFeature.EFFECT
+
+    async def test_effect_list_has_catalog_then_prefixed_diy(self, diy_coordinator, mock_diy_light_device):
+        """DIY names get the prefix, so "Sunset" and "DIY: Sunset" are both listed."""
+        entity = GoveeLightEntity(diy_coordinator, mock_diy_light_device)
+        await _add_to_hass(entity)
+
+        diy_coordinator.async_get_diy_scenes.assert_called_once_with(mock_diy_light_device.device_id)
+        assert entity.effect_list == [
+            "Sunrise",
+            "Sunset",
+            "Party",
+            "Movie",
+            f"{DIY_EFFECT_PREFIX}Campfire",
+            f"{DIY_EFFECT_PREFIX}Sunset",
+        ]
+
+    async def test_diy_only_device_skips_catalog_fetch(self, diy_coordinator, mock_diy_only_device):
+        """Without the catalog capability only DIY scenes are fetched."""
+        entity = GoveeLightEntity(diy_coordinator, mock_diy_only_device)
+        await _add_to_hass(entity)
+
+        diy_coordinator.async_get_scenes.assert_not_called()
+        assert entity.effect_list == [f"{DIY_EFFECT_PREFIX}Campfire", f"{DIY_EFFECT_PREFIX}Sunset"]
+
+    async def test_diy_scenes_not_loaded_when_option_disabled(self, diy_coordinator, mock_diy_light_device):
+        """With the DIY option off, only the catalog scenes are effects."""
+        entity = GoveeLightEntity(diy_coordinator, mock_diy_light_device, enable_diy_scenes=False)
+        await _add_to_hass(entity)
+
+        diy_coordinator.async_get_diy_scenes.assert_not_called()
+        assert entity.effect_list == ["Sunrise", "Sunset", "Party", "Movie"]
+
+    async def test_diy_scenes_not_loaded_for_group(self, diy_coordinator, light_capabilities, diy_capability):
+        """Groups have no DIY scene API, same as catalog scenes."""
+        group = GoveeDevice(
+            device_id="GROUP:AA:BB",
+            sku="GROUP",
+            name="All Lights",
+            device_type="devices.types.group",
+            capabilities=light_capabilities + (diy_capability,),
+            is_group=True,
+        )
+        entity = GoveeLightEntity(diy_coordinator, group)
+        await _add_to_hass(entity)
+
+        diy_coordinator.async_get_diy_scenes.assert_not_called()
+        assert entity.effect_list is None
+
+    def test_diy_names_deduplicated(self, diy_coordinator, mock_diy_light_device):
+        """Duplicate DIY names, and a catalog scene that already uses the prefix, get a counter."""
+        entity = GoveeLightEntity(diy_coordinator, mock_diy_light_device)
+        entity._build_effect_mapping([{"name": f"{DIY_EFFECT_PREFIX}Glow", "value": {"id": 1}}])
+        entity._build_diy_effect_mapping(
+            [
+                {"name": "Glow", "value": 201},
+                {"name": "Glow", "value": 202},
+            ]
+        )
+
+        assert entity.effect_list == [
+            f"{DIY_EFFECT_PREFIX}Glow",
+            f"{DIY_EFFECT_PREFIX}Glow (1)",
+            f"{DIY_EFFECT_PREFIX}Glow (2)",
+        ]
+        assert entity._effect_to_scene[f"{DIY_EFFECT_PREFIX}Glow"] == (1, f"{DIY_EFFECT_PREFIX}Glow")
+        assert entity._effect_to_diy_scene[f"{DIY_EFFECT_PREFIX}Glow (1)"] == (201, "Glow")
+        assert entity._effect_to_diy_scene[f"{DIY_EFFECT_PREFIX}Glow (2)"] == (202, "Glow")
+
+    async def test_turn_on_diy_effect_uses_diy_scene_path(self, diy_coordinator, mock_diy_light_device):
+        """A DIY effect goes through the coordinator's DIY call, not a SceneCommand."""
+        entity = GoveeLightEntity(diy_coordinator, mock_diy_light_device)
+        await _add_to_hass(entity)
+
+        await entity.async_turn_on(effect=f"{DIY_EFFECT_PREFIX}Sunset")
+
+        diy_coordinator.async_send_diy_scene.assert_awaited_once_with(
+            mock_diy_light_device.device_id, scene_id=102, scene_name="Sunset"
+        )
+        diy_coordinator.async_control_device.assert_not_called()
+
+    async def test_turn_on_same_named_catalog_scene_is_not_diy(self, diy_coordinator, mock_diy_light_device):
+        """The unprefixed name still selects the catalog scene."""
+        entity = GoveeLightEntity(diy_coordinator, mock_diy_light_device)
+        await _add_to_hass(entity)
+
+        await entity.async_turn_on(effect="Sunset")
+
+        diy_coordinator.async_send_diy_scene.assert_not_called()
+        cmd = diy_coordinator.async_control_device.call_args[0][1]
+        assert isinstance(cmd, SceneCommand)
+        assert cmd.scene_id == 2
+
+    async def test_turn_on_diy_effect_with_brightness(self, diy_coordinator, mock_diy_light_device):
+        """Brightness is applied after the DIY scene, like for catalog scenes."""
+        entity = GoveeLightEntity(diy_coordinator, mock_diy_light_device)
+        await _add_to_hass(entity)
+
+        await entity.async_turn_on(effect=f"{DIY_EFFECT_PREFIX}Campfire", brightness=255)
+
+        diy_coordinator.async_send_diy_scene.assert_awaited_once()
+        commands = [call[0][1] for call in diy_coordinator.async_control_device.call_args_list]
+        assert [type(cmd) for cmd in commands] == [BrightnessCommand]
+
+    async def test_turn_on_diy_effect_failure_raises(self, diy_coordinator, mock_diy_light_device):
+        """A rejected DIY scene surfaces as an error instead of passing silently."""
+        entity = GoveeLightEntity(diy_coordinator, mock_diy_light_device)
+        await _add_to_hass(entity)
+        diy_coordinator.async_send_diy_scene = AsyncMock(return_value=False)
+
+        with pytest.raises(HomeAssistantError):
+            await entity.async_turn_on(effect=f"{DIY_EFFECT_PREFIX}Campfire", brightness=255)
+
+        # Nothing else is sent after the failed scene
+        diy_coordinator.async_control_device.assert_not_called()
+
+    async def test_unknown_diy_effect_raises(self, diy_coordinator, mock_diy_light_device):
+        """A prefixed name that matches no DIY scene is a validation error."""
+        entity = GoveeLightEntity(diy_coordinator, mock_diy_light_device)
+        await _add_to_hass(entity)
+
+        with pytest.raises(ServiceValidationError):
+            await entity.async_turn_on(effect=f"{DIY_EFFECT_PREFIX}Nope")
+
+        diy_coordinator.async_send_diy_scene.assert_not_called()
+
+    async def test_effect_reports_active_diy_scene(self, diy_coordinator, mock_diy_light_device):
+        """After activation the light reports the DIY effect."""
+        entity = GoveeLightEntity(diy_coordinator, mock_diy_light_device)
+        await _add_to_hass(entity)
+
+        await entity.async_turn_on(effect=f"{DIY_EFFECT_PREFIX}Campfire")
+
+        assert entity.effect == f"{DIY_EFFECT_PREFIX}Campfire"
+
+    async def test_effect_reports_diy_scene_set_by_select(self, diy_coordinator, mock_diy_light_device, diy_state):
+        """A DIY scene started from the select shows up as the light's effect too."""
+        entity = GoveeLightEntity(diy_coordinator, mock_diy_light_device)
+        await _add_to_hass(entity)
+
+        diy_state.apply_optimistic_diy_scene("102")
+
+        assert entity.effect == f"{DIY_EFFECT_PREFIX}Sunset"
+
+    def test_effect_is_none_before_first_state(self, diy_coordinator, mock_diy_light_device):
+        """No state from the coordinator yet means no effect."""
+        entity = GoveeLightEntity(diy_coordinator, mock_diy_light_device)
+        diy_coordinator.get_state.return_value = None
+
+        assert entity.effect is None
+
+    async def test_unknown_active_diy_id_reports_no_effect(self, diy_coordinator, mock_diy_light_device, diy_state):
+        """A DIY ID missing from the cached list (deleted in the app) is not reported."""
+        entity = GoveeLightEntity(diy_coordinator, mock_diy_light_device)
+        await _add_to_hass(entity)
+
+        diy_state.apply_optimistic_diy_scene("999")
+
+        assert entity.effect is None
+
+    @pytest.mark.parametrize(
+        "change",
+        [
+            {"rgb_color": (0, 255, 0)},
+            {"color_temp_kelvin": 3000},
+            {"effect": "Party"},
+        ],
+    )
+    async def test_diy_effect_cleared_by_other_modes(self, diy_coordinator, mock_diy_light_device, change):
+        """Color, color temperature, or a catalog scene end the DIY effect."""
+        entity = GoveeLightEntity(diy_coordinator, mock_diy_light_device)
+        await _add_to_hass(entity)
+        await entity.async_turn_on(effect=f"{DIY_EFFECT_PREFIX}Campfire")
+
+        await entity.async_turn_on(**change)
+
+        assert entity.effect == change.get("effect")
+
+    async def test_diy_effect_cleared_by_music_mode(self, diy_coordinator, mock_diy_light_device, diy_state):
+        """Music mode ends the DIY effect."""
+        entity = GoveeLightEntity(diy_coordinator, mock_diy_light_device)
+        await _add_to_hass(entity)
+        await entity.async_turn_on(effect=f"{DIY_EFFECT_PREFIX}Campfire")
+
+        diy_state.apply_optimistic_music_mode_struct(music_mode=1, sensitivity=50)
+
+        assert entity.effect is None
+
+    async def test_effect_hidden_while_off_and_restored_on_power_on(
+        self, diy_coordinator, mock_diy_light_device, diy_state
+    ):
+        """Power off hides the effect but keeps the DIY scene for the next power-on."""
+        entity = GoveeLightEntity(diy_coordinator, mock_diy_light_device)
+        await _add_to_hass(entity)
+        await entity.async_turn_on(effect=f"{DIY_EFFECT_PREFIX}Campfire")
+
+        diy_state.apply_optimistic_power(False)
+        assert entity.state_attributes[ATTR_EFFECT] is None
+        assert diy_state.active_diy_scene == "101"
+
+        diy_state.apply_optimistic_power(True)
+        assert entity.state_attributes[ATTR_EFFECT] == f"{DIY_EFFECT_PREFIX}Campfire"
+
+    async def test_setup_entry_passes_diy_option(self, mock_diy_light_device):
+        """The enable_diy_scenes option reaches the light entity."""
+        from custom_components.govee import light as light_mod
+
+        coordinator = MagicMock()
+        coordinator.devices = {mock_diy_light_device.device_id: mock_diy_light_device}
+        entry = MagicMock()
+        entry.runtime_data = coordinator
+        added: list = []
+
+        entry.options = {"enable_diy_scenes": False}
+        await light_mod.async_setup_entry(MagicMock(), entry, lambda ents: added.extend(ents))
+        entry.options = {}
+        await light_mod.async_setup_entry(MagicMock(), entry, lambda ents: added.extend(ents))
+
+        lights = [e for e in added if type(e) is GoveeLightEntity]
+        assert [e._enable_diy_scenes for e in lights] == [False, True]
 
 
 @pytest.fixture

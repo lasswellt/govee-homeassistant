@@ -946,26 +946,31 @@ class GoveeDeviceState:
         self.color = color
         self.color_temp_kelvin = None  # RGB mode
         self._stamp_optimistic()
-        # Setting a color overrides any running scene
+        # Setting a color overrides any running scene, DIY scenes included.
+        # A stale active_diy_scene would keep the light's effect and the DIY
+        # select showing the scene, and make LAN reads ignore the new color.
         self.active_scene = None
         self.active_scene_name = None
         # ...and music mode (#286)
         self.music_mode_enabled = False
         self.music_mode_value = None
         self.music_mode_name = None
+        self.active_diy_scene = None
 
     def apply_optimistic_color_temp(self, kelvin: int) -> None:
         """Apply optimistic color temperature update."""
         self.color_temp_kelvin = kelvin
         self.color = None  # Color temp mode
         self._stamp_optimistic()
-        # Setting color temp overrides any running scene
+        # Setting color temp overrides any running scene, DIY scenes included
+        # (same reasons as apply_optimistic_color)
         self.active_scene = None
         self.active_scene_name = None
         # ...and music mode (#286)
         self.music_mode_enabled = False
         self.music_mode_value = None
         self.music_mode_name = None
+        self.active_diy_scene = None
 
     def apply_optimistic_scene(self, scene_id: str, scene_name: str | None = None) -> None:
         """Apply optimistic scene activation.

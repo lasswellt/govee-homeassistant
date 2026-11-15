@@ -31,8 +31,10 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoredExtraData, RestoreEntity
 
 from .const import (
+    CONF_ENABLE_DIY_SCENES,
     CONF_ENABLE_SCENES,
     CONF_SEGMENT_MODE_BY_DEVICE,
+    DEFAULT_ENABLE_DIY_SCENES,
     DEFAULT_ENABLE_SCENES,
     DEFAULT_SEGMENT_MODE,
     DOMAIN,
@@ -76,6 +78,9 @@ HA_BRIGHTNESS_MAX = 255
 # Mid-range neutral white rather than either extreme.
 MAIN_LIGHT_ON_KELVIN = 4000
 
+# DIY scenes share the effect list with the catalog scenes. To avoid collision they get a prefix.
+DIY_EFFECT_PREFIX = "DIY: "
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -92,6 +97,7 @@ async def async_setup_entry(
 
     # Check if scenes are enabled in options
     enable_scenes = entry.options.get(CONF_ENABLE_SCENES, DEFAULT_ENABLE_SCENES)
+    enable_diy_scenes = entry.options.get(CONF_ENABLE_DIY_SCENES, DEFAULT_ENABLE_DIY_SCENES)
 
     for device in coordinator.devices.values():
         # Only create light entities for actual lights — appliances (heaters,
@@ -99,7 +105,7 @@ async def async_setup_entry(
         # platforms. Without this filter, e.g. an H7150 dehumidifier would
         # appear as a light bulb (issue #54).
         if device.is_light_device and device.supports_power:
-            entities.append(GoveeLightEntity(coordinator, device, enable_scenes))
+            entities.append(GoveeLightEntity(coordinator, device, enable_scenes, enable_diy_scenes))
             if device.sku.upper() in MAIN_LIGHT_TOGGLE_SKUS:
                 # The entity above stays as the whole-fixture control —
                 # powerSwitch is all-or-nothing and kills the ring too. This
@@ -200,6 +206,7 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
         coordinator: GoveeCoordinator,
         device: GoveeDevice,
         enable_scenes: bool = True,
+        enable_diy_scenes: bool = True,
     ) -> None:
         """Initialize the light entity."""
         super().__init__(coordinator, device)
@@ -212,15 +219,23 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
         # Get device brightness range
         self._brightness_min, self._brightness_max = device.brightness_range
 
-        # Effect support: only if device has scenes AND scenes are enabled
+        # Effect support: catalog scenes and DIY scenes each count when the
+        # device has the capability AND the matching option is enabled, so a
+        # device with only DIY scenes still gets an effect list.
         self._enable_scenes = device.supports_scenes and enable_scenes
-        if self._enable_scenes:
+        self._enable_diy_scenes = device.supports_diy_scenes and enable_diy_scenes
+        if self._enable_scenes or self._enable_diy_scenes:
             self._attr_supported_features = LightEntityFeature.EFFECT
 
         # Scene-to-effect mappings (populated in async_added_to_hass)
         self._effect_to_scene: dict[str, tuple[int, str]] = {}
         self._scene_id_to_effect: dict[str, str] = {}
         self._effect_names: list[str] = []
+        # DIY scenes get their own maps: their IDs are a separate namespace
+        # from catalog scene IDs and they are activated by a different command.
+        self._effect_to_diy_scene: dict[str, tuple[int, str]] = {}
+        self._diy_scene_id_to_effect: dict[str, str] = {}
+        self._diy_effect_names: list[str] = []
 
     def _determine_color_modes(self) -> set[ColorMode]:
         """Determine supported color modes from device capabilities."""
@@ -310,14 +325,23 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
 
     @property
     def effect_list(self) -> list[str] | None:
-        """Return list of available effects (scene names)."""
-        return self._effect_names if self._effect_names else None
+        """Return list of available effects (catalog scenes, then DIY scenes)."""
+        names = self._effect_names + self._diy_effect_names
+        return names if names else None
 
     @property
     def effect(self) -> str | None:
-        """Return currently active effect (scene name)."""
+        """Return currently active effect (scene or DIY scene name)."""
         state = self.device_state
-        if not state or not state.active_scene:
+        if not state:
+            return None
+        # The optimistic state keeps a DIY scene and a catalog scene mutually
+        # exclusive, so at most one of the two is set here.
+        if state.active_diy_scene:
+            diy_effect = self._diy_scene_id_to_effect.get(state.active_diy_scene)
+            if diy_effect:
+                return diy_effect
+        if not state.active_scene:
             return None
         # Look up display name from scene ID mapping
         effect_name = self._scene_id_to_effect.get(state.active_scene)
@@ -344,19 +368,7 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
         """Turn the light on with optional parameters."""
         # Handle effect (scene activation)
         if ATTR_EFFECT in kwargs:
-            effect_name = kwargs[ATTR_EFFECT]
-            scene_info = self._effect_to_scene.get(effect_name)
-            if scene_info is None:
-                raise ServiceValidationError(
-                    translation_domain=DOMAIN,
-                    translation_key="unknown_effect",
-                    translation_placeholders={
-                        "effect": str(effect_name),
-                        "device": self._device.name,
-                    },
-                )
-            scene_id, scene_name = scene_info
-            await self._async_send_command(SceneCommand(scene_id=scene_id, scene_name=scene_name))
+            await self._async_activate_effect(kwargs[ATTR_EFFECT])
             # The scene turns the light on and sets its colours, but not the
             # brightness, so a requested brightness goes after it
             if ATTR_BRIGHTNESS in kwargs:
@@ -385,6 +397,34 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
         has_attribute = any(k in kwargs for k in (ATTR_BRIGHTNESS, ATTR_RGB_COLOR, ATTR_COLOR_TEMP_KELVIN))
         if not has_attribute or not self.is_on:
             await self._async_send_command(PowerCommand(power_on=True))
+
+    async def _async_activate_effect(self, effect_name: Any) -> None:
+        """Activate the catalog scene or DIY scene behind an effect name."""
+        diy_info = self._effect_to_diy_scene.get(effect_name)
+        if diy_info is not None:
+            scene_id, scene_name = diy_info
+            # Same coordinator call as the DIY scene select, so both entities
+            # get the REST-then-BLE fallback and the same optimistic state.
+            if not await self.coordinator.async_send_diy_scene(
+                self._device_id,
+                scene_id=scene_id,
+                scene_name=scene_name,
+            ):
+                raise self._command_failed()
+            return
+
+        scene_info = self._effect_to_scene.get(effect_name)
+        if scene_info is None:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="unknown_effect",
+                translation_placeholders={
+                    "effect": str(effect_name),
+                    "device": self._device.name,
+                },
+            )
+        scene_id, scene_name = scene_info
+        await self._async_send_command(SceneCommand(scene_id=scene_id, scene_name=scene_name))
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the light off."""
@@ -417,6 +457,38 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
 
         self._effect_names = names
 
+    def _build_diy_effect_mapping(self, scenes: list[dict[str, Any]]) -> None:
+        """Build effect name mappings from DIY scene data.
+
+        Names get DIY_EFFECT_PREFIX and are de-duplicated against the catalog
+        effects too, so every name in effect_list maps to exactly one scene
+        even if a catalog scene happens to start with the prefix.
+        """
+        self._effect_to_diy_scene = {}
+        self._diy_scene_id_to_effect = {}
+        names: list[str] = []
+        taken = set(self._effect_to_scene)
+
+        for scene_data in scenes:
+            # DIY scenes carry the ID directly in "value", not wrapped in
+            # {"id": ...} like catalog scenes; the DIY select reads it the same way.
+            scene_id = scene_data.get("value", 0)
+            scene_name = scene_data.get("name", f"DIY {scene_id}")
+
+            base_name = f"{DIY_EFFECT_PREFIX}{scene_name}"
+            unique_name = base_name
+            counter = 1
+            while unique_name in taken:
+                unique_name = f"{base_name} ({counter})"
+                counter += 1
+            taken.add(unique_name)
+
+            self._effect_to_diy_scene[unique_name] = (scene_id, scene_name)
+            self._diy_scene_id_to_effect[str(scene_id)] = unique_name
+            names.append(unique_name)
+
+        self._diy_effect_names = names
+
     async def async_added_to_hass(self) -> None:
         """Restore state for group devices and load scenes for effects."""
         await super().async_added_to_hass()
@@ -436,6 +508,13 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
             scenes = await self.coordinator.async_get_scenes(self._device_id)
             if scenes:
                 self._build_effect_mapping(scenes)
+
+        # DIY scenes after catalog scenes, since their names are de-duplicated
+        # against the catalog effects built above.
+        if self._enable_diy_scenes and not self._device.is_group:
+            diy_scenes = await self.coordinator.async_get_diy_scenes(self._device_id)
+            if diy_scenes:
+                self._build_diy_effect_mapping(diy_scenes)
 
 
 class GoveeMainLightEntity(GoveeLightEntity):
@@ -472,7 +551,7 @@ class GoveeMainLightEntity(GoveeLightEntity):
 
     def __init__(self, coordinator: GoveeCoordinator, device: GoveeDevice) -> None:
         """Initialize the main-panel entity."""
-        super().__init__(coordinator, device, enable_scenes=False)
+        super().__init__(coordinator, device, enable_scenes=False, enable_diy_scenes=False)
         self._attr_unique_id = f"{device.device_id}{SUFFIX_MAIN_LIGHT_TOGGLE}"
 
         # What to return to on turn_on. Only ever holds a non-black colour.
