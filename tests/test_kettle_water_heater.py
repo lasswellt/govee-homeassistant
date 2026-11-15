@@ -25,7 +25,7 @@ from custom_components.govee.kettle.entities import (
     kettle_sensors,
 )
 from custom_components.govee.kettle.manager import KettleManager
-from custom_components.govee.kettle.modes import kettle_modes, mode_key, selected_mode
+from custom_components.govee.kettle.modes import kettle_modes, manual_command, mode_key, selected_mode
 from custom_components.govee.models import (
     GoveeDevice,
     GoveeDeviceState,
@@ -35,7 +35,12 @@ from custom_components.govee.models import (
 )
 from custom_components.govee.models.device import INSTANCE_SLIDER_TEMPERATURE
 from custom_components.govee.switch import GoveeAppliancePowerSwitchEntity
-from custom_components.govee.water_heater import GoveeKettleWaterHeater
+from custom_components.govee import water_heater as water_heater_module
+from custom_components.govee.water_heater import (
+    GoveeKettleWaterHeater,
+    _LegacyKettleWaterHeater,
+    _NativeKettleWaterHeater,
+)
 
 from .kettle_samples import (
     DEVICE_ID,
@@ -262,6 +267,56 @@ class TestWaterHeater:
         await entity.async_set_temperature(operation_mode="coffee")
         await entity.async_set_temperature()
         assert _sent(coordinator) == [WorkModeCommand(work_mode=4, mode_value=0)]
+
+
+class TestNativeTemperature:
+    """HA 2026.11 renamed the temperature properties to native_* (#284)."""
+
+    @staticmethod
+    def _make(cls, fahrenheit: bool, state=None):
+        entity = cls(_coordinator(state or _state(power=True), fahrenheit=fahrenheit), _device())
+        entity.hass = MagicMock()
+        entity.async_write_ha_state = MagicMock()
+        return entity
+
+    @staticmethod
+    def _implemented(cls, names):
+        own = [vars(c) for c in cls.__mro__ if c.__module__.startswith("custom_components")]
+        return [n for n in names if any(n in v for v in own)]
+
+    def test_class_is_chosen_from_the_installed_core(self):
+        installed = hasattr(water_heater_module.WaterHeaterEntity, "native_temperature_unit")
+        assert water_heater_module._NATIVE_TEMPERATURE is installed
+        assert GoveeKettleWaterHeater is (_NativeKettleWaterHeater if installed else _LegacyKettleWaterHeater)
+
+    @pytest.mark.parametrize(("fahrenheit", "unit"), [(True, "\u00b0F"), (False, "\u00b0C")])
+    def test_native_properties(self, fahrenheit, unit):
+        entity = self._make(_NativeKettleWaterHeater, fahrenheit)
+        assert entity.native_temperature_unit == unit
+        assert entity.native_current_temperature == 91.0
+        assert entity.native_target_temperature == 176.0
+        assert (entity.min_temp, entity.max_temp) == ((104, 212) if fahrenheit else (40, 100))
+        empty = _NativeKettleWaterHeater(_coordinator(None), _device())
+        assert (empty.native_current_temperature, empty.native_target_temperature) == (None, None)
+
+    def test_native_class_does_not_implement_the_old_names(self):
+        old = ("temperature_unit", "current_temperature", "target_temperature")
+        assert self._implemented(_NativeKettleWaterHeater, old) == []
+
+    def test_legacy_class_does_not_implement_the_native_names(self):
+        new = ("native_temperature_unit", "native_current_temperature", "native_target_temperature")
+        assert self._implemented(_LegacyKettleWaterHeater, new) == []
+        entity = self._make(_LegacyKettleWaterHeater, True)
+        assert (entity.temperature_unit, entity.current_temperature, entity.target_temperature) == (
+            "\u00b0F",
+            91.0,
+            176.0,
+        )
+
+    async def test_set_temperature_clamps_in_the_native_unit(self):
+        entity = self._make(_NativeKettleWaterHeater, True)
+        await entity.async_set_temperature(temperature=500)
+        assert entity.coordinator.async_control_device.await_args.args[1] == manual_command(212, True)
 
 
 class TestRestore:

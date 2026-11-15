@@ -41,13 +41,18 @@ _LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 0
 
+# Home Assistant 2026.11 renamed the water heater temperature properties to
+# ``native_*`` and warns when the old names are implemented (#284). Detect the
+# new base class by its attribute (as registry.py does) rather than by version.
+_NATIVE_TEMPERATURE = hasattr(WaterHeaterEntity, "native_temperature_unit")
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: GoveeConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the H7175 kettle water heaters."""
+    """Set up the H7175 and H7170 kettle water heaters."""
     coordinator: GoveeCoordinator = entry.runtime_data
     async_add_entities(
         GoveeKettleWaterHeater(coordinator, device)
@@ -56,8 +61,8 @@ async def async_setup_entry(
     )
 
 
-class GoveeKettleWaterHeater(KettleModeMixin, WaterHeaterEntity):
-    """H7175 kettle as a water heater: target, brew modes, power."""
+class _KettleWaterHeaterBase(KettleModeMixin, WaterHeaterEntity):
+    """H7175 and H7170 kettle as a water heater: target, brew modes, power."""
 
     _attr_translation_key = "kettle"
     _attr_name = None  # the main feature: the device name
@@ -90,8 +95,7 @@ class GoveeKettleWaterHeater(KettleModeMixin, WaterHeaterEntity):
         return self.coordinator.kettles.reports_fahrenheit(self._device_id)
 
     @property
-    def temperature_unit(self) -> str:
-        """The kettle's own unit."""
+    def _kettle_unit(self) -> str:
         return UnitOfTemperature.FAHRENHEIT if self._fahrenheit else UnitOfTemperature.CELSIUS
 
     @property
@@ -119,14 +123,12 @@ class GoveeKettleWaterHeater(KettleModeMixin, WaterHeaterEntity):
         return selected_mode(self._modes, state)
 
     @property
-    def current_temperature(self) -> float | None:
-        """Water temperature, in the entity's unit."""
+    def _water_temperature(self) -> float | None:
         state = self.device_state
         return state.sensor_temperature if state else None
 
     @property
-    def target_temperature(self) -> float | None:
-        """Target temperature, in the entity's unit."""
+    def _target(self) -> float | None:
         state = self.device_state
         return state.kettle_target_temperature if state else None
 
@@ -172,7 +174,9 @@ class GoveeKettleWaterHeater(KettleModeMixin, WaterHeaterEntity):
         """Set the target, in the entity's unit; this selects manual.
 
         Setting the target puts the kettle in manual, so a target together
-        with any other mode is refused.
+        with any other mode is refused. Assumption: on HA 2026.11 the service
+        value is still in the entity's native unit (the change notes are
+        silent), so the clamp and the command stay in that unit.
         """
         operation_mode = kwargs.get(ATTR_OPERATION_MODE)
         temperature = kwargs.get(ATTR_TEMPERATURE)
@@ -187,3 +191,44 @@ class GoveeKettleWaterHeater(KettleModeMixin, WaterHeaterEntity):
         state = self.device_state
         if operation_mode is not None and self._has_power and state is not None and not state.power_state:
             await self._async_send_command(PowerCommand(power_on=True))
+
+
+class _LegacyKettleWaterHeater(_KettleWaterHeaterBase):
+    """Cores before 2026.11: the original property names."""
+
+    @property
+    def temperature_unit(self) -> str:
+        """The kettle's own unit."""
+        return self._kettle_unit
+
+    @property
+    def current_temperature(self) -> float | None:
+        """Water temperature, in the entity's unit."""
+        return self._water_temperature
+
+    @property
+    def target_temperature(self) -> float | None:
+        """Target temperature, in the entity's unit."""
+        return self._target
+
+
+class _NativeKettleWaterHeater(_KettleWaterHeaterBase):
+    """Core 2026.11+: the ``native_*`` property names."""
+
+    @property
+    def native_temperature_unit(self) -> str:
+        """The kettle's own unit."""
+        return self._kettle_unit
+
+    @property
+    def native_current_temperature(self) -> float | None:
+        """Water temperature, in the entity's unit."""
+        return self._water_temperature
+
+    @property
+    def native_target_temperature(self) -> float | None:
+        """Target temperature, in the entity's unit."""
+        return self._target
+
+
+GoveeKettleWaterHeater = _NativeKettleWaterHeater if _NATIVE_TEMPERATURE else _LegacyKettleWaterHeater
