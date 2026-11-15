@@ -1,7 +1,7 @@
 {
   "$schema": "blitz-tasks/1.0",
   "plan": "issue-sweep-late-oct",
-  "updated": "2026-10-24T14:36:59Z",
+  "updated": "2026-11-15T01:24:46Z",
   "tasks": [
     {
       "id": "T-001",
@@ -1992,12 +1992,12 @@
         }
       ],
       "passes": false,
-      "status": "open",
-      "blocked_reason": null,
+      "status": "blocked",
+      "blocked_reason": "scope-expansion-needed",
       "attempts": 0,
       "last_verify": null,
       "origin": "plan",
-      "notes": "User decision 2026-10-23: #251, #252, #256 wait until the private #249 report is read (same author). Precondition: progress.md line '#249 report reviewed: <outcome>' written by the maintainer. #256 conflicts with T-001's rewrite: keep T-001's security properties (read-only Claude token, --setting-sources user, shell-only posting, SHA pin) and take #256's gates (app_id filter, --exclude-drafts, tag-exists refusal, style check) and its 02:00 UTC cron + CLAUDE.md text. Optionally add --exclude-pre-releases. Queue a thank-you entry for #256. After merge update memory daily-release-cloud-routine.md (03:00 -> 02:00 UTC)."
+      "notes": "SUPERSEDED by docs/plans/nov-sweep (2026-11-14); see nov-sweep plan.md §Solutions consulted"
     },
     {
       "id": "T-027",
@@ -2038,12 +2038,12 @@
         }
       ],
       "passes": false,
-      "status": "open",
-      "blocked_reason": null,
+      "status": "blocked",
+      "blocked_reason": "scope-expansion-needed",
       "attempts": 0,
       "last_verify": null,
       "origin": "plan",
-      "notes": "Merge with git merge --no-ff and subject 'Merge PR #N: <PR title> (#issue)' so the nightly bot sees it; resolve conflicts inside that merge commit (keeps the PR head an ancestor, GitHub marks it merged). Fetch first: git fetch origin +refs/pull/N/head:refs/pr/N. Push only with every verify green. Precondition: '#249 report reviewed' in progress.md. Partial #246 fix (frees proxy slots); closes a real cross-enrolment hole (security-prs.md). Assumes BLE MAC = last 6 octets of the cloud ID. Subject must name (#246)."
+      "notes": "SUPERSEDED by docs/plans/nov-sweep (2026-11-14); see nov-sweep plan.md §Solutions consulted"
     },
     {
       "id": "T-028",
@@ -2088,12 +2088,12 @@
         }
       ],
       "passes": false,
-      "status": "open",
-      "blocked_reason": null,
+      "status": "blocked",
+      "blocked_reason": "scope-expansion-needed",
       "attempts": 0,
       "last_verify": null,
       "origin": "plan",
-      "notes": "Merge with git merge --no-ff and subject 'Merge PR #N: <PR title> (#issue)' so the nightly bot sees it; resolve conflicts inside that merge commit (keeps the PR head an ancestor, GitHub marks it merged). Fetch first: git fetch origin +refs/pull/N/head:refs/pr/N. Push only with every verify green. Precondition: '#249 report reviewed'. Conflicts with #255 (__init__.py), #250/#247 (coordinator.py): resolve in the merge commit. security-prs.md #251 MEDIUM: on Govee2FARequiredError / GoveeAuthError / GoveeLoginRejectedError, _async_refresh_iot_credentials records the failure via _persist_login_failed(...) and sets a flag that stops re-login until the user reconfigures (no ~96 password logins a day). LOW: is_connection_error must not treat aiohttp.ClientResponseError (HTML 403/429/5xx) as a network failure. Demote the existing _LOGGER.info('Govee OpenAPI event channel reconnected') to debug. config_flow.py 100 %. Queue a thank-you entry for #251."
+      "notes": "SUPERSEDED by docs/plans/nov-sweep (2026-11-14); see nov-sweep plan.md §Solutions consulted"
     },
     {
       "id": "T-029",
@@ -2122,12 +2122,12 @@
         }
       ],
       "passes": false,
-      "status": "open",
-      "blocked_reason": null,
+      "status": "blocked",
+      "blocked_reason": "scope-expansion-needed",
       "attempts": 0,
       "last_verify": null,
       "origin": "plan",
-      "notes": "docs/research/2026-10-23_issue-sweep-late-oct-codebase.md #246. _ble_connect_backoff_until / _ble_connect_failures (300 s doubling, cap 3600, reset on success); skip BLE only for commands LAN can carry (power/brightness/colour/CT, README:179) while LAN is healthy (validate-plan m12); other commands keep BLE. Debug log once per back-off. After #252 (T-027) and the async_control_device chain (T-023). The commit touching custom_components/ must carry '(#ISSUE)' in its subject so the nightly bot replies. (#246)"
+      "notes": "SUPERSEDED by docs/plans/nov-sweep (2026-11-14); see nov-sweep plan.md §Solutions consulted"
     },
     {
       "id": "T-030",
@@ -2155,12 +2155,12 @@
         }
       ],
       "passes": false,
-      "status": "open",
-      "blocked_reason": null,
+      "status": "blocked",
+      "blocked_reason": "scope-expansion-needed",
       "attempts": 0,
       "last_verify": null,
       "origin": "plan",
-      "notes": "User-requested (security-prs.md #252 section, LOW, pre-existing): api/lan.py _ScanProtocol.datagram_received keeps the body's \"ip\" and keys responses by the attacker-supplied \"device\" with no cap. Change: record[\"ip\"] = addr[0]; body value kept as record[\"reported_ip\"]; stop after LAN_SCAN_MAX_RESPONSES (256). Mismatch rule: Docker's UDP userland proxy rewrites the source to the bridge gateway, so when addr[0] differs from the body ip AND addr[0] is a gateway of a local interface's subnet, keep the body ip and debug-log once per device; any other mismatch uses addr[0]. Same for the devStatus listener if it resolves devices by body fields. Tests: spoofed reply, Docker gateway case, 300 ids -> 256 kept, normal reply unchanged."
+      "notes": "SUPERSEDED by docs/plans/nov-sweep (2026-11-14); see nov-sweep plan.md §Solutions consulted"
     },
     {
       "id": "T-031",
@@ -2211,12 +2211,12 @@
         }
       ],
       "passes": false,
-      "status": "open",
-      "blocked_reason": null,
+      "status": "blocked",
+      "blocked_reason": "scope-expansion-needed",
       "attempts": 0,
       "last_verify": null,
       "origin": "plan",
-      "notes": "Gate only, no product code; fix regressions in the task that caused them. Per-module rule from CLAUDE.md enforced via coverage report (validate-plan m14)."
+      "notes": "SUPERSEDED by docs/plans/nov-sweep (2026-11-14); see nov-sweep plan.md §Solutions consulted"
     },
     {
       "id": "T-032",
@@ -2261,12 +2261,12 @@
         }
       ],
       "passes": false,
-      "status": "open",
-      "blocked_reason": null,
+      "status": "blocked",
+      "blocked_reason": "scope-expansion-needed",
       "attempts": 0,
       "last_verify": null,
       "origin": "plan",
-      "notes": "User decisions 2026-10-23: own release day; we resolve the conflicts ourselves. Preconditions: (1) nothing unreleased under custom_components/ on main before the merge (first verify); (2) maintainer tried refs/pr/254 on 2-3 of their own lights (1 %, 50 %, 100 %, plus a change from the Govee app) and wrote 'PR #254 tried on own lights: <result>' in progress.md; (3) no other custom_components merge that Eastern day. Re-fetch refs/pr/254 first. Expected conflicts (validate-plan M7): CLAUDE.md; scene_cache.py (vs #255); coordinator.py - #231 and #254 BOTH split async_control_device into a wrapper + _async_control_device (kettle follow-up vs failed-segment rollback): chain them, don't pick one; #254's _dispatch_segment_command next to T-020's ptReal segment path; light.py GoveeMainPanelLight.async_turn_on (~798-823) vs T-021's kelvin/ring refactor. #254 carries 12 commits (segment brightness send, scene refresh signal, select unknown state, purifier low, H1270 main-panel name, failed-segment rollback). Merge body: brightness levels may map differently. Security: clean. Queue a thank-you entry for #254."
+      "notes": "SUPERSEDED by docs/plans/nov-sweep (2026-11-14); see nov-sweep plan.md §Solutions consulted"
     }
   ]
 }

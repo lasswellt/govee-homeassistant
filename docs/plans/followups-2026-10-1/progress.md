@@ -29,3 +29,6 @@ Ruling: descope; user 2026-10-28 "everything tonight, finish all issues": Days B
 Ruling: descope; user 2026-10-28 chose to merge PR #271 instead of our own #269 work; T-015 superseded by T-020 (T-015)
 Ruling: spec-defect; T-019's verify named tests/test_select.py, which does not exist; tasks.sh cannot edit verify[], so T-019 is superseded by T-020 with the same scope (T-019, round 0)
 Added: T-016 #261 H1A42, T-017 PR #270, T-018 PR #273, T-020 PR #271, T-021 replies, T-022 gates. Research: docs/research/2026-10-28_post-release-sweep.md
+
+## 2026-11-15T01:24:39Z superseded
+Ruling: superseded; remaining open tasks carried into docs/plans/nov-sweep (user 2026-11-14)

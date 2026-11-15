@@ -54,3 +54,6 @@ Ruling: class=architectural tasks=32; four independent reviews (plan validation:
 ## 2026-10-24T14:12:24Z verify T-021 ok=true (GoveeRingLight for H1252, panel COLOR_TEMP 2700-6500 K; reporter test hunk for test_cov_light reviewed and applied; CI green)
 ## 2026-10-24T14:35:59Z verify T-022..T-024 ok=true (CommandConfirmer module; wired behind confirm_commands (default off), MQTT/REST sends only, resend over REST never reconfirmed; diagnostics command_confirm hashed; README section; CI green)
 ## 2026-10-24T14:36:59Z verify T-025 ok=true (12 queue entries; #222/#228/#229-#234/#238 covered by commit subjects, so no separate #222 interim entry: the (#222) commit reply ships with the repair and its Reconfigure advice; F-14 respected, no frames in briefs)
+
+## 2026-11-15T01:24:39Z superseded
+Ruling: superseded; remaining open tasks carried into docs/plans/nov-sweep (user 2026-11-14)

@@ -1,5 +1,5 @@
 ---
-status: active
+status: superseded
 priority: P0
 created: 2026-10-23
 ship: manual
