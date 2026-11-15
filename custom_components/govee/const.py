@@ -229,7 +229,10 @@ SKU_SEGMENT_OVERRIDES: Final = {
 # H1252 (#223); the H60A6 (same fixture family) is plausibly identical. The
 # H1252 already advertises all 16 ring segments over the API, so for it this
 # only folds a multi-segment write into one frame.
-PTREAL_SEGMENT_SKUS: Final = frozenset({"H1232", "H1252"})
+# H1A42 (#261): the cloud segmentedColorRgb call returns 200 but does nothing;
+# the reporter confirmed the raw frames over AWS IoT ptReal (first segment
+# ``33 05 15 01 00 FF 00 00 00 00 00 00 01 00 00``, all 15 with mask ``FF 7F 00``).
+PTREAL_SEGMENT_SKUS: Final = frozenset({"H1232", "H1252", "H1A42"})
 
 # SKUs whose 17th internal segment is a separate main panel, not a ring
 # segment, addressed by this bit in the same 3-byte little-endian ptReal
