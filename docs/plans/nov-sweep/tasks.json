@@ -1,7 +1,7 @@
 {
   "$schema": "blitz-tasks/1.0",
   "plan": "nov-sweep",
-  "updated": "2026-11-15T01:28:09Z",
+  "updated": "2026-11-15T01:40:25Z",
   "tasks": [
     {
       "id": "T-001",
@@ -104,12 +104,47 @@
         }
       ],
       "passes": false,
-      "status": "open",
-      "blocked_reason": null,
+      "status": "blocked",
+      "blocked_reason": "hard_spec",
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-15T01:29:53Z",
+        "ok": false,
+        "failed": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= --cov=custom_components.govee.config_flow --cov-fail-under=100 tests/test_config_flow_bluetooth.py tests/test_config_flow.py tests/test_config_flow_manager.py tests/test_config_flow_manager_steps.py",
+        "tail": "-------------------------------------------- TOTAL                                      426     32  92.49%  FAIL Required test coverage of 100% not reached. Total coverage: 92.49% 138 passed in 1.14s ",
+        "runs": [
+          {
+            "cmd": "git log --format=%s v2026.10.2..HEAD | grep -q 'Merge PR #273'",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:29:51Z"
+          },
+          {
+            "cmd": "git merge-base --is-ancestor refs/pr/273 HEAD",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:29:51Z"
+          },
+          {
+            "cmd": "grep -q 'SOURCE_BLUETOOTH' custom_components/govee/config_flow.py",
+            "exit": 0,
+            "duration_ms": 4,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:29:51Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= --cov=custom_components.govee.config_flow --cov-fail-under=100 tests/test_config_flow_bluetooth.py tests/test_config_flow.py tests/test_config_flow_manager.py tests/test_config_flow_manager_steps.py",
+            "exit": 1,
+            "duration_ms": 2479,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 52%]\n..............................INFO:homeassistant.loader:Loaded bluetooth_adapters from homeassistant.components.bluetooth_adapters\n...............................INFO:homeassistant.loader:Loaded bluetooth_adapters from homeassistant.components.bluetooth_adapters\n...../home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_cov/plugin.py:355: CovFailUnderWarning: Coverage failure: total of 92.49 is less than fail-under=100.00\n  warnings.warn(CovFailUnderWarning(message), stacklevel=1)\n\nERROR: Coverage failure: total of 92.49 is less than fail-under=100.00\n                                                                         [100%]\n\n---------- coverage: platform linux, python 3.12.14-final-0 ----------\nName                                     Stmts   Miss   Cover   Missing\n-----------------------------------------------------------------------\ncustom_components/govee/config_flow.py     426     32  92.49%   640-641, 801, 981-982, 994, 1006-1034\n-----------------------------------------------------------------------\nTOTAL                                      426     32  92.49%\n\nFAIL Required test coverage of 100% not reached. Total coverage: 92.49%\n138 passed in 1.14s",
+            "recorded_at": "2026-11-15T01:29:53Z"
+          }
+        ]
+      },
       "origin": "issue:273",
-      "notes": "MERGE-AS-IS (head 962b31d). git merge --no-ff refs/pr/273 -m 'Merge PR #273: close the Bluetooth discovery card on a manual set-up' (credits snoack). config_flow.py stays 100 %."
+      "notes": "SUPERSEDED by T-023: verify[3] ran a 4-file subset that never reaches config_flow lines covered by other test files (92.49 %); merge d2ab131 itself is correct (full suite: config_flow 100 %)."
     },
     {
       "id": "T-003",
@@ -149,11 +184,60 @@
           "timeout": 600
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-15T01:40:25Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "git log --format=%s v2026.10.2..HEAD | grep -q 'Merge PR #251'",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:40:21Z"
+          },
+          {
+            "cmd": "git merge-base --is-ancestor refs/pr/251 HEAD",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:40:21Z"
+          },
+          {
+            "cmd": "! grep -rnE '^(<<<<<<<|>>>>>>>)' custom_components tests",
+            "exit": 0,
+            "duration_ms": 116,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:40:21Z"
+          },
+          {
+            "cmd": "grep -q 'def test_relogin_stops_after_definite_refusal' tests/test_issue_251_relogin.py && grep -q 'def test_http_error_is_not_connection_error' tests/test_issue_251_relogin.py",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:40:21Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_issue_251_relogin.py tests/test_account_mqtt_robustness.py tests/test_auth_robustness.py tests/test_cov_auth.py tests/test_setup_entry_account.py tests/test_reconfigure_credentials.py tests/test_issue_222.py tests/test_mqtt_connection.py",
+            "exit": 0,
+            "duration_ms": 2981,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 26%]\n........................................................................ [ 53%]\n........................................................................ [ 80%]\n......................................................                   [100%]\n270 passed in 1.69s",
+            "recorded_at": "2026-11-15T01:40:24Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/flake8 . && .cc-sessions/venv312/bin/mypy custom_components/govee && .cc-sessions/venv312/bin/black --check .",
+            "exit": 0,
+            "duration_ms": 923,
+            "tail": "Success: no issues found in 56 source files\nAll done! ✨ 🍰 ✨\n197 files would be left unchanged.",
+            "recorded_at": "2026-11-15T01:40:25Z"
+          }
+        ]
+      },
       "origin": "issue:251",
       "notes": "User 2026-11-14: lift #249 hold for all three BrawnyBravo PRs; we resolve and fix. Research §PR validation #251 (15 commits, auth.py rewrite). Conflict = coordinator.py only, vs main's #222 silent-session detection (fc4dbe6, d7b50b6), H66A0 d43dfae, H7073 40b5385, heater 79ae6dd/6440364, H5194 2c4339b: keep both sides' behaviour. In the merge commit: (1) MEDIUM security-prs.md: on Govee2FARequiredError/GoveeAuthError/GoveeLoginRejectedError, _async_refresh_iot_credentials must latch (persist login-failed, stop the 15-min re-login until reconfigure/reauth) -> test_relogin_stops_after_definite_refusal; (2) LOW: is_connection_error must not treat aiohttp.ClientResponseError/ContentTypeError (HTTP 403/429/5xx, HTML bodies) as network errors -> test_http_error_is_not_connection_error. Never log email/token. Subject 'Merge PR #251: recover account login and MQTT after network errors, expired tokens and malformed devices'."
     },
@@ -850,6 +934,78 @@
       "last_verify": null,
       "origin": "issue:254",
       "notes": "User 2026-11-14: #254 later, own day, gated on hands-on. Preconditions: (1) tonight's release went out so nothing unreleased under custom_components/ precedes the merge (first verify); (2) approve the fork workflow run so CI runs on its head; (3) maintainer tried refs/pr/254 on 2-3 lights (1 %, 50 %, 100 %, segment brightness on a segment SKU, scene refresh, a change from the Govee app) and wrote 'PR #254 tried on own lights: <result>' in progress.md; (4) no other custom_components merge that Eastern day. Re-fetch refs/pr/254; resolve conflicts with tonight's merges (#271 select.py/light.py, #267 coordinator) in the merge commit."
+    },
+    {
+      "id": "T-023",
+      "title": "Re-verify PR #273 merge (T-002) with full-suite config_flow coverage",
+      "role": "backend",
+      "files": [
+        "custom_components/govee/config_flow.py",
+        "tests/test_config_flow_bluetooth.py"
+      ],
+      "depends_on": [
+        "T-001"
+      ],
+      "verify": [
+        {
+          "cmd": "git log --format=%s v2026.10.2..HEAD | grep -q 'Merge PR #273'",
+          "timeout": 10
+        },
+        {
+          "cmd": "git merge-base --is-ancestor refs/pr/273 HEAD",
+          "timeout": 10
+        },
+        {
+          "cmd": "grep -q 'SOURCE_BLUETOOTH' custom_components/govee/config_flow.py",
+          "timeout": 10
+        },
+        {
+          "cmd": ".cc-sessions/venv312/bin/pytest -q -n auto -p no:cacheprovider -o addopts= --cov=custom_components.govee.config_flow --cov-fail-under=100 tests",
+          "timeout": 900
+        }
+      ],
+      "passes": true,
+      "status": "done",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": {
+        "ts": "2026-11-15T01:30:20Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "git log --format=%s v2026.10.2..HEAD | grep -q 'Merge PR #273'",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:29:53Z"
+          },
+          {
+            "cmd": "git merge-base --is-ancestor refs/pr/273 HEAD",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:29:53Z"
+          },
+          {
+            "cmd": "grep -q 'SOURCE_BLUETOOTH' custom_components/govee/config_flow.py",
+            "exit": 0,
+            "duration_ms": 4,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:29:54Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q -n auto -p no:cacheprovider -o addopts= --cov=custom_components.govee.config_flow --cov-fail-under=100 tests",
+            "exit": 0,
+            "duration_ms": 26899,
+            "tail": "................................................ [ 70%]\n........................................................................ [ 72%]\n........................................................................ [ 73%]\n........................................................................ [ 75%]\n........................................................................ [ 77%]\n........................................................................ [ 78%]\n........................................................................ [ 80%]\n........................................................................ [ 82%]\n........................................................................ [ 84%]\n........................................................................ [ 85%]\n........................................................................ [ 87%]\n........................................................................ [ 89%]\n........................................................................ [ 90%]\n........................................................................ [ 92%]\n........................................................................ [ 94%]\n........................................................................ [ 95%]\n........................................................................ [ 97%]\n........................................................................ [ 99%]\n....................................                                     [100%]\n\n---------- coverage: platform linux, python 3.12.14-final-0 ----------\nName                                     Stmts   Miss    Cover   Missing\n------------------------------------------------------------------------\ncustom_components/govee/config_flow.py     426      0  100.00%\n------------------------------------------------------------------------\nTOTAL                                      426      0  100.00%\n\nRequired test coverage of 100% reached. Total coverage: 100.00%\n4284 passed in 25.36s",
+            "recorded_at": "2026-11-15T01:30:20Z"
+          }
+        ]
+      },
+      "origin": "issue:273",
+      "notes": "Supersedes T-002 (spec-defect in its verify[3]). No new code: verifies merge d2ab131."
     }
   ]
 }
