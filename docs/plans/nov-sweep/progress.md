@@ -52,3 +52,6 @@ Ruling: defer; tasks.sh cannot edit depends_on and T-002 cannot reach done hones
 ## 2026-11-15T02:08:35Z verify T-019 ok=true (2082f4c; #280 closed)
 ## 2026-11-15T02:08:42Z build T-020 start (attempt 1)
 ## 2026-11-15T02:10:33Z verify T-020 ok=true (f273ac4; 19 entries, parse_queue ok)
+## 2026-11-15T02:11:45Z verify T-021 ok=true (pre-#271: coverage floors, flake8/mypy/black, py3.14 suite; rerun after T-015)
+## 2026-11-15T03:10:47Z daily-release dry run 43666903896: gate would ship v2026.11.0 (draft+preview ok, publish skipped)
+Ruling: defer; user 2026-11-15 02:20Z: no manual release tonight ('we'll ship later'); #256's 02:00 UTC cron landed after 02:00, so the next scheduled run (2026-11-16 02:00 UTC) ships it. T-015 waits on the maintainer's #271 try (build at scratchpad wt-try271); T-021 reruns after T-015 (T-015, round 0)
