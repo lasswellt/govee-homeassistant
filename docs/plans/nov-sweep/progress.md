@@ -55,3 +55,7 @@ Ruling: defer; tasks.sh cannot edit depends_on and T-002 cannot reach done hones
 ## 2026-11-15T02:11:45Z verify T-021 ok=true (pre-#271: coverage floors, flake8/mypy/black, py3.14 suite; rerun after T-015)
 ## 2026-11-15T03:10:47Z daily-release dry run 43666903896: gate would ship v2026.11.0 (draft+preview ok, publish skipped)
 Ruling: defer; user 2026-11-15 02:20Z: no manual release tonight ('we'll ship later'); #256's 02:00 UTC cron landed after 02:00, so the next scheduled run (2026-11-16 02:00 UTC) ships it. T-015 waits on the maintainer's #271 try (build at scratchpad wt-try271); T-021 reruns after T-015 (T-015, round 0)
+PR #271 tried on own lights: NOT tried; maintainer waived the hands-on gate 2026-11-15 ("i can't test unfortunately, so just release it")
+Ruling: descope; hands-on gate for #271 waived by the maintainer; release authorised tonight with #271 included (T-015, round 0)
+## 2026-11-15T03:17:26Z build T-015 start (attempt 1)
+## 2026-11-15T03:18:26Z verify T-015 ok=true (1ced350; Merge PR #271 without sync-upstream.yml; full suite 4595)

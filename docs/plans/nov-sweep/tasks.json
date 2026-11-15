@@ -1,7 +1,7 @@
 {
   "$schema": "blitz-tasks/1.0",
   "plan": "nov-sweep",
-  "updated": "2026-11-15T03:10:47Z",
+  "updated": "2026-11-15T03:18:26Z",
   "tasks": [
     {
       "id": "T-001",
@@ -1021,11 +1021,60 @@
           "timeout": 600
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-15T03:18:26Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "grep -q 'PR #271 tried on own lights' docs/plans/nov-sweep/progress.md",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-15T03:18:23Z"
+          },
+          {
+            "cmd": "git log --format=%s v2026.10.2..HEAD | grep -q 'Merge PR #271.*(#269)'",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-15T03:18:23Z"
+          },
+          {
+            "cmd": "git merge-base --is-ancestor refs/pr/271 HEAD",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-15T03:18:23Z"
+          },
+          {
+            "cmd": "test ! -e .github/workflows/sync-upstream.yml",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-15T03:18:23Z"
+          },
+          {
+            "cmd": "grep -q 'DIY_EFFECT_PREFIX' custom_components/govee/light.py && grep -q 'def _light_is_off' custom_components/govee/select.py",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-15T03:18:23Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_light.py tests/test_cov_select.py tests/test_models.py tests/test_cov_light.py tests/test_cov_switch.py",
+            "exit": 0,
+            "duration_ms": 2554,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 15%]\n........................................................................ [ 31%]\n........................................................................ [ 46%]\n........................................................................ [ 62%]\n........................................................................ [ 77%]\n........................................................................ [ 93%]\n..............................                                           [100%]\n462 passed in 1.23s",
+            "recorded_at": "2026-11-15T03:18:26Z"
+          }
+        ]
+      },
       "origin": "issue:271",
       "notes": "User 2026-11-14: merge tonight; drop .github/workflows/sync-upstream.yml (magicmn's fork-sync cron, contents:write, gh release create) inside the merge commit with git rm; PR stays marked merged because refs/pr/271 is an ancestor. Precondition: maintainer tried a build with #271 on 2-3 own lights and wrote 'PR #271 tried on own lights: <result>' in progress.md (the build pauses here). Behaviour: scene/DIY selects None while off (reverses #18); 'DIY: <name>' effects on every light with DIY scenes. state.py colour functions conflict with T-014: keep both clears (active_diy_scene and music fields). Subject 'Merge PR #271: DIY scenes as light effects, scene selects read None while off (#269)', body credits magicmn and says the workflow file was left out. Release note must call out both behaviour changes."
     },
