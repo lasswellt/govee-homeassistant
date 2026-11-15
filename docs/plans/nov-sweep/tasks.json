@@ -1,7 +1,7 @@
 {
   "$schema": "blitz-tasks/1.0",
   "plan": "nov-sweep",
-  "updated": "2026-11-15T01:40:25Z",
+  "updated": "2026-11-15T02:09:43Z",
   "tasks": [
     {
       "id": "T-001",
@@ -275,11 +275,53 @@
           "timeout": 600
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-15T01:41:44Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "git log --format=%s v2026.10.2..HEAD | grep -q 'Merge PR #252.*#246'",
+            "exit": 0,
+            "duration_ms": 7,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:41:39Z"
+          },
+          {
+            "cmd": "git merge-base --is-ancestor refs/pr/252 HEAD",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:41:39Z"
+          },
+          {
+            "cmd": "grep -q '^DISCONNECT_DELAY = 120' custom_components/govee/api/ble.py && grep -q 'def _async_setup_lan' custom_components/govee/coordinator.py",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:41:39Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_api_ble.py tests/test_ble_enrollment.py tests/test_ble_advertisement_notify.py tests/test_lan.py tests/test_lan_client.py tests/test_lan_integration.py tests/test_cov_coordinator_setup.py tests/test_coordinator.py",
+            "exit": 0,
+            "duration_ms": 3896,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 11%]\n........................................................................ [ 22%]\n........................................................................ [ 33%]\n........................................................................ [ 45%]\n........................................................................ [ 56%]\n........................................................................ [ 67%]\n........................................................................ [ 78%]\n........................................................................ [ 90%]\n...............................................................          [100%]\n639 passed in 2.69s",
+            "recorded_at": "2026-11-15T01:41:43Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/flake8 . && .cc-sessions/venv312/bin/mypy custom_components/govee && .cc-sessions/venv312/bin/black --check .",
+            "exit": 0,
+            "duration_ms": 931,
+            "tail": "Success: no issues found in 56 source files\nAll done! ✨ 🍰 ✨\n197 files would be left unchanged.",
+            "recorded_at": "2026-11-15T01:41:44Z"
+          }
+        ]
+      },
       "origin": "issue:252",
       "notes": "MERGE-AS-IS per research (4309 pass on PR+main, 108 behind, clean). 10-23 security review: clean. git merge --no-ff refs/pr/252 -m 'Merge PR #252: only enrol the matching BLE radio, release idle BLE links, and harden the LAN client (#246)'. Re-check merge-tree after T-003 lands."
     },
@@ -308,11 +350,39 @@
           "timeout": 400
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-15T01:52:15Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "grep -q '_ble_connect_backoff_until' custom_components/govee/coordinator.py",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:52:13Z"
+          },
+          {
+            "cmd": "git log --format=%s v2026.10.2..HEAD | grep -qF '(#246)'",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:52:13Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_issue_246.py tests/test_api_ble.py tests/test_lan_control.py",
+            "exit": 0,
+            "duration_ms": 2640,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 27%]\n........................................................................ [ 55%]\n........................................................................ [ 83%]\n............................................                             [100%]\n260 passed in 1.20s",
+            "recorded_at": "2026-11-15T01:52:15Z"
+          }
+        ]
+      },
       "origin": "issue:246",
       "notes": "Carried from issue-sweep-late-oct T-029. _ble_connect_backoff_until/_ble_connect_failures per device: 300 s doubling, cap 3600, reset on success. Skip BLE only for commands LAN can carry (power/brightness/colour/CT) while the device's LAN transport is healthy; other commands keep BLE. Debug log once per back-off. BLE-capable models are H6199/H1270 (api/ble.py:101). Builds on #252's idle release. Subject: 'fix: back off BLE after connect failures and prefer a healthy LAN (#246)'."
     },
@@ -337,13 +407,34 @@
           "timeout": 400
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
-      "attempts": 0,
-      "last_verify": null,
+      "attempts": 1,
+      "last_verify": {
+        "ts": "2026-11-15T01:54:51Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "grep -q 'LAN_SCAN_MAX_RESPONSES' custom_components/govee/api/lan.py && grep -q 'reported_ip' custom_components/govee/api/lan.py",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:54:49Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_lan_scan_trust.py tests/test_lan.py tests/test_lan_client.py tests/test_lan_integration.py",
+            "exit": 0,
+            "duration_ms": 2135,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 34%]\n........................................................................ [ 68%]\n.................................................................        [100%]\n209 passed in 0.95s",
+            "recorded_at": "2026-11-15T01:54:51Z"
+          }
+        ]
+      },
       "origin": "plan",
-      "notes": "Carried from issue-sweep-late-oct T-030 (user-requested 10-23; LOW pre-existing finding in security-prs.md #252 section). _ScanProtocol.datagram_received: record ip = addr[0]; body ip kept as record reported_ip; stop after LAN_SCAN_MAX_RESPONSES (256). Docker userland proxy exception: when addr[0] is the gateway of a local interface subnet and differs from the body ip, keep the body ip and debug-log once per device; any other mismatch uses addr[0]. Same for devStatus listener if it keys by body ip."
+      "notes": "Carried from issue-sweep-late-oct T-030 (user-requested 10-23; LOW pre-existing finding in security-prs.md #252 section). _ScanProtocol.datagram_received: record ip = addr[0]; body ip kept as record reported_ip; stop after LAN_SCAN_MAX_RESPONSES (256). Docker userland proxy exception: when addr[0] is the gateway of a local interface subnet and differs from the body ip, keep the body ip and debug-log once per device; any other mismatch uses addr[0]. Same for devStatus listener if it keys by body ip. scope+tests/test_lan.py scope+custom_components/govee/api/lan_client.py (round 1: old test asserted body-ip-wins; async_scan built _ScanProtocol without interface ips)"
     },
     {
       "id": "T-007",
@@ -383,11 +474,60 @@
           "timeout": 600
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-15T01:46:07Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "git log --format=%s v2026.10.2..HEAD | grep -q 'Merge PR #267'",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:46:03Z"
+          },
+          {
+            "cmd": "git merge-base --is-ancestor refs/pr/267 HEAD",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:46:03Z"
+          },
+          {
+            "cmd": "grep -q '^DISCONNECT_DELAY = 120' custom_components/govee/api/ble.py && grep -q 'def idle_disconnected' custom_components/govee/api/ble.py && ! grep -q '_idle_disconnect_handle' custom_components/govee/api/ble.py",
+            "exit": 0,
+            "duration_ms": 7,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:46:03Z"
+          },
+          {
+            "cmd": "! grep -rn 'coordinator\\._config_entry' custom_components/govee/number.py custom_components/govee/select.py custom_components/govee/h6104.py",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:46:03Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_api_ble.py tests/test_h6104_readback.py tests/test_h6104_settings.py tests/test_transport_health.py tests/test_ble_enrollment.py tests/test_cov_coordinator_control.py tests/test_cov_switch.py",
+            "exit": 0,
+            "duration_ms": 3690,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 14%]\n........................................................................ [ 29%]\n........................................................................ [ 44%]\n........................................................................ [ 59%]\n........................................................................ [ 74%]\n........................................................................ [ 88%]\n......................................................                   [100%]\n486 passed in 2.43s",
+            "recorded_at": "2026-11-15T01:46:06Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/flake8 . && .cc-sessions/venv312/bin/mypy custom_components/govee && .cc-sessions/venv312/bin/black --check .",
+            "exit": 0,
+            "duration_ms": 962,
+            "tail": "Success: no issues found in 58 source files\nAll done! ✨ 🍰 ✨\n201 files would be left unchanged.",
+            "recorded_at": "2026-11-15T01:46:07Z"
+          }
+        ]
+      },
       "origin": "issue:267",
       "notes": "Research §PR validation #267 (head 5e6eeea; 4413 pass alone). Real conflict api/ble.py vs #252: both add idle disconnect. Keep #252's generic timer (DISCONNECT_DELAY, _reset_disconnect_timer/_on_idle_timeout/_async_idle_disconnect) and drop #267's _idle_disconnect_handle/_schedule_idle_disconnect; keep #267's _idle_disconnected flag + idle_disconnected property (set in #252's idle path), the _on_disconnected 'client is not self._client' guard, and an awaited task reference in stop(). Fixups in the merge commit: S2 run _async_refresh_h6104_ble_status(force=True) after a BLE command as entry.async_create_background_task (never inline under the device lock); poll gathers H6104 readbacks after the cloud read; replace coordinator._config_entry reads with a public coordinator property. Opt-in default False. Ask krozgrov (via reply queue) to confirm the merged build on hardware."
     },
@@ -411,11 +551,32 @@
           "timeout": 300
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-15T01:49:21Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "grep -q 'MockConfigEntry' tests/test_h6104_setup_entry.py && grep -q 'def test_h6199_staleness_unchanged' tests/test_h6104_setup_entry.py && grep -q 'def test_option_off_creates_no_ble_entities' tests/test_h6104_setup_entry.py",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:49:16Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_h6104_setup_entry.py",
+            "exit": 0,
+            "duration_ms": 5835,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n...                                                                      [100%]\n3 passed in 4.67s",
+            "recorded_at": "2026-11-15T01:49:21Z"
+          }
+        ]
+      },
       "origin": "issue:267",
       "notes": "Test-only: the product is the test module (old T-014). MockConfigEntry drives option on -> reload -> advert enrolment -> entities -> unload (stop() awaits idle task; report callbacks cleared). Assert an H6199 keeps advert-staleness behaviour and _write path, and an H6104 with the option off gets no BLE entities. Follow tests/test_setup_entry.py _stub_transports and add bluetooth_adapters/network to hass.config.components."
     },
@@ -444,13 +605,41 @@
           "timeout": 300
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-15T01:56:06Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "grep -qE 'PTREAL_SEGMENT_SKUS: Final = frozenset\\(\\{[^}]*\"H1A42\"' custom_components/govee/const.py",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:56:05Z"
+          },
+          {
+            "cmd": "git log --format=%s v2026.10.2..HEAD | grep -qF '(#261)'",
+            "exit": 0,
+            "duration_ms": 7,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:56:05Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_issue_261.py tests/test_cov_segments.py",
+            "exit": 0,
+            "duration_ms": 1601,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n.........................                                                [100%]\n25 passed in 0.33s",
+            "recorded_at": "2026-11-15T01:56:06Z"
+          }
+        ]
+      },
       "origin": "issue:261",
-      "notes": "Reporter ran both raw frames OK 10-27 (seg0 mask 01 00 00; all 15 FF 7F 00). const.py:220 add H1A42; comment cites #261. No PTREAL_MAIN_PANEL_BIT, no segment override. tests/test_issue_261.py: frame bytes from build_segment_color_ptreal (api/ble_packet.py:196) for seg 0 and all 15; coordinator routes H1A42 SegmentColorCommand over ptReal with IoT creds and to REST without. Subject 'fix: H1A42 segment colours go over AWS IoT (#261)'."
+      "notes": "Reporter ran both raw frames OK 10-27 (seg0 mask 01 00 00; all 15 FF 7F 00). const.py:220 add H1A42; comment cites #261. No PTREAL_MAIN_PANEL_BIT, no segment override. tests/test_issue_261.py: frame bytes from build_segment_color_ptreal (api/ble_packet.py:196) for seg 0 and all 15; coordinator routes H1A42 SegmentColorCommand over ptReal with IoT creds and to REST without. Subject 'fix: H1A42 segment colours go over AWS IoT (#261)'. | DISPATCH BY ID: depends on T-002, which is blocked (hard_spec, verify defect); T-023 verified the same merge, so treat T-002 as satisfied (/blitz:build T-009)."
     },
     {
       "id": "T-010",
@@ -478,13 +667,41 @@
           "timeout": 300
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-15T01:57:02Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "grep -qE 'KETTLE_FRAME_SKUS = frozenset\\(\\{[^}]*\"H7170\"' custom_components/govee/models/device.py",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:57:00Z"
+          },
+          {
+            "cmd": "git log --format=%s v2026.10.2..HEAD | grep -qF '(#278)'",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:57:00Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_kettle_stale_temperature.py tests/test_kettle_water_heater.py tests/test_kettle.py",
+            "exit": 0,
+            "duration_ms": 1827,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 98%]\n.                                                                        [100%]\n73 passed in 0.45s",
+            "recorded_at": "2026-11-15T01:57:02Z"
+          }
+        ]
+      },
       "origin": "issue:278",
-      "notes": "models/device.py:47 add H7170 (reporter verified on hardware, v2026.10.2). Update comment device.py:44-46, water_heater.py:1-4 docstring, README kettle lines. tests/test_kettle_stale_temperature.py:83 flip H7170 to True. Don't claim button events (reporter saw none). Subject 'fix: decode the H7170 kettle like the H7175 (#278)'."
+      "notes": "models/device.py:47 add H7170 (reporter verified on hardware, v2026.10.2). Update comment device.py:44-46, water_heater.py:1-4 docstring, README kettle lines. tests/test_kettle_stale_temperature.py:83 flip H7170 to True. Don't claim button events (reporter saw none). Subject 'fix: decode the H7170 kettle like the H7175 (#278)'. | DISPATCH BY ID: depends on T-002, which is blocked (hard_spec, verify defect); T-023 verified the same merge, so treat T-002 as satisfied (/blitz:build T-010)."
     },
     {
       "id": "T-011",
@@ -516,13 +733,48 @@
           "timeout": 400
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-15T01:58:14Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "grep -qE 'FRAME_CLIMATE_DEHUMIDIFIER_SKUS = frozenset\\(\\{[^}]*\"H7151\"' custom_components/govee/models/device.py && grep -q 'PUMP_DEHUMIDIFIER_SKUS = frozenset({\"H7152\"})' custom_components/govee/models/device.py",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:58:12Z"
+          },
+          {
+            "cmd": "grep -q 'FRAME_CLIMATE_DEHUMIDIFIER_SKUS' custom_components/govee/coordinator.py",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:58:12Z"
+          },
+          {
+            "cmd": "git log --format=%s v2026.10.2..HEAD | grep -qF '(#283)'",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:58:12Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_h7152_temperature_humidity.py tests/test_cov_models.py tests/test_cov_coordinator_events.py tests/test_pump_state.py",
+            "exit": 0,
+            "duration_ms": 1868,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 45%]\n........................................................................ [ 91%]\n.............                                                            [100%]\n157 passed in 0.61s",
+            "recorded_at": "2026-11-15T01:58:14Z"
+          }
+        ]
+      },
       "origin": "issue:283",
-      "notes": "Decoder models/state.py:791-834 exists; gated on PUMP_DEHUMIDIFIER_SKUS (device.py:41) at coordinator.py:3906 and device.py:722/736. New FRAME_CLIMATE_DEHUMIDIFIER_SKUS={'H7152','H7151'} for those three gates; PUMP set stays H7152-only (pump fault/hose bytes). Test with reporter frame aa10810359070000... -> 21.9 C / 39.9 %. Subject 'fix: H7151 reads temperature and humidity from its status frames (#283)'."
+      "notes": "Decoder models/state.py:791-834 exists; gated on PUMP_DEHUMIDIFIER_SKUS (device.py:41) at coordinator.py:3906 and device.py:722/736. New FRAME_CLIMATE_DEHUMIDIFIER_SKUS={'H7152','H7151'} for those three gates; PUMP set stays H7152-only (pump fault/hose bytes). Test with reporter frame aa10810359070000... -> 21.9 C / 39.9 %. Subject 'fix: H7151 reads temperature and humidity from its status frames (#283)'. | DISPATCH BY ID: depends on T-002, which is blocked (hard_spec, verify defect); T-023 verified the same merge, so treat T-002 as satisfied (/blitz:build T-011)."
     },
     {
       "id": "T-012",
@@ -549,11 +801,39 @@
           "timeout": 300
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
-      "attempts": 0,
-      "last_verify": null,
+      "attempts": 1,
+      "last_verify": {
+        "ts": "2026-11-15T02:03:40Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "grep -q 'def native_current_temperature' custom_components/govee/water_heater.py && grep -q 'def native_target_temperature' custom_components/govee/water_heater.py && grep -q 'native_temperature_unit' custom_components/govee/water_heater.py",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-15T02:03:39Z"
+          },
+          {
+            "cmd": "git log --format=%s v2026.10.2..HEAD | grep -qF '(#284)'",
+            "exit": 0,
+            "duration_ms": 7,
+            "tail": "",
+            "recorded_at": "2026-11-15T02:03:39Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_kettle_water_heater.py tests/test_kettle.py",
+            "exit": 0,
+            "duration_ms": 1495,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n.............................................                            [100%]\n45 passed in 0.30s",
+            "recorded_at": "2026-11-15T02:03:40Z"
+          }
+        ]
+      },
       "origin": "issue:284",
       "notes": "HA blog 2026-10-08 water-heater-native-temperature: current/target(_high/_low)/temperature_unit -> native_*; warning on implement/read; removed 2027.11; min_temp/max_temp/target_temperature_step NOT renamed. hacs.json min 2024.11.0, so gate on homeassistant.const MAJOR/MINOR >= 2026.11 like registry.py: newer cores get native_* only (no warning), older keep the old names. Check async_set_temperature unit semantics on the native path (HA converts display->native?) and keep manual_command(clamped, self._fahrenheit) correct; test both branches by patching the version gate. Subject 'fix: kettle uses native temperature properties on HA 2026.11 (#284)'."
     },
@@ -586,11 +866,46 @@
           "timeout": 300
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-15T02:02:21Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "! grep -n 'if self._mqtt_silent_reported:' custom_components/govee/coordinator.py",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-15T02:02:20Z"
+          },
+          {
+            "cmd": "grep -q 'def test_repair_cleared_after_reload' tests/test_issue_222.py && grep -q 'def test_repair_cleared_when_inbound_resumes' tests/test_issue_222.py",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-15T02:02:20Z"
+          },
+          {
+            "cmd": "git log --format=%s v2026.10.2..HEAD | grep -qF '(#282'",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-15T02:02:20Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_issue_222.py tests/test_repairs.py",
+            "exit": 0,
+            "duration_ms": 1487,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n.........................................                                [100%]\n41 passed in 0.29s",
+            "recorded_at": "2026-11-15T02:02:21Z"
+          }
+        ]
+      },
       "origin": "issue:282",
       "notes": "coordinator.py:4000 deletes the repair only when the per-instance _mqtt_silent_reported flag (:407) is set, so after reload/reauth the old non-persistent issue lingers. Make the delete idempotent (ir.async_delete_issue is a no-op when absent) and also clear when the silence check arms for a new session (_arm_mqtt_silence_check ~3987) and when inbound_total grows past _mqtt_inbound_at_connect. Lands after #251 (T-003), which touched this region. Subject 'fix: clear the MQTT silent repair once messages arrive again (#282, #222)'."
     },
@@ -624,13 +939,48 @@
           "timeout": 300
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-15T02:05:51Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "python3 -c \"import re,sys; s=open('custom_components/govee/models/state.py').read(); m=re.search(r'def apply_optimistic_power\\(.*?\\n(.*?)\\n    def ', s, re.S); sys.exit(0 if m and 'music_mode_enabled' in m.group(1) else 1)\"",
+            "exit": 0,
+            "duration_ms": 28,
+            "tail": "",
+            "recorded_at": "2026-11-15T02:05:49Z"
+          },
+          {
+            "cmd": "grep -q 'def test_music_switch_off_after_power_off' tests/test_cov_switch.py && grep -q 'def test_music_switch_off_after_color' tests/test_cov_switch.py",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-15T02:05:49Z"
+          },
+          {
+            "cmd": "git log --format=%s v2026.10.2..HEAD | grep -qF '(#286)'",
+            "exit": 0,
+            "duration_ms": 7,
+            "tail": "",
+            "recorded_at": "2026-11-15T02:05:49Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_cov_switch.py tests/test_models.py",
+            "exit": 0,
+            "duration_ms": 1742,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 27%]\n........................................................................ [ 55%]\n........................................................................ [ 82%]\n.............................................                            [100%]\n261 passed in 0.52s",
+            "recorded_at": "2026-11-15T02:05:51Z"
+          }
+        ]
+      },
       "origin": "issue:286",
-      "notes": "switch.py:663-668 falls back to stale self._is_on when music_mode_enabled is None; state.py:924 apply_optimistic_power(False) and colour/CT optimistic paths (934-950) never clear music fields. Clear music_mode_enabled/value/name on optimistic power-off, colour, CT and on MQTT power-off; is_on reads bool(state.music_mode_enabled) when state exists. Brightness-only must not clear. Display-only, no command change; release note mentions it. PR #271 (T-015) edits the same colour functions: T-015 resolves. Subject 'fix: Music Mode switch turns off with the light or a colour change (#286)'."
+      "notes": "switch.py:663-668 falls back to stale self._is_on when music_mode_enabled is None; state.py:924 apply_optimistic_power(False) and colour/CT optimistic paths (934-950) never clear music fields. Clear music_mode_enabled/value/name on optimistic power-off, colour, CT and on MQTT power-off; is_on reads bool(state.music_mode_enabled) when state exists. Brightness-only must not clear. Display-only, no command change; release note mentions it. PR #271 (T-015) edits the same colour functions: T-015 resolves. Subject 'fix: Music Mode switch turns off with the light or a colour change (#286)'. | DISPATCH BY ID: depends on T-002, which is blocked (hard_spec, verify defect); T-023 verified the same merge, so treat T-002 as satisfied (/blitz:build T-014)."
     },
     {
       "id": "T-015",
@@ -709,13 +1059,48 @@
           "timeout": 300
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-15T02:06:50Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "git merge-base --is-ancestor refs/pr/256 HEAD",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-15T02:06:48Z"
+          },
+          {
+            "cmd": "grep -q 'exclude-drafts' .github/workflows/daily-release.yml && grep -q 'Check style formatting' .github/workflows/daily-release.yml && grep -q -- '--setting-sources user' .github/workflows/daily-release.yml",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-15T02:06:48Z"
+          },
+          {
+            "cmd": "grep -q '02:00 UTC' CLAUDE.md",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-15T02:06:48Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_release_workflow.py",
+            "exit": 0,
+            "duration_ms": 1357,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................                 [100%]\n56 passed in 0.15s",
+            "recorded_at": "2026-11-15T02:06:50Z"
+          }
+        ]
+      },
       "origin": "issue:256",
-      "notes": "Research: still needed, clean, main unchanged on these files since PR base. Before merging confirm the 'Protect main' ruleset requires 'Check style formatting' (gh api repos/{owner}/{repo}/rulesets/25781812); if not, ask the maintainer whether to add it. Timing: the cron moves 03:00->02:00 UTC; if this lands after 02:00 UTC tonight the scheduled run is 03:00 (old file at schedule time) or none - ask before any manual workflow_dispatch. Update memory daily-release-cloud-routine.md after merge. Queue a thank-you for #256 is automatic (merge subject has #256)."
+      "notes": "Research: still needed, clean, main unchanged on these files since PR base. Before merging confirm the 'Protect main' ruleset requires 'Check style formatting' (gh api repos/{owner}/{repo}/rulesets/25781812); if not, ask the maintainer whether to add it. Timing: the cron moves 03:00->02:00 UTC; if this lands after 02:00 UTC tonight the scheduled run is 03:00 (old file at schedule time) or none - ask before any manual workflow_dispatch. Update memory daily-release-cloud-routine.md after merge. Queue a thank-you for #256 is automatic (merge subject has #256). | DISPATCH BY ID: depends on T-002, which is blocked (hard_spec, verify defect); T-023 verified the same merge, so treat T-002 as satisfied (/blitz:build T-016)."
     },
     {
       "id": "T-017",
@@ -747,11 +1132,46 @@
           "timeout": 10
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-15T02:07:32Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "for n in 277 263 264; do git merge-base --is-ancestor refs/pr/$n HEAD || exit 1; done",
+            "exit": 0,
+            "duration_ms": 8,
+            "tail": "",
+            "recorded_at": "2026-11-15T02:07:32Z"
+          },
+          {
+            "cmd": "grep -qE '^\\s+files: \\./coverage\\.xml' .github/workflows/tox.yaml && ! grep -qE '^\\s+file: ' .github/workflows/tox.yaml",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-15T02:07:32Z"
+          },
+          {
+            "cmd": "test \"$(gh api repos/actions/checkout/commits/v7.0.1 --jq .sha)\" = \"$(grep -rhoE 'actions/checkout@[0-9a-f]{40}' .github/workflows | sort -u | cut -d@ -f2)\"",
+            "exit": 0,
+            "duration_ms": 351,
+            "tail": "",
+            "recorded_at": "2026-11-15T02:07:32Z"
+          },
+          {
+            "cmd": "! grep -rnE '^(<<<<<<<|>>>>>>>)' .github",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-15T02:07:32Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "Workflow-only; no release triggered. Merge locally with git merge --no-ff refs/pr/N in order 277, 263 (fix file: -> files: in the merge commit), 264 (resolve the setup-python/checkout line conflict vs 277 in the merge commit). The checkout verify requires exactly one SHA across all workflows equal to the v7.0.1 commit. gh needs the sandbox disabled. CI green on the full SHA after push."
     },
@@ -779,11 +1199,39 @@
           "timeout": 60
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-15T02:08:07Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "for n in 275 276; do git merge-base --is-ancestor refs/pr/$n HEAD || exit 1; done",
+            "exit": 0,
+            "duration_ms": 7,
+            "tail": "",
+            "recorded_at": "2026-11-15T02:08:06Z"
+          },
+          {
+            "cmd": "test \"$(gh api repos/anthropics/claude-code-action/commits/v1.0.262 --jq .sha)\" = 925afb53776cf1a2b738c6bdbed37b4d4000ef13 && grep -q 'claude-code-action@925afb53776cf1a2b738c6bdbed37b4d4000ef13' .github/workflows/daily-release.yml",
+            "exit": 0,
+            "duration_ms": 402,
+            "tail": "",
+            "recorded_at": "2026-11-15T02:08:07Z"
+          },
+          {
+            "cmd": "test \"$(gh api repos/actions/create-github-app-token/commits/v3.3.0 --jq .sha)\" = 64ab729a6294000f5aa4a4bc0b73d1f32bc45510 && grep -q 'create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510' .github/workflows/daily-release.yml",
+            "exit": 0,
+            "duration_ms": 521,
+            "tail": "",
+            "recorded_at": "2026-11-15T02:08:07Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "Highest-sensitivity pins: claude-code-action runs in the no-write drafting job; create-github-app-token mints the govee-ha-release App token in the release env. Before merging, read the compare v1.0.259...v1.0.262 and the 3.3.0 changelog for permission/input changes; stop and ask if anything widens. Keep the pins' comment accurate. Threat model: docs/research/2026-10-24_secure-ai-release-pipeline.md."
     },
@@ -807,13 +1255,34 @@
           "timeout": 30
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-15T02:08:35Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "python3 -c \"import sys; s=open('.github/dependabot.yml').read(); sys.exit(0 if 'dependency-name: \\\"pytest\\\"' in s and 'version-update:semver-major' in s else 1)\"",
+            "exit": 0,
+            "duration_ms": 22,
+            "tail": "",
+            "recorded_at": "2026-11-15T02:08:34Z"
+          },
+          {
+            "cmd": "test \"$(gh pr view 280 --json state --jq .state)\" = CLOSED",
+            "exit": 0,
+            "duration_ms": 373,
+            "tail": "",
+            "recorded_at": "2026-11-15T02:08:35Z"
+          }
+        ]
+      },
       "origin": "issue:280",
-      "notes": "CI log run 41806401065: pytest-homeassistant-custom-component 0.13.205 depends on pytest==8.3.4 -> ResolutionImpossible. Add under the pip ignore list: dependency-name: \"pytest\" with update-types: [\"version-update:semver-major\"] and a comment naming the plugin pin. Close #280 with a one-line comment explaining the pin (outward action; plan approved it)."
+      "notes": "CI log run 41806401065: pytest-homeassistant-custom-component 0.13.205 depends on pytest==8.3.4 -> ResolutionImpossible. Add under the pip ignore list: dependency-name: \"pytest\" with update-types: [\"version-update:semver-major\"] and a comment naming the plugin pin. Close #280 with a one-line comment explaining the pin (outward action; plan approved it). | DISPATCH BY ID: depends on T-002, which is blocked (hard_spec, verify defect); T-023 verified the same merge, so treat T-002 as satisfied (/blitz:build T-019)."
     },
     {
       "id": "T-020",
@@ -835,13 +1304,34 @@
           "timeout": 10
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-15T02:09:43Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "for n in 223 266 258 207 245 249 274 209 239 244 281 285 287 288 289 201 215 208 200; do grep -q \"^## #$n$\" docs/release-replies.md || exit 1; done",
+            "exit": 0,
+            "duration_ms": 19,
+            "tail": "",
+            "recorded_at": "2026-11-15T02:09:43Z"
+          },
+          {
+            "cmd": "! git log --format=%s v2026.10.2..HEAD -- docs/release-replies.md | grep -qE '#[0-9]'",
+            "exit": 0,
+            "duration_ms": 8,
+            "tail": "",
+            "recorded_at": "2026-11-15T02:09:43Z"
+          }
+        ]
+      },
       "origin": "plan",
-      "notes": "close: yes|no|duplicate|declined. yes only where reporter confirmed: #223 (retest OK 11-08), #266 (bmcave confirmed), #258 (Gamlem, 17 devices). #274 duplicate of #209. close:no for the rest: #207 (fixed 9.12, except clause api/client.py), #245 (shipped 10.1 option), #249 (PVR on, SECURITY.md link; held PRs now merged - thank BrawnyBravo), #209 (Developer API returns no H7105; needs BFF record/frames, no manual override), #239 (4 questions), #244 (wet both contacts, try another sensor), #281 (API returns no DIYs for H70B6; ask UI diagnostics + whether they are uploaded GIFs), #285 (English: HA/integration version, UI diagnostics, scene list ids/paramId for Lightning A/B), #287 (UI diagnostics for the H5107 + app unit setting), #288 (no known execute API; capture welcome), #289 (upgrade from 2026.10.0, diagnostics lan_discovery block, answers to their 4 questions), #201/#215/#208/#200 (no reply in 45+ days, will close in 14 days unless data). Commit subject must not contain #N. Diagnostics via UI Download diagnostics, never logger YAML."
+      "notes": "close: yes|no|duplicate|declined. yes only where reporter confirmed: #223 (retest OK 11-08), #266 (bmcave confirmed), #258 (Gamlem, 17 devices). #274 duplicate of #209. close:no for the rest: #207 (fixed 9.12, except clause api/client.py), #245 (shipped 10.1 option), #249 (PVR on, SECURITY.md link; held PRs now merged - thank BrawnyBravo), #209 (Developer API returns no H7105; needs BFF record/frames, no manual override), #239 (4 questions), #244 (wet both contacts, try another sensor), #281 (API returns no DIYs for H70B6; ask UI diagnostics + whether they are uploaded GIFs), #285 (English: HA/integration version, UI diagnostics, scene list ids/paramId for Lightning A/B), #287 (UI diagnostics for the H5107 + app unit setting), #288 (no known execute API; capture welcome), #289 (upgrade from 2026.10.0, diagnostics lan_discovery block, answers to their 4 questions), #201/#215/#208/#200 (no reply in 45+ days, will close in 14 days unless data). Commit subject must not contain #N. Diagnostics via UI Download diagnostics, never logger YAML. | DISPATCH BY ID: depends on T-002, which is blocked (hard_spec, verify defect); T-023 verified the same merge, so treat T-002 as satisfied (/blitz:build T-020)."
     },
     {
       "id": "T-021",

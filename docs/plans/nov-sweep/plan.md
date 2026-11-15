@@ -47,6 +47,7 @@ Workflow-only merges (T-016..T-019) never trigger a release by themselves, becau
 No gaps: each outcome has at least one task with a non-test check.
 
 ## Risks
+- **T-002 is blocked but satisfied (T-023).** `tasks.sh next` never offers its dependents (T-009, T-010, T-011, T-014, T-016, T-019, T-020, then T-021/T-022). A fresh session must dispatch them by id: `/blitz:build <ID>`.
 - **Timing:** the cron runs at 03:00 UTC, and the plan was written at about 01:30 UTC. Twenty merges with CI waits will probably run past 03:00. If they finish before 05:00 UTC (still 2026-11-14 Eastern), ask the maintainer before dispatching `daily-release` with `dry_run=false`. Otherwise it ships at the next scheduled run. #256 moves the cron to 02:00 UTC from tomorrow on.
 - **#251 conflict resolution is ours.** The author's tests cover their own head, so after resolving, rerun `test_issue_222.py` (main's silent-session detection) and the PR's suites together.
 - **#252 × #267 idle-timer merge:** two designs of the same feature. The verify pins one timer (`DISCONNECT_DELAY`, no `_idle_disconnect_handle`), and T-008 asserts that other BLE models are unchanged.
