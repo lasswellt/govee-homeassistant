@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 try:
@@ -86,6 +87,16 @@ class BleAdvertisementHandler:
         # Devices whose same-SKU advert from another address was already logged.
         self._mac_mismatch_logged: set[str] = set()
 
+    def _supports_commands(self, sku: str) -> bool:
+        """Keep unverified H6104 commands behind an explicit options opt-in.
+
+        Advertising alone cannot prove that a light accepts our GATT frames.
+        Do not add H6104 to the hardware-verified model allowlist until tested.
+        """
+        if sku in BLE_COMMAND_SUPPORTED_MODELS:
+            return True
+        return sku == "H6104" and self._coord.h6104_ble_enabled
+
     def setup_subscriptions(self) -> list[Any]:
         """Register name-prefix and manufacturer-ID callbacks.
 
@@ -151,7 +162,7 @@ class BleAdvertisementHandler:
         for device_id, device in list(coord._devices.items()):
             if device_id in coord._ble_devices or device.is_group:
                 continue
-            if device.sku not in BLE_COMMAND_SUPPORTED_MODELS:
+            if not self._supports_commands(device.sku):
                 continue
             address = ble_address_from_device_id(device_id)
             if address is None:
@@ -222,8 +233,8 @@ class BleAdvertisementHandler:
             return
 
         # BLE advertisement visibility != BLE command capability (issue #59).
-        # Only enroll SKUs whose BLE command set is verified.
-        if ble_sku not in BLE_COMMAND_SUPPORTED_MODELS:
+        # Only enroll verified SKUs or an explicitly opted-in H6104.
+        if not self._supports_commands(ble_sku):
             if ble_sku not in coord._ble_ignored_skus_logged:
                 coord._ble_ignored_skus_logged.add(ble_sku)
                 _LOGGER.info(
@@ -262,8 +273,17 @@ class BleAdvertisementHandler:
             coord._ble_devices[matched_id] = GoveeBLEDevice(
                 service_info.device,
                 segmented=ble_sku in SEGMENTED_MODELS,
+                legacy_uart=ble_sku == "H6104",
             )
             changed = True
+            if ble_sku == "H6104":
+                coord._ble_devices[matched_id].register_report_callback(
+                    partial(coord._apply_h6104_ble_report, matched_id)
+                )
+                _LOGGER.debug(
+                    "H6104 BLE control and experimental status readback enabled for %s",
+                    coord._devices[matched_id].name,
+                )
             _LOGGER.info(
                 "BLE transport available for %s (SKU=%s)",
                 coord._devices[matched_id].name,
