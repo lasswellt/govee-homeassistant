@@ -24,13 +24,15 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
 from .api import (
+    Govee2FACodeInvalidError,
     Govee2FARequiredError,
     GoveeApiClient,
     GoveeApiError,
     GoveeAuthError,
     GoveeIotCredentials,
+    GoveeLoginRejectedError,
 )
-from .api.auth import GoveeAuthClient, _derive_client_id
+from .api.auth import GoveeAuthClient, _derive_client_id, is_connection_error
 from .const import (
     CONF_API_KEY,
     CONF_EMAIL,
@@ -50,6 +52,7 @@ from .const import (
     KEY_IOT_CREDENTIALS,
     KEY_IOT_LOGIN_FAILED,
     LEGACY_HUB_DEVICE_IDENTIFIER,
+    LOGIN_FAILED_2FA,
     SEGMENT_MODE_BOTH,
     SEGMENT_MODE_GROUPED,
     SEGMENT_MODE_INDIVIDUAL,
@@ -148,6 +151,19 @@ def _persist_iot_credentials(
     hass.config_entries.async_update_entry(entry, data=new_data)
 
 
+def _async_create_2fa_issue(hass: HomeAssistant, entry: GoveeConfigEntry) -> None:
+    """Raise the repair telling the user the account login needs a 2FA code."""
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        f"mqtt_2fa_required_{entry.entry_id}",
+        is_fixable=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key="mqtt_2fa_required",
+        translation_placeholders={"entry_title": entry.title},
+    )
+
+
 def _request_counts_store(hass: HomeAssistant, entry: GoveeConfigEntry) -> Store[dict[str, Any]]:
     """Per-entry storage for the cloud request counters."""
     return Store(hass, REQUEST_COUNTS_STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}.request_counts")
@@ -219,6 +235,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: GoveeConfigEntry) -> boo
     # Optionally get IoT credentials for MQTT
     # Credentials are cached to avoid repeated login attempts on reload
     iot_credentials: GoveeIotCredentials | None = None
+    retry_account_login = False
     email = entry.data.get(CONF_EMAIL)
     password = entry.data.get(CONF_PASSWORD)
 
@@ -235,6 +252,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: GoveeConfigEntry) -> boo
                 "Skipping MQTT login - previous attempt failed: %s. " "Reconfigure integration to retry.",
                 login_failed,
             )
+            # Repairs are not persistent across restarts, so raise the one that
+            # explains this again; otherwise real-time updates stay off with
+            # nothing visible to tell the user why.
+            if login_failed == LOGIN_FAILED_2FA:
+                _async_create_2fa_issue(hass, entry)
+            else:
+                async_create_mqtt_issue(hass, entry, f"account sign-in failed: {login_failed}")
         else:
             # Attempt fresh login.
             try:
@@ -256,26 +280,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: GoveeConfigEntry) -> boo
                     "re-enter credentials with a verification code. "
                     "Continuing with polling-only mode"
                 )
-                _persist_iot_credentials(hass, entry, None, "2FA verification required")
-                ir.async_create_issue(
-                    hass,
-                    DOMAIN,
-                    f"mqtt_2fa_required_{entry.entry_id}",
-                    is_fixable=False,
-                    severity=ir.IssueSeverity.WARNING,
-                    translation_key="mqtt_2fa_required",
-                    translation_placeholders={"entry_title": entry.title},
-                )
-            except GoveeAuthError as err:
+                _persist_iot_credentials(hass, entry, None, LOGIN_FAILED_2FA)
+                _async_create_2fa_issue(hass, entry)
+            except (GoveeAuthError, GoveeLoginRejectedError, Govee2FACodeInvalidError) as err:
                 _LOGGER.warning("Failed to get MQTT credentials: %s", err)
                 _persist_iot_credentials(hass, entry, None, str(err))
                 # Without this the install looks identical to one that never
                 # configured account login: no push, no entity, no issue.
                 async_create_mqtt_issue(hass, entry, f"account sign-in failed: {err}")
             except Exception as err:  # noqa: BLE001 - account login must never block setup
-                _LOGGER.warning("MQTT setup failed: %s", err)
-                _persist_iot_credentials(hass, entry, None, str(err))
                 async_create_mqtt_issue(hass, entry, f"account sign-in failed: {err}")
+                if is_connection_error(err):
+                    # Network/DNS not ready at boot, connection reset, timeout:
+                    # store no failure marker (it would make every later setup
+                    # skip the login for good) and let the coordinator retry
+                    # in the background with backoff.
+                    _LOGGER.warning("MQTT setup failed, will retry: %s", err)
+                    retry_account_login = True
+                else:
+                    # Anything else got past the network (a malformed answer
+                    # after Govee accepted the password, an HTTP error, a bug)
+                    # and would fail the same way again; the fixable repair
+                    # lets the user retry by hand.
+                    _LOGGER.warning("MQTT setup failed: %s", err)
+                    _persist_iot_credentials(hass, entry, None, str(err))
 
     # Get options
     options = entry.options
@@ -314,6 +342,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: GoveeConfigEntry) -> boo
     # Before cleanup, so the old shared diagnostics device is not mistaken
     # for one this entry no longer owns.
     _async_migrate_hub_device(hass, entry)
+
+    # A transient login failure (network/DNS not ready at boot) is retried in
+    # the background so real-time updates come back without a restart.
+    if retry_account_login:
+        coordinator.schedule_account_login_retry()
 
     # Clean up orphaned entities (e.g., groups that are now disabled)
     await _async_cleanup_orphaned_entities(hass, entry, coordinator)

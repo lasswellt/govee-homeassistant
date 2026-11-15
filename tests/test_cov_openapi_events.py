@@ -313,14 +313,17 @@ class TestConnectionLoop:
         with caplog.at_level(logging.DEBUG, logger=LOGGER_NAME):
             await h.run()
 
-        # 5 then 10 for the streak; the successful session resets the backoff to 5.
-        assert h.sleeps == [5, 10, 5]
+        # 5 then 10 for the streak; the third session dropped at once (well
+        # inside STABLE_SESSION_SECONDS), so it is part of the streak: the
+        # backoff keeps doubling and nothing announces a reconnect. The stable
+        # case is in test_account_mqtt_robustness.py.
+        assert h.sleeps == [5, 10, 20]
         error_levels = [rec.levelno for rec in caplog.records if "connection error" in rec.getMessage()]
-        assert error_levels == [logging.WARNING, logging.DEBUG, logging.WARNING]
-        assert [rec for rec in caplog.records if rec.levelno == logging.INFO and "reconnected" in rec.getMessage()]
+        assert error_levels == [logging.WARNING, logging.DEBUG, logging.DEBUG]
+        assert not [rec for rec in caplog.records if rec.levelno == logging.INFO and "reconnected" in rec.getMessage()]
         assert len(h.events) == 1
         assert h.client.connected is False
-        assert h.client._failure_logged is True  # the final drop started a new streak
+        assert h.client._failure_logged is True
 
     @pytest.mark.asyncio
     async def test_backoff_doubles_and_caps(self, harness):

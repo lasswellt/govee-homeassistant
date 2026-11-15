@@ -98,6 +98,22 @@ class TestReconfigureKeepsFreshCredentials:
         assert entry.data[KEY_IOT_CREDENTIALS]["token"] == "stale-token"
 
 
+class TestReconfigureClearsAccountRepairs:
+    def test_both_reconfigure_repairs_are_dismissed(self):
+        """Both repairs that tell the user to reconfigure go away once they have.
+
+        The token-expired repair used to stay in Repairs after a successful
+        reconfigure, because nothing but a coordinator re-login deleted it.
+        """
+        flow, entry = _flow_with_entry()
+
+        with patch("custom_components.govee.config_flow.ir.async_delete_issue") as delete:
+            flow._clear_mqtt_cache(entry.entry_id)
+
+        deleted = {call.args[2] for call in delete.call_args_list}
+        assert deleted == {"mqtt_2fa_required_e1", "mqtt_token_expired_e1"}
+
+
 class TestReconfigureFlowOrdering:
     """The ordering as it appears in the flow itself, not just the helper."""
 
