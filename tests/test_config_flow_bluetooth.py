@@ -11,7 +11,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from homeassistant.config_entries import SOURCE_BLUETOOTH, SOURCE_IGNORE
+from homeassistant.config_entries import SOURCE_BLUETOOTH, SOURCE_IGNORE, SOURCE_USER
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers.service_info.bluetooth import BluetoothServiceInfo
@@ -120,3 +120,19 @@ async def test_second_discovery_aborts_while_the_first_is_open(hass: HomeAssista
     assert second["type"] is FlowResultType.ABORT
     assert second["reason"] == "already_in_progress"
     assert len(hass.config_entries.flow.async_progress_by_handler(DOMAIN)) == 1
+
+
+async def test_setting_up_by_hand_closes_the_discovery_card(hass: HomeAssistant) -> None:
+    """An entry made from the integrations page, not the card, ends the prompt too."""
+    card = await _discover(hass)
+    assert card["type"] is FlowResultType.FORM
+    other = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_API_KEY: API_KEY})
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert [flow["flow_id"] for flow in hass.config_entries.flow.async_progress_by_handler(DOMAIN)] == [
+        other["flow_id"]
+    ]
