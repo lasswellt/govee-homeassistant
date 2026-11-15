@@ -1,7 +1,7 @@
 {
   "$schema": "blitz-tasks/1.0",
   "plan": "nov-sweep",
-  "updated": "2026-11-15T01:23:39Z",
+  "updated": "2026-11-15T01:28:09Z",
   "tasks": [
     {
       "id": "T-001",
@@ -31,11 +31,46 @@
           "timeout": 300
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-15T01:28:09Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "git log --format=%s v2026.10.2..HEAD | grep -q 'Merge PR #270'",
+            "exit": 0,
+            "duration_ms": 7,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:28:08Z"
+          },
+          {
+            "cmd": "git merge-base --is-ancestor refs/pr/270 HEAD",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:28:08Z"
+          },
+          {
+            "cmd": "python3 -c \"import re,sys; s=open('custom_components/govee/const.py').read(); m=re.search(r'FAHRENHEIT_REPORTING_SKUS: Final = frozenset\\((.*?)\\n\\)', s, re.S); sys.exit(0 if m and 'H5105' in m.group(1) and 'H5108' in m.group(1) else 1)\"",
+            "exit": 0,
+            "duration_ms": 27,
+            "tail": "",
+            "recorded_at": "2026-11-15T01:28:08Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_thermometer.py",
+            "exit": 0,
+            "duration_ms": 1368,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 72%]\n...........................                                              [100%]\n99 passed in 0.20s",
+            "recorded_at": "2026-11-15T01:28:09Z"
+          }
+        ]
+      },
       "origin": "issue:270",
       "notes": "Research 2026-11-14 §PR validation: MERGE-AS-IS (head d3f2201, 4283 pass). git fetch -q origin +refs/pull/270/head:refs/pr/270; git merge --no-ff refs/pr/270 -m 'Merge PR #270: H5105 and H5108 report in Fahrenheit' (body credits bdashrad). Every merge task: push only after verify; then wait for CI on the full SHA (gh run list --commit $(git rev-parse HEAD)) before the next push."
     },
