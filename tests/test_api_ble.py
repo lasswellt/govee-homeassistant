@@ -50,6 +50,25 @@ def _plaintext_device():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _cancel_idle_timers():
+    """Cancel the idle-disconnect timer each write arms, so no timer outlives a test."""
+    armed: list[GoveeBLEDevice] = []
+    original = GoveeBLEDevice._reset_disconnect_timer
+
+    def _tracking(self):
+        armed.append(self)
+        original(self)
+
+    with patch.object(GoveeBLEDevice, "_reset_disconnect_timer", _tracking):
+        yield
+    for device in armed:
+        if device._disconnect_timer is not None:
+            device._disconnect_timer.cancel()
+        if device._disconnect_task is not None:
+            device._disconnect_task.cancel()
+
+
 # ==============================================================================
 # Module constants
 # ==============================================================================
@@ -742,6 +761,159 @@ class TestStop:
 
         await device.stop()  # must not raise
         assert device._client is None
+
+
+class TestIdleDisconnect:
+    """The GATT link is released after a quiet period (led_ble pattern).
+
+    Holding it forever pins a Bluetooth proxy connection slot per light and
+    locks the Govee phone app out of the device.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _short_delay(self, monkeypatch):
+        import custom_components.govee.api.ble as ble_mod
+
+        monkeypatch.setattr(ble_mod, "DISCONNECT_DELAY", 0.05, raising=False)
+
+    @pytest.mark.asyncio
+    async def test_link_is_released_after_the_idle_delay(self):
+        import asyncio
+
+        device = GoveeBLEDevice(_make_ble_device())
+        client = _install_fake_client(device)
+
+        await device.turn_on()
+        client.disconnect.assert_not_awaited()  # still connected for follow-ups
+
+        await asyncio.sleep(0.15)
+
+        client.disconnect.assert_awaited_once()
+        assert device._client is None
+
+    @pytest.mark.asyncio
+    async def test_each_write_restarts_the_idle_timer(self):
+        import asyncio
+
+        device = GoveeBLEDevice(_make_ble_device())
+        client = _install_fake_client(device)
+
+        await device.turn_on()
+        await asyncio.sleep(0.03)
+        await device.set_brightness(100)
+        await asyncio.sleep(0.03)
+
+        client.disconnect.assert_not_awaited()
+        await asyncio.sleep(0.1)
+        client.disconnect.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_stop_cancels_the_pending_idle_disconnect(self):
+        import asyncio
+
+        device = GoveeBLEDevice(_make_ble_device())
+        client = _install_fake_client(device)
+
+        await device.turn_on()
+        await device.stop()
+        await asyncio.sleep(0.1)
+
+        client.disconnect.assert_awaited_once()  # by stop() only
+        assert device._disconnect_timer is None
+
+    @pytest.mark.asyncio
+    async def test_idle_disconnect_error_is_swallowed(self):
+        import asyncio
+
+        from bleak_retry_connector import BleakError
+
+        device = GoveeBLEDevice(_make_ble_device())
+        client = _install_fake_client(device)
+        client.disconnect = AsyncMock(side_effect=BleakError("gone"))
+
+        await device.turn_on()
+        await asyncio.sleep(0.15)
+
+        assert device._client is None
+
+    @pytest.mark.asyncio
+    async def test_idle_disconnect_after_a_link_drop_is_a_noop(self):
+        device = GoveeBLEDevice(_make_ble_device())
+        client = _install_fake_client(device)
+        client.is_connected = False
+
+        await device._async_idle_disconnect()
+
+        client.disconnect.assert_not_awaited()
+        assert device._client is None
+
+    @pytest.mark.asyncio
+    async def test_stop_lets_a_started_idle_disconnect_finish(self):
+        """Cancelling a disconnect midway could leave the link half closed."""
+        import asyncio
+
+        device = GoveeBLEDevice(_make_ble_device())
+        client = _install_fake_client(device)
+
+        async with device._lock:
+            device._on_idle_timeout()
+            task = device._disconnect_task
+            await asyncio.sleep(0)  # the task is now blocked on the lock
+        await device.stop()
+
+        assert task.done() and not task.cancelled()
+        client.disconnect.assert_awaited_once()  # by the idle task; stop() found no link
+        assert device._client is None
+
+    @pytest.mark.asyncio
+    async def test_stop_swallows_a_failed_idle_disconnect(self):
+        import asyncio
+
+        device = GoveeBLEDevice(_make_ble_device())
+        _install_fake_client(device)
+
+        async def _boom():
+            raise RuntimeError("bluez gone")
+
+        device._disconnect_task = asyncio.get_running_loop().create_task(_boom())
+        await device.stop()  # must not raise
+
+        assert device._disconnect_task is None
+
+    @pytest.mark.asyncio
+    async def test_stop_during_an_in_flight_write_leaves_no_armed_timer(self):
+        import asyncio
+
+        device = GoveeBLEDevice(_make_ble_device())
+        client = _install_fake_client(device)
+        release = asyncio.Event()
+
+        async def _slow_write(*_args, **_kwargs):
+            await release.wait()
+
+        client.write_gatt_char = AsyncMock(side_effect=_slow_write)
+        write = asyncio.get_running_loop().create_task(device.turn_on())
+        await asyncio.sleep(0)  # the write holds the lock
+        stop = asyncio.get_running_loop().create_task(device.stop())
+        await asyncio.sleep(0)
+        release.set()
+        await asyncio.gather(write, stop)
+
+        assert device._disconnect_timer is None
+        assert device._client is None
+
+    @pytest.mark.asyncio
+    async def test_stale_idle_disconnect_skips_a_link_reused_meanwhile(self):
+        """A disconnect queued behind a write must not drop the link it just used."""
+        device = GoveeBLEDevice(_make_ble_device())
+        client = _install_fake_client(device)
+
+        await device.turn_on()  # arms a fresh timer
+        await device._async_idle_disconnect()  # an older timer's task, run late
+
+        client.disconnect.assert_not_awaited()
+        assert device._client is client
+        await device.stop()
 
 
 # ==============================================================================

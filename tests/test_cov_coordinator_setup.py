@@ -250,6 +250,10 @@ class _FakeLanClient:
     async def async_stop(self) -> None:
         self.stop_calls += 1
 
+    async def async_scan(self, **kwargs: Any) -> Any:
+        # Rescans run on the client's own socket; delegate to the patched scan.
+        return await coord_mod.async_scan_lan_devices(**kwargs)
+
 
 def _patch_lan(monkeypatch: pytest.MonkeyPatch, *, scan: Any, client: Any, seen: dict[str, Any] | None = None) -> None:
     """Patch the LAN helpers the coordinator imported so no UDP is ever sent."""
@@ -731,6 +735,162 @@ class TestLanRescan:
         assert coord._lan_devices[DEV].ip == "10.0.0.6"
         assert coord._lan_read_misses[DEV] == 0
         assert coord.lan_unmatched_count == 1
+
+
+class TestRescanUsesTheClientSocket:
+    @pytest.mark.asyncio
+    async def test_rescan_never_binds_a_second_4002_socket(self, monkeypatch):
+        """A second :4002 socket would split unicast replies with the client's on Linux."""
+        coord = _coordinator()
+        _add(coord, _light(DEV))
+        client = MagicMock()
+        client.async_scan = AsyncMock(return_value=[{"device": DEV, "ip": "10.0.0.7", "sku": "H6072"}])
+        coord._lan_client = client
+        coord._request_lan_rescan()
+
+        async def _no_second_socket(**_kwargs: Any) -> Any:
+            raise AssertionError("rescan opened its own :4002 socket")
+
+        _patch_lan(monkeypatch, scan=[], client=client)
+        monkeypatch.setattr(coord_mod, "async_scan_lan_devices", _no_second_socket)
+
+        await coord._async_maybe_rescan_lan()
+
+        client.async_scan.assert_awaited_once()
+        assert coord._lan_devices[DEV].ip == "10.0.0.7"
+
+
+class TestLanSetupRetry:
+    """LAN that found nothing at setup must come back without a reload."""
+
+    @pytest.mark.asyncio
+    async def test_empty_first_scan_is_retried_on_a_later_poll(self, monkeypatch):
+        coord = _coordinator()
+        _add(coord, _light(DEV))
+        _patch_lan(monkeypatch, scan=[], client=_FakeLanClient())
+        await coord._async_setup_lan()
+        assert coord._lan_client is None
+
+        # The lights' Wi-Fi comes up after Home Assistant did.
+        client = _FakeLanClient()
+        _patch_lan(monkeypatch, scan=[{"device": DEV, "ip": "10.0.0.5", "sku": "H6072"}], client=client)
+        coord._last_lan_rescan = float("-inf")  # throttle elapsed
+        await coord._async_maybe_rescan_lan()
+
+        assert coord._lan_client is client
+        assert coord._lan_devices[DEV].ip == "10.0.0.5"
+
+    @pytest.mark.asyncio
+    async def test_retry_is_throttled(self, monkeypatch):
+        coord = _coordinator()
+        _add(coord, _light(DEV))
+        seen: dict[str, Any] = {}
+        _patch_lan(monkeypatch, scan=[], client=_FakeLanClient(), seen=seen)
+        await coord._async_setup_lan()
+        assert seen["scans"] == 1
+
+        # The failed setup counts as the latest attempt: polls right after it
+        # must not rescan.
+        await coord._async_maybe_rescan_lan()
+        await coord._async_maybe_rescan_lan()
+        assert seen["scans"] == 1
+
+        coord._last_lan_rescan = float("-inf")
+        await coord._async_maybe_rescan_lan()
+        await coord._async_maybe_rescan_lan()
+        assert seen["scans"] == 2
+
+    @pytest.mark.asyncio
+    async def test_empty_retries_back_off_to_an_hour_and_success_resets(self, monkeypatch):
+        """Cloud-only installs must not scan every five minutes forever."""
+        coord = _coordinator()
+        _add(coord, _light(DEV))
+        seen: dict[str, Any] = {}
+        _patch_lan(monkeypatch, scan=[], client=_FakeLanClient(), seen=seen)
+        clock = {"now": 10_000.0}
+        monkeypatch.setattr(coord_mod.time, "monotonic", lambda: clock["now"])
+
+        await coord._async_setup_lan()  # empty first attempt at t=10000
+        gaps = []
+        last = clock["now"]
+        for _ in range(7):
+            # Advance minute by minute until the next retry actually scans.
+            before = seen["scans"]
+            while seen["scans"] == before:
+                clock["now"] += 60
+                await coord._async_maybe_rescan_lan()
+            gaps.append(clock["now"] - last)
+            last = clock["now"]
+
+        assert gaps == [300, 600, 1200, 2400, 3600, 3600, 3600]
+
+        # Lights finally answer: the client starts and the interval resets.
+        client = _FakeLanClient()
+        _patch_lan(monkeypatch, scan=[{"device": DEV, "ip": "10.0.0.5", "sku": "H6072"}], client=client, seen=seen)
+        clock["now"] += 3600
+        await coord._async_maybe_rescan_lan()
+        assert coord._lan_client is client
+        assert coord._lan_retry_interval == 300
+
+    @pytest.mark.asyncio
+    async def test_off_never_retries(self, monkeypatch):
+        coord = _coordinator(options={CONF_LAN_TARGETS: "off"})
+        _add(coord, _light(DEV))
+        seen: dict[str, Any] = {}
+        _patch_lan(monkeypatch, scan=[], client=_FakeLanClient(), seen=seen)
+        coord._last_lan_rescan = float("-inf")
+
+        await coord._async_maybe_rescan_lan()
+
+        assert "scans" not in seen
+        assert coord._lan_client is None
+
+    @pytest.mark.asyncio
+    async def test_retry_failure_never_raises_into_the_poll(self, monkeypatch):
+        coord = _coordinator()
+        _add(coord, _light(DEV))
+        _patch_lan(monkeypatch, scan=[], client=_FakeLanClient())
+
+        async def _boom(hass: Any) -> list[str]:
+            raise RuntimeError("adapter lookup failed")
+
+        monkeypatch.setattr(coord_mod, "async_get_lan_interface_ips", _boom)
+        coord._last_lan_rescan = float("-inf")
+
+        await coord._async_maybe_rescan_lan()
+
+        assert coord._lan_client is None
+
+    @pytest.mark.asyncio
+    async def test_retry_after_unload_opens_no_socket(self, monkeypatch):
+        coord = _coordinator()
+        _add(coord, _light(DEV))
+        client = _FakeLanClient()
+        _patch_lan(monkeypatch, scan=[{"device": DEV, "ip": "10.0.0.5", "sku": "H6072"}], client=client)
+        coord._lan_closed = True
+
+        await coord._async_setup_lan(retry=True)
+
+        assert coord._lan_client is None
+        assert client.start_calls == 0
+
+    @pytest.mark.asyncio
+    async def test_unload_during_bind_releases_the_socket(self, monkeypatch):
+        coord = _coordinator()
+        _add(coord, _light(DEV))
+
+        class _UnloadWhileStarting(_FakeLanClient):
+            async def async_start(self, interface_ips: list[str]) -> None:
+                await super().async_start(interface_ips)
+                coord._lan_closed = True
+
+        client = _UnloadWhileStarting()
+        _patch_lan(monkeypatch, scan=[{"device": DEV, "ip": "10.0.0.5", "sku": "H6072"}], client=client)
+
+        await coord._async_setup_lan(retry=True)
+
+        assert coord._lan_client is None
+        assert client.stop_calls == 1
 
 
 # --------------------------------------------------------------------------- #

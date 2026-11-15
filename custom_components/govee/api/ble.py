@@ -115,6 +115,12 @@ _PACKET_HEAD_COMMAND = 0x33
 # Connection management
 _MAX_CONNECT_ATTEMPTS = 4
 
+# Seconds of inactivity after the last write before the GATT link is released,
+# matching Home Assistant core's led_ble. Commands in a burst reuse the open
+# link; an idle light stops pinning a Bluetooth proxy connection slot and
+# lets the Govee phone app connect again.
+DISCONNECT_DELAY = 120
+
 
 class LedPacketCmd(IntEnum):
     """Command byte values (Beshelmek reference, light.py:37-41)."""
@@ -269,6 +275,9 @@ class GoveeBLEDevice:
         self._state = GoveeBLEState()
         self._lock = asyncio.Lock()
         self._callbacks: list[Callable[[GoveeBLEState], None]] = []
+        # Idle disconnect: armed after every write, cancelled by the next one.
+        self._disconnect_timer: asyncio.TimerHandle | None = None
+        self._disconnect_task: asyncio.Task[None] | None = None
 
     # ------------------------------------------------------------------ #
     # Properties
@@ -415,10 +424,44 @@ class GoveeBLEDevice:
         the session cipher, so every command encoding above is shared.
         """
         async with self._lock:
-            client = await self._ensure_connected()
-            if self._session is not None:
-                frame = self._session.wrap(frame)
-            await client.write_gatt_char(WRITE_CHARACTERISTIC_UUID, frame, response=False)
+            try:
+                client = await self._ensure_connected()
+                if self._session is not None:
+                    frame = self._session.wrap(frame)
+                await client.write_gatt_char(WRITE_CHARACTERISTIC_UUID, frame, response=False)
+            finally:
+                self._reset_disconnect_timer()
+
+    def _cancel_disconnect_timer(self) -> None:
+        """Cancel a pending idle disconnect, if one is armed."""
+        if self._disconnect_timer is not None:
+            self._disconnect_timer.cancel()
+            self._disconnect_timer = None
+
+    def _reset_disconnect_timer(self) -> None:
+        """(Re)arm the idle disconnect for ``DISCONNECT_DELAY`` from now."""
+        self._cancel_disconnect_timer()
+        self._disconnect_timer = asyncio.get_running_loop().call_later(DISCONNECT_DELAY, self._on_idle_timeout)
+
+    def _on_idle_timeout(self) -> None:
+        """Timer callback: release the link from a task (it needs the lock)."""
+        self._disconnect_timer = None
+        self._disconnect_task = asyncio.get_running_loop().create_task(self._async_idle_disconnect())
+
+    async def _async_idle_disconnect(self) -> None:
+        """Disconnect after the idle delay unless a newer write re-armed it."""
+        async with self._lock:
+            if self._disconnect_timer is not None:
+                # A write ran while this task waited for the lock; keep the link.
+                return
+            client, self._client, self._session = self._client, None, None
+            if client is None or not client.is_connected:
+                return
+            _LOGGER.debug("Releasing idle BLE connection to %s", self.address)
+            try:
+                await client.disconnect()
+            except BleakError:
+                _LOGGER.debug("Error disconnecting idle Govee BLE client %s (ignored)", self.address)
 
     # ------------------------------------------------------------------ #
     # High-level command API
@@ -482,7 +525,18 @@ class GoveeBLEDevice:
 
     async def stop(self) -> None:
         """Cleanly disconnect the ``BleakClient`` (idempotent)."""
+        self._cancel_disconnect_timer()
+        task, self._disconnect_task = self._disconnect_task, None
+        if task is not None:
+            # Let an idle disconnect that already started finish: cancelling it
+            # mid-disconnect could leave the link half closed.
+            await asyncio.wait([task])
+            if not task.cancelled() and task.exception() is not None:
+                _LOGGER.debug("Idle BLE disconnect for %s failed: %s", self.address, task.exception())
         async with self._lock:
+            # A write that was in flight when stop() began re-armed the timer
+            # in its finally; clear it so nothing outlives the unload.
+            self._cancel_disconnect_timer()
             if self._client is not None and self._client.is_connected:
                 try:
                     await self._client.disconnect()
