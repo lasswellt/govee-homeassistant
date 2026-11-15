@@ -76,6 +76,21 @@ def _h7150() -> GoveeDevice:
     )
 
 
+def _h7151() -> GoveeDevice:
+    """Tank-only dehumidifier that shares the frame layout (#283)."""
+    return GoveeDevice(
+        device_id="11:66:C0:EB:1D:75:5C:E9",
+        sku="H7151",
+        name="Smart Dehumidifier",
+        device_type="devices.types.dehumidifier",
+        capabilities=(GoveeCapability(type=CAPABILITY_ON_OFF, instance=INSTANCE_POWER, parameters={}),),
+    )
+
+
+# Reporter's frame (#283): app showed 21.9 C / 39.9 %.
+FRAME_H7151 = bytes.fromhex("aa1081035907" + "00" * 13 + "66")
+
+
 def _lamp() -> GoveeDevice:
     return GoveeDevice(
         device_id=LAMP_ID,
@@ -102,6 +117,27 @@ class TestSupportsHumiditySensorOnPumpDehumidifier:
     def test_h7150_does_not_support_humidity_sensor(self):
         """No sensorHumidity capability and not confirmed on H7150 frames."""
         assert _h7150().supports_humidity_sensor is False
+
+
+class TestH7151FrameClimate:
+    def test_supports_temperature_and_humidity_sensors(self):
+        assert _h7151().supports_temperature_sensor is True
+        assert _h7151().supports_humidity_sensor is True
+
+    def test_has_no_pump_or_hose(self):
+        assert _h7151().supports_pump_state is False
+
+    def test_push_decodes_temperature_and_humidity(self):
+        coordinator = TestCoordinatorAppliesTemperatureFromAnMqttPush()._coordinator()
+        h7151 = _h7151()
+        coordinator._devices[h7151.device_id] = h7151
+        coordinator._states[h7151.device_id] = GoveeDeviceState.create_empty(h7151.device_id)
+
+        coordinator._on_mqtt_state_update(h7151.device_id, {"onOff": 1, "_op_frames": [FRAME_H7151.hex()]})
+
+        state = coordinator._states[h7151.device_id]
+        assert state.sensor_temperature == 21.9
+        assert state.sensor_humidity == 39.9
 
 
 class TestUpdateTemperatureFromFrames:

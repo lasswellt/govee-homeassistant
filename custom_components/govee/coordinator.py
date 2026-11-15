@@ -223,7 +223,7 @@ from .models.device import (
     MAINS_POWERED_BATTERY_SKUS,
     MAINS_POWERED_DEVICE_TYPES,
     PROBE_THERMOMETER_BFF_SKUS,
-    PUMP_DEHUMIDIFIER_SKUS,
+    FRAME_CLIMATE_DEHUMIDIFIER_SKUS,
     looks_like_group_id,
 )
 from .models.device import GoveeLeakSensor, GoveeLeakSensorState
@@ -4109,10 +4109,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             frames = self._op_frames_from(state_data)
             state.update_pump_state_from_frames(frames)
             state.update_dehumidifier_mode_from_frames(frames)
-        # Pump-model dehumidifiers (H7152) carry live temperature/humidity
+        # Frame-climate dehumidifiers (H7152, H7151 #283) carry live temperature/humidity
         # only in these BLE-format status frames — no capability exists for
         # either (issue #114 follow-up).
-        if device is not None and device.sku.upper() in PUMP_DEHUMIDIFIER_SKUS:
+        if device is not None and device.sku.upper() in FRAME_CLIMATE_DEHUMIDIFIER_SKUS:
             if state.update_temperature_from_frames(self._op_frames_from(state_data)):
                 self._store_frame_temperature_in_entity_unit(device_id, device.sku, state)
         # Smart outlets (H5086) carry live voltage/current/power/energy the
