@@ -11,7 +11,7 @@ import pytest
 from custom_components.govee.api import lan
 
 
-def _install_fake_endpoint(monkeypatch, responses, *, bind_error=None):
+def _install_fake_endpoint(monkeypatch, responses, *, bind_error=None, sender=None):
     """Patch socket + event loop so async_scan_lan_devices runs offline.
 
     Returns the MagicMock transport so tests can assert on sendto. ``responses``
@@ -34,7 +34,8 @@ def _install_fake_endpoint(monkeypatch, responses, *, bind_error=None):
 
     async def _sleep(_timeout):
         for resp in responses:
-            proto.datagram_received(json.dumps(resp).encode("utf-8"), ("192.168.1.50", 4002))
+            source = sender or resp["msg"]["data"].get("ip") or "192.168.1.50"
+            proto.datagram_received(json.dumps(resp).encode("utf-8"), (source, 4002))
 
     monkeypatch.setattr(lan.asyncio, "sleep", _sleep)
     return transport, sock

@@ -672,7 +672,7 @@ class GoveeLanClient:
             # collector and that scan would lose its later replies.
             _LOGGER.debug("Govee LAN scan already running; skipping overlapping scan")
             return []
-        collector = _ScanProtocol()
+        collector = _ScanProtocol(list(interface_ips))
         self._scan_collector = collector
         try:
             _send_scan(self._recv_sock, self._recv_transport, list(interface_ips))
