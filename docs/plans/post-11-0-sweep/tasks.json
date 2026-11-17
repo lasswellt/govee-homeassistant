@@ -1,0 +1,433 @@
+{
+  "$schema": "blitz-tasks/1.0",
+  "plan": "post-11-0-sweep",
+  "updated": "2026-11-17T04:04:58Z",
+  "tasks": [
+    {
+      "id": "T-001",
+      "title": "#295: post the Marketplace workaround reply and pin the issue",
+      "role": "infra",
+      "files": [
+        "docs/research/2026-11-16_post-2026-11-0-sweep.md"
+      ],
+      "depends_on": [],
+      "verify": [
+        {
+          "cmd": "gh api repos/lasswellt/govee-homeassistant/issues/295/comments --jq '[.[]|select(.user.login==\"lasswellt\")|.body|test(\"190454\")]|any' | grep -qx true",
+          "timeout": 60
+        },
+        {
+          "cmd": "gh api graphql -f query='{repository(owner:\"lasswellt\",name:\"govee-homeassistant\"){issue(number:295){isPinned}}}' --jq .data.repository.issue.isPinned | grep -qx true",
+          "timeout": 60
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "plan",
+      "notes": "Maintainer approved posting now + pin (2026-11-16, option 1). Outward action, gh needs dangerouslyDisableSandbox. Reply content: cause = HA 2026.11 core Marketplace async_pre_install domain check (homeassistant/components/marketplace/repositories/integration.py) vs a stale LaggAt/hacs-govee record still marked installed after the HACS->Marketplace migration; not caused by v2026.11.0; link home-assistant/core#190454. Workaround: Settings > Devices & services > Devices, search Marketplace, open it, disable the integration; back up /config/.storage/marketplace.repositories; in the LaggAt/hacs-govee record delete only the \"installed\": true line; save, re-enable, retry update. WARNING: never 'Delete and uninstall' the LaggAt entry (deletes custom_components/govee and the config entry). Mention we are proposing a core fix. Ask no more 'same here' comments (use reactions). Cite no version of ours. Keep issue open. Pin: gh issue pin 295."
+    },
+    {
+      "id": "T-002",
+      "title": "Draft home-assistant/core fix for #190454: reconcile a stale same-domain Marketplace record from the on-disk manifest",
+      "role": "backend",
+      "files": [
+        "docs/upstream/core-190454-marketplace-stale-owner.md",
+        "docs/upstream/core-190454.patch"
+      ],
+      "depends_on": [],
+      "verify": [
+        {
+          "cmd": "grep -q 'async_pre_install' docs/upstream/core-190454.patch",
+          "timeout": 10
+        },
+        {
+          "cmd": "grep -qE '^\\+\\+\\+ b/tests/components/marketplace/' docs/upstream/core-190454.patch",
+          "timeout": 10
+        },
+        {
+          "cmd": "grep -qE 'issue_tracker|documentation' docs/upstream/core-190454.patch",
+          "timeout": 10
+        },
+        {
+          "cmd": "grep -qE '^## Tests run' docs/upstream/core-190454-marketplace-stale-owner.md && grep -q '190454' docs/upstream/core-190454-marketplace-stale-owner.md",
+          "timeout": 10
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "plan",
+      "notes": "DRAFT ONLY: never push, fork or open the upstream PR; maintainer reviews docs/upstream/* first. Shallow-clone home-assistant/core dev into the session scratchpad. Change homeassistant/components/marketplace/repositories/integration.py async_pre_install: when another installed INTEGRATION record has the same domain, read custom_components/<domain>/manifest.json (reuse the json_loads_object pattern of _check_loadable_manifest); if its documentation or issue_tracker URL names self's repo (github.com/<full_name>, case-insensitive) or its version equals self.data.installed_version and not the other record's, treat the other record as stale: clear its installed flag (persist via the repositories store), log a warning naming both repos, and continue; otherwise raise integration_owned as today. Tests in tests/components/marketplace (stale record cleared; genuine conflict still raises; unreadable manifest still raises). Run those tests in a core dev venv (uv pip install -r requirements_test.txt in a py3.14 venv) and record the command + result under '## Tests run'. The .md holds PR title, body (problem, cases from #190454: govee, bermuda, senec, miwifi, eon_next, sigen), design, risks. Export with git format-patch/diff into docs/upstream/core-190454.patch."
+    },
+    {
+      "id": "T-003",
+      "title": "Merge dependabot #290 (hassfest action SHA)",
+      "role": "infra",
+      "files": [
+        ".github/workflows/hacs-hass.yaml"
+      ],
+      "depends_on": [],
+      "verify": [
+        {
+          "cmd": "grep -q 'home-assistant/actions/hassfest@86d4564712fa02543c808e3a693dd04f9d3f8361' .github/workflows/hacs-hass.yaml",
+          "timeout": 10
+        },
+        {
+          "cmd": "test \"$(gh pr view 290 --json state --jq .state)\" = MERGED",
+          "timeout": 30
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "plan",
+      "notes": "Research §PR validation: SHA = home-assistant/actions master HEAD; CI green. Workflow-only, no release trigger. git fetch origin +refs/pull/290/head:refs/pr/290 && git merge --no-ff refs/pr/290 (or gh pr merge 290 --merge)."
+    },
+    {
+      "id": "T-004",
+      "title": "Close #293 and ignore every pytest update in dependabot",
+      "role": "infra",
+      "files": [
+        ".github/dependabot.yml"
+      ],
+      "depends_on": [],
+      "verify": [
+        {
+          "cmd": "python3 -c \"import sys,yaml; d=yaml.safe_load(open('.github/dependabot.yml')); ig=[i for u in d['updates'] for i in u.get('ignore',[]) if i.get('dependency-name')=='pytest']; sys.exit(0 if ig and all('update-types' not in i for i in ig) else 1)\"",
+          "timeout": 10
+        },
+        {
+          "cmd": "test \"$(gh pr view 293 --json state --jq .state)\" = CLOSED",
+          "timeout": 30
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "plan",
+      "notes": "CI run 43666603327: pytest-homeassistant-custom-component 0.13.205 depends on pytest==8.3.4 -> ResolutionImpossible; dependabot.yml:22-25 ignores only semver-major. Drop update-types on the pytest entry; update its comment (plugin pins pytest exactly; #280, #293). Close #293 with a one-line comment naming the pin (outward action approved by plan)."
+    },
+    {
+      "id": "T-005",
+      "title": "Merge #291/#292/#294 (daily-release.yml action bumps) and dry-run the release workflow before 02:00Z",
+      "role": "infra",
+      "files": [
+        ".github/workflows/daily-release.yml"
+      ],
+      "depends_on": [
+        "T-003"
+      ],
+      "verify": [
+        {
+          "cmd": "for n in 291 292 294; do test \"$(gh pr view $n --json state --jq .state)\" = MERGED || exit 1; done",
+          "timeout": 60
+        },
+        {
+          "cmd": "grep -q 'download-artifact@9000827c' .github/workflows/daily-release.yml && grep -q 'upload-artifact@cf430e03' .github/workflows/daily-release.yml && grep -q 'claude-code-action@4fa93a88' .github/workflows/daily-release.yml",
+          "timeout": 10
+        },
+        {
+          "cmd": "! grep -nE '^(<<<<<<<|>>>>>>>)' .github/workflows/daily-release.yml",
+          "timeout": 10
+        },
+        {
+          "cmd": "test \"$(gh run list --workflow daily-release.yml --event workflow_dispatch --limit 1 --json conclusion --jq '.[0].conclusion')\" = success",
+          "timeout": 60
+        }
+      ],
+      "passes": false,
+      "status": "blocked",
+      "blocked_reason": "hard_spec",
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "plan",
+      "notes": "SUPERSEDED by T-013: research said merge the daily-release.yml bumps after tonight's release; dry_run does not exercise the publish job (download-artifact ~:321). Do not build."
+    },
+    {
+      "id": "T-006",
+      "title": "Merge PR #300: send_raw_ptreal sends several frames in one message, LAN when healthy (#301)",
+      "role": "backend",
+      "files": [
+        "custom_components/govee/services.py",
+        "custom_components/govee/coordinator.py",
+        "custom_components/govee/ble_passthrough.py"
+      ],
+      "depends_on": [],
+      "verify": [
+        {
+          "cmd": "git merge-base --is-ancestor refs/pr/300 HEAD",
+          "timeout": 10
+        },
+        {
+          "cmd": "grep -q 'too_many_ptreal_frames' custom_components/govee/strings.json && grep -q 'too_many_ptreal_frames' custom_components/govee/translations/en.json",
+          "timeout": 10
+        },
+        {
+          "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_services.py tests/test_cov_coordinator_control.py",
+          "timeout": 300
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "plan",
+      "notes": "Maintainer: merge on local gates (fork CI never ran). Research: merge-tree clean onto b87f171; 4650 passed, 99.74 %, config_flow 100 %, lint/mypy/black clean. git fetch origin +refs/pull/300/head:refs/pr/300; git merge --no-ff refs/pr/300 -m 'Merge PR #300: send_raw_ptreal multi-frame and LAN when healthy (#301)'. Behaviour change (single frames prefer LAN when healthy) is scoped to the debug service; name it in the release notes. No fixups required."
+    },
+    {
+      "id": "T-007",
+      "title": "#301: GoveeDevice.bff_segment_count and a 'bff' segment_count source for BFF_SEGMENT_COUNT_SKUS (H3A53)",
+      "role": "backend",
+      "files": [
+        "custom_components/govee/models/device.py",
+        "custom_components/govee/const.py",
+        "tests/test_cov_models.py"
+      ],
+      "depends_on": [],
+      "verify": [
+        {
+          "cmd": "grep -qE 'BFF_SEGMENT_COUNT_SKUS: Final = frozenset\\(\\{[^}]*\"H3A53\"' custom_components/govee/const.py",
+          "timeout": 10
+        },
+        {
+          "cmd": "grep -q 'bff_segment_count' custom_components/govee/models/device.py && grep -q '\"bff\"' custom_components/govee/models/device.py",
+          "timeout": 10
+        },
+        {
+          "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_cov_models.py tests/test_models.py tests/test_segment.py",
+          "timeout": 300
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "plan",
+      "notes": "Research §New issues #301: segment_count_resolution (models/device.py:1374-1420) = override > size.max clamp > api; BFF deviceSettings.segmentCount read nowhere; H3A53 count follows install length (9->11: reporter's BFF segmentCount 11, a1 frame 0b). Add frozen field bff_segment_count: int | None = None to GoveeDevice; in resolution, when sku in BFF_SEGMENT_COUNT_SKUS and bff_segment_count is a positive int, effective=bff_segment_count, source='bff' (ranked above override); include 'bff' key in the returned dict; update both docstrings. Other SKUs unchanged (test: a non-allow-listed SKU with bff_segment_count set keeps its api/override result). const.py comment cites #301."
+    },
+    {
+      "id": "T-008",
+      "title": "#301: read BFF deviceSettings.segmentCount and apply it to discovered devices",
+      "role": "backend",
+      "files": [
+        "custom_components/govee/api/auth.py",
+        "custom_components/govee/coordinator.py",
+        "tests/test_cov_auth.py"
+      ],
+      "depends_on": [
+        "T-007"
+      ],
+      "verify": [
+        {
+          "cmd": "grep -q 'segmentCount' custom_components/govee/api/auth.py",
+          "timeout": 10
+        },
+        {
+          "cmd": "grep -q 'bff_segment_count' custom_components/govee/coordinator.py",
+          "timeout": 10
+        },
+        {
+          "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_cov_auth.py tests/test_auth.py tests/test_cov_coordinator_setup.py",
+          "timeout": 300
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "plan",
+      "notes": "BFF parsing lives in api/auth.py (_bff_devices :422; deviceSettings via _as_dict at :699/:726/:925, may arrive as a JSON string). Expose a {device_id: int} map of positive segmentCount values (ints or digit strings). In coordinator discovery, after the BFF fetch, dataclasses.replace(device, bff_segment_count=n) for devices whose sku is in BFF_SEGMENT_COUNT_SKUS. Segment entities are created at platform setup from segment_count: make sure the BFF data is applied before platforms are forwarded on first setup; if BFF arrives later (login failure / 2FA), keep the API count — a changed length takes effect on reload (say so in the release notes). Tests: parse (int, string, missing, zero, garbage) and coordinator application for H3A53 vs another SKU. Commit subject references (#301)."
+    },
+    {
+      "id": "T-009",
+      "title": "#209: drop the H7105 from the README",
+      "role": "infra",
+      "files": [
+        "README.md"
+      ],
+      "depends_on": [],
+      "verify": [
+        {
+          "cmd": "! grep -nE 'Tower / pedestal fans.*H7105' README.md",
+          "timeout": 10
+        },
+        {
+          "cmd": "! grep -n 'H7105/H7107' README.md",
+          "timeout": 10
+        },
+        {
+          "cmd": "grep -n 'H7107' README.md >/dev/null",
+          "timeout": 10
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "plan",
+      "notes": "Maintainer chose remove (not caveat). README.md:84 row -> 'H7101, H7102, H7106, H7107'; '(H7105/H7107)' -> '(H7107)' at :84, :136, :180, :449. Leave const.py MQTT_OSCILLATION_SKUS and protocol docs unchanged. Commit subject 'docs(README): drop the H7105, which Govee's Developer API does not list (#209)' so the release bot replies on #209 (docs-only commit does not by itself trigger a release; tonight ships anyway)."
+    },
+    {
+      "id": "T-010",
+      "title": "Queue release replies for threads no commit references",
+      "role": "infra",
+      "files": [
+        "docs/release-replies.md"
+      ],
+      "depends_on": [],
+      "verify": [
+        {
+          "cmd": "for n in 284 286 285 296 297 298 299; do grep -q \"^## #$n$\" docs/release-replies.md || exit 1; done",
+          "timeout": 10
+        },
+        {
+          "cmd": "python3 scripts/release_replies.py --help >/dev/null 2>&1 || test -f scripts/release_replies.py",
+          "timeout": 10
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "plan",
+      "notes": "close: yes for #284 and #286 (jhemak confirmed on v2026.11.0). close: no for the rest: #285 (attach the diagnostics offered, after updating to >=2026.11.0; we'll look for paramId on Lightning-A/B/C), #296 (Platform API returns options: [] for diyScene; 'helles TV-Licht' is a snapshot and works via the Snapshot select; account-side DIY parked), #297 (no playlist API known; suggest an HA script cycling effects; park), #298 (version + diagnostics + whether they're DIY or snapshots in the app), #299 (SKU + diagnostics; a DreamView mode select is possible only if the device exposes movieMode options). #209 and #301 get automatic replies via commit refs; #295 replied directly (T-001); #293 closed by T-004."
+    },
+    {
+      "id": "T-011",
+      "title": "Final gates and green main CI before tonight's 02:00Z release",
+      "role": "test",
+      "files": [
+        "custom_components/govee/manifest.json"
+      ],
+      "depends_on": [
+        "T-005",
+        "T-006",
+        "T-008",
+        "T-009",
+        "T-010"
+      ],
+      "verify": [
+        {
+          "cmd": "set -o pipefail; .cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= --cov=custom_components.govee --cov-report=term --cov-fail-under=95 2>&1 | tail -3",
+          "timeout": 900
+        },
+        {
+          "cmd": ".cc-sessions/venv312/bin/flake8 custom_components tests && .cc-sessions/venv312/bin/black --check -q . && .cc-sessions/venv312/bin/mypy custom_components/govee",
+          "timeout": 600
+        },
+        {
+          "cmd": "grep -q '\"version\": \"2026.11.0\"' custom_components/govee/manifest.json",
+          "timeout": 10
+        },
+        {
+          "cmd": "git fetch -q origin && test \"$(git rev-parse HEAD)\" = \"$(git rev-parse origin/main)\" && test -z \"$(gh run list --commit $(git rev-parse HEAD) --json conclusion --jq '.[]|select(.conclusion!=\"success\")|.conclusion')\"",
+          "timeout": 120
+        }
+      ],
+      "passes": false,
+      "status": "blocked",
+      "blocked_reason": "hard_spec",
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "plan",
+      "notes": "SUPERSEDED by T-012: depended on T-005; T-012 is the same gate without it. Do not build."
+    },
+    {
+      "id": "T-012",
+      "title": "Final gates and green main CI before tonight's 02:00Z release (without the daily-release.yml bumps)",
+      "role": "test",
+      "files": [
+        "custom_components/govee/manifest.json"
+      ],
+      "depends_on": [
+        "T-006",
+        "T-008",
+        "T-009",
+        "T-010"
+      ],
+      "verify": [
+        {
+          "cmd": "set -o pipefail; .cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= --cov=custom_components.govee --cov-report=term --cov-fail-under=95 2>&1 | tail -3",
+          "timeout": 900
+        },
+        {
+          "cmd": ".cc-sessions/venv312/bin/flake8 custom_components tests && .cc-sessions/venv312/bin/black --check -q . && .cc-sessions/venv312/bin/mypy custom_components/govee",
+          "timeout": 600
+        },
+        {
+          "cmd": "grep -q '\"version\": \"2026.11.0\"' custom_components/govee/manifest.json",
+          "timeout": 10
+        },
+        {
+          "cmd": "grep -q 'download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093' .github/workflows/daily-release.yml",
+          "timeout": 10
+        },
+        {
+          "cmd": "git fetch -q origin && test \"$(git rev-parse HEAD)\" = \"$(git rev-parse origin/main)\" && test -z \"$(gh run list --commit $(git rev-parse HEAD) --json conclusion --jq '.[]|select(.conclusion!=\"success\")|.conclusion')\"",
+          "timeout": 120
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "plan",
+      "notes": "Replaces T-011 (which depended on T-005). Gate only. Check per-module coverage >=96 % and config_flow.py 100 % from the term report; run once on the HA 2026.11 lane (py3.14 venv-ha2611 under the fa710ecc session scratchpad). The download-artifact v4 pin check proves #291/#292/#294 did NOT land before tonight's run. Must be done before 2026-11-18T02:00Z."
+    },
+    {
+      "id": "T-013",
+      "title": "After tonight's release: merge #291/#292/#294 (daily-release.yml action bumps) and dry-run",
+      "role": "infra",
+      "files": [
+        ".github/workflows/daily-release.yml"
+      ],
+      "depends_on": [
+        "T-003"
+      ],
+      "verify": [
+        {
+          "cmd": "test \"$(gh release list --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName')\" != v2026.11.0",
+          "timeout": 30
+        },
+        {
+          "cmd": "for n in 291 292 294; do test \"$(gh pr view $n --json state --jq .state)\" = MERGED || exit 1; done",
+          "timeout": 60
+        },
+        {
+          "cmd": "grep -q 'download-artifact@9000827c' .github/workflows/daily-release.yml && grep -q 'upload-artifact@cf430e03' .github/workflows/daily-release.yml && grep -q 'claude-code-action@4fa93a88' .github/workflows/daily-release.yml",
+          "timeout": 10
+        },
+        {
+          "cmd": "! grep -nE '^(<<<<<<<|>>>>>>>)' .github/workflows/daily-release.yml",
+          "timeout": 10
+        },
+        {
+          "cmd": "test \"$(gh run list --workflow daily-release.yml --event workflow_dispatch --limit 1 --json conclusion --jq '.[0].conclusion')\" = success",
+          "timeout": 60
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "plan",
+      "notes": "Replaces T-005. Research recommendation restored after a side-agent review: merging these before tonight puts untested action pins in the publish job (download-artifact at daily-release.yml ~:321), which dry_run skips. Do NOT start before tonight's release tag exists (verify[0]). Pins verified against tags (download v8.0.2, upload v7.0.2, claude-code-action v1.0.271); workflow uses only name/path (+if-no-files-found/retention-days). After merging, gh workflow run daily-release.yml -f dry_run=true; the next real run (2026-11-19 02:00Z) is the first publish with the new pins, and it skips unless custom_components/ changed."
+    }
+  ]
+}
