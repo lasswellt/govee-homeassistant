@@ -609,6 +609,7 @@ class TestDeviceDiagnostics:
             "api_count": 15,
             "size_max": 15,
             "override": 4,
+            "bff": None,
             "effective": 4,
             "source": "override",
         }

@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from custom_components.govee.const import SKU_SEGMENT_OVERRIDES
+from custom_components.govee.const import BFF_SEGMENT_COUNT_SKUS, SKU_SEGMENT_OVERRIDES
 from custom_components.govee.models import (
     ColorTempRange,
     DIYSceneCommand,
@@ -119,6 +119,46 @@ class TestSegmentCapability:
         cap = GoveeCapability(type=CAPABILITY_SEGMENT_COLOR, instance=INSTANCE_SEGMENT_COLOR, parameters=params)
         assert _device(cap, sku=sku.lower()).segment_count == expected
         assert _device(cap, sku="H6172").segment_count == 15
+
+
+class TestBffSegmentCount:
+    """bff_segment_count wins for BFF_SEGMENT_COUNT_SKUS only (#301)."""
+
+    PARAMS = {"fields": [{"fieldName": "segment", "elementRange": {"min": 0, "max": 8}, "size": {"max": 9}}]}
+
+    def _make(self, sku: str, bff: int | None) -> GoveeDevice:
+        cap = GoveeCapability(type=CAPABILITY_SEGMENT_COLOR, instance=INSTANCE_SEGMENT_COLOR, parameters=self.PARAMS)
+        return GoveeDevice(
+            device_id=DEVICE_ID,
+            sku=sku,
+            name="Lamp",
+            device_type=DEVICE_TYPE_LIGHT,
+            capabilities=(cap,),
+            bff_segment_count=bff,
+        )
+
+    def test_allow_listed_sku_uses_bff_count(self):
+        assert "H3A53" in BFF_SEGMENT_COUNT_SKUS
+        device = self._make("h3a53", 11)
+        resolution = device.segment_count_resolution
+        assert resolution is not None
+        assert resolution["source"] == "bff"
+        assert resolution["bff"] == 11
+        assert resolution["api_count"] == 9
+        assert device.segment_count == 11
+
+    @pytest.mark.parametrize("bff", [None, 0, -1])
+    def test_allow_listed_sku_without_a_positive_count_falls_back(self, bff):
+        device = self._make("H3A53", bff)
+        assert device.segment_count == 9
+        assert device.segment_count_resolution["source"] == "api"
+
+    def test_other_skus_ignore_bff_count(self):
+        sku, expected = next(iter(SKU_SEGMENT_OVERRIDES.items()))
+        assert self._make(sku, 11).segment_count == expected
+        device = self._make("H6172", 11)
+        assert device.segment_count == 9
+        assert device.segment_count_resolution["bff"] == 11
 
 
 class TestGoveeCapabilityBrightnessRange:
