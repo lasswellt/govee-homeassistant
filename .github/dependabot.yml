@@ -19,10 +19,10 @@ updates:
       - dependency-name: "aiomqtt"
       - dependency-name: "bleak-retry-connector"
       - dependency-name: "cryptography"
-      # pytest-homeassistant-custom-component pins pytest exactly (PR #280); a pytest
-      # major can only land when that plugin moves, so dependabot proposals fail CI.
+      # pytest-homeassistant-custom-component pins pytest exactly (pytest==8.3.4), so
+      # any pytest bump, major or minor, is unresolvable until that plugin moves and
+      # dependabot proposals fail CI (#280, #293). The plugin's own bumps carry pytest.
       - dependency-name: "pytest"
-        update-types: ["version-update:semver-major"]
 
   # Keep SHA-pinned workflow actions current
   - package-ecosystem: "github-actions"
