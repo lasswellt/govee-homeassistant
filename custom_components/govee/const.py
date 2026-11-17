@@ -221,6 +221,12 @@ SKU_SEGMENT_OVERRIDES: Final = {
     "H1232": 16,
 }
 
+# SKUs whose segment count follows the installed length, so no static count is
+# right: the account's BFF ``deviceSettings.segmentCount`` is authoritative and
+# ranks above SKU_SEGMENT_OVERRIDES (``GoveeDevice.bff_segment_count``).
+# H3A53: count follows the install length (9 -> 11), read from BFF deviceSettings (issue #301).
+BFF_SEGMENT_COUNT_SKUS: Final = frozenset({"H3A53"})
+
 # SKUs whose RGBIC ring segments are addressable past the Platform API's
 # advertised count via masked ptReal frames (``build_segment_color_ptreal`` /
 # ``build_segment_brightness_ptreal`` in api/ble_packet.py). The true ring

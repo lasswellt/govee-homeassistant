@@ -1673,6 +1673,7 @@ class TestSegmentCountResolution:
             "api_count": 15,
             "size_max": 15,
             "override": 4,
+            "bff": None,
             "effective": 4,
             "source": "override",
         }
@@ -1695,6 +1696,7 @@ class TestSegmentCountResolution:
             "api_count": 15,
             "size_max": None,
             "override": None,
+            "bff": None,
             "effective": 15,
             "source": "api",
         }
