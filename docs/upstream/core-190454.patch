@@ -1,0 +1,217 @@
+diff --git a/homeassistant/components/marketplace/repositories/integration.py b/homeassistant/components/marketplace/repositories/integration.py
+index a558ff40..565c24b9 100644
+--- a/homeassistant/components/marketplace/repositories/integration.py
++++ b/homeassistant/components/marketplace/repositories/integration.py
+@@ -3,6 +3,7 @@
+ from collections.abc import Awaitable, Callable
+ from functools import partial
+ from pathlib import Path
++import re
+ import sys
+ from typing import TYPE_CHECKING, Any, override
+ 
+@@ -124,6 +125,28 @@ def _check_loadable_manifest(directory: Path, domain: str | None) -> None:
+         )
+ 
+ 
++def _read_installed_manifest(directory: Path) -> dict[str, Any] | None:
++    """Return the manifest.json an integration has on disk, None when unusable."""
++    try:
++        return json_loads_object(
++            (directory / RepositoryFile.MANIFEST_JSON).read_text(encoding="utf-8")
++        )
++    except OSError, ValueError:
++        return None
++
++
++def _manifest_names_repository(manifest: dict[str, Any], full_name: str) -> bool:
++    """Return if the documentation or issue tracker of a manifest is on GitHub."""
++    address = re.compile(
++        rf"https?://(?:www\.)?github\.com/{re.escape(full_name)}(?:[/?#]|$)",
++        re.IGNORECASE,
++    )
++    return any(
++        isinstance(url := manifest.get(key), str) and address.match(url)
++        for key in ("documentation", "issue_tracker")
++    )
++
++
+ class IntegrationRepository(Repository):
+     """Integration repository."""
+ 
+@@ -179,14 +202,54 @@ class IntegrationRepository(Repository):
+                 and repository.data.category == RepositoryCategory.INTEGRATION
+                 and repository.data.domain == self.data.domain
+             ):
+-                raise MarketplaceError(
+-                    translation_domain=DOMAIN,
+-                    translation_key="integration_owned",
+-                    translation_placeholders={
+-                        "domain": str(self.data.domain),
+-                        "owner": repository.data.full_name,
+-                    },
++                if not await self._async_installed_by_this_repository(repository):
++                    raise MarketplaceError(
++                        translation_domain=DOMAIN,
++                        translation_key="integration_owned",
++                        translation_placeholders={
++                            "domain": str(self.data.domain),
++                            "owner": repository.data.full_name,
++                        },
++                    )
++
++                self.logger.warning(
++                    "%s The files of %s belong to this repository, %s is no longer "
++                    "marked as installed",
++                    self.string,
++                    self.data.domain,
++                    repository.data.full_name,
+                 )
++                repository.data.installed = False
++                repository.data.installed_version = None
++                repository.data.installed_commit = None
++                await repository.async_remove_entity_device()
++                repository.async_dispatch_changed("uninstall")
++                await self.marketplace.data.async_write()
++
++    async def _async_installed_by_this_repository(self, other: Repository) -> bool:
++        """Return if the files of an installed domain came from this repository.
++
++        The record of another repository for the same domain can be left over
++        from before the integration was installed from this one, the files on
++        disk then say which of the two they belong to.
++        """
++        manifest = await self.marketplace.hass.async_add_executor_job(
++            _read_installed_manifest, Path(other.localpath)
++        )
++        if manifest is None or _manifest_names_repository(
++            manifest, other.data.full_name
++        ):
++            return False
++
++        if _manifest_names_repository(manifest, self.data.full_name):
++            return True
++
++        version = manifest.get("version")
++        return (
++            isinstance(version, str)
++            and version == self.data.installed_version
++            and version != other.data.installed_version
++        )
+ 
+     @override
+     async def async_post_installation(self) -> None:
+diff --git a/tests/components/marketplace/test_repositories.py b/tests/components/marketplace/test_repositories.py
+index cfb401c5..0fd55a6f 100644
+--- a/tests/components/marketplace/test_repositories.py
++++ b/tests/components/marketplace/test_repositories.py
+@@ -2196,6 +2196,109 @@ async def test_integration_domain_owned_by_another_repository(
+     assert exc_info.value.translation_placeholders["owner"] == "test/other"
+ 
+ 
++def _stale_owner(
++    marketplace: MarketplaceManager, manifest: dict[str, Any] | str | None
++) -> IntegrationRepository:
++    """Register a repository holding a record of the domain, with a manifest on disk."""
++    other = IntegrationRepository(marketplace, "test/old-owner")
++    other.data.id = "1337"
++    other.data.domain = "example"
++    other.data.installed = True
++    other.data.installed_version = "1.0.0"
++    marketplace.repositories.register(other)
++
++    if manifest is not None:
++        directory = Path(other.localpath)
++        directory.mkdir(parents=True)
++        (directory / "manifest.json").write_text(
++            manifest if isinstance(manifest, str) else json.dumps(manifest)
++        )
++    return other
++
++
++@pytest.mark.parametrize(
++    ("manifest", "installed_version"),
++    [
++        (
++            {
++                "documentation": f"https://github.com/{REPOSITORY_INTEGRATION}/blob/main/README.md",
++                "issue_tracker": "https://example.com/issues",
++                "version": "1.0.0",
++            },
++            None,
++        ),
++        (
++            {
++                "issue_tracker": f"https://www.GitHub.com/{REPOSITORY_INTEGRATION.upper()}/issues",
++                "version": "1.0.0",
++            },
++            None,
++        ),
++        ({"version": "2.0.0"}, "2.0.0"),
++    ],
++    ids=["documentation", "issue_tracker", "version"],
++)
++async def test_integration_domain_owned_by_a_stale_record(
++    marketplace: MarketplaceManager,
++    caplog: pytest.LogCaptureFixture,
++    manifest: dict[str, Any],
++    installed_version: str | None,
++) -> None:
++    """Test a record the files on disk no longer belong to does not block the install."""
++    repository = marketplace.repositories.get_by_full_name(REPOSITORY_INTEGRATION)
++    repository.data.domain = "example"
++    repository.data.installed_version = installed_version
++    other = _stale_owner(marketplace, manifest)
++
++    with patch.object(marketplace.data, "async_write") as write:
++        await repository.async_pre_install()
++
++    assert not other.data.installed
++    assert other.data.installed_version is None
++    write.assert_awaited_once()
++    assert "test/old-owner" in caplog.text
++    assert REPOSITORY_INTEGRATION in caplog.text
++
++
++@pytest.mark.parametrize(
++    "manifest",
++    [
++        {
++            "documentation": "https://github.com/test/old-owner",
++            "issue_tracker": f"https://github.com/{REPOSITORY_INTEGRATION}/issues",
++            "version": "2.0.0",
++        },
++        {"documentation": f"https://github.com/{REPOSITORY_INTEGRATION}-fork/wiki"},
++        {"version": "1.0.0"},
++        None,
++        "{not json",
++    ],
++    ids=[
++        "names_the_other_repository",
++        "names_a_longer_repository",
++        "same_version_as_the_other",
++        "missing",
++        "unreadable",
++    ],
++)
++async def test_integration_domain_owned_when_the_files_are_not_ours(
++    marketplace: MarketplaceManager, manifest: dict[str, Any] | str | None
++) -> None:
++    """Test the other record stays when the files on disk do not show it is stale."""
++    repository = marketplace.repositories.get_by_full_name(REPOSITORY_INTEGRATION)
++    repository.data.domain = "example"
++    repository.data.installed_version = "1.0.0"
++    other = _stale_owner(marketplace, manifest)
++
++    with pytest.raises(MarketplaceError) as exc_info:
++        await repository.async_pre_install()
++
++    assert exc_info.value.translation_key == "integration_owned"
++    assert exc_info.value.translation_placeholders["owner"] == "test/old-owner"
++    assert other.data.installed
++    assert other.data.installed_version == "1.0.0"
++
++
+ async def test_plugin_directory_owned_by_another_repository(
+     marketplace: MarketplaceManager,
+ ) -> None:
