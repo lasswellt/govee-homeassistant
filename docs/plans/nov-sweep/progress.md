@@ -61,3 +61,5 @@ Ruling: descope; hands-on gate for #271 waived by the maintainer; release author
 ## 2026-11-15T03:18:26Z verify T-015 ok=true (1ced350; Merge PR #271 without sync-upstream.yml; full suite 4595)
 ## 2026-11-15T03:36:18Z verify T-021 ok=true (with #271: coverage 99.74 %, min 96.88 %, lint/types/3.14 clean)
 ## 2026-11-15T03:36:18Z released v2026.11.0 via daily-release workflow_dispatch 43672193539 (maintainer: 'just release it'); reply queue posted and cleared (c79314c)
+## 2026-11-17T03:06:08Z build T-022 start (attempt 1)
+## 2026-11-17T03:06:08Z T-022 merge prepared on branch try/pr254 f42b2a3 (worktree scratchpad/wt-try254): 3 textual conflicts with #271 + 1 semantic (DIY effect load moved into sync refresh callback; fixed, 2 tests added); full suite 4638 passed, coverage 99.74 %, min 96.88 %, config_flow 100 %, flake8/mypy/black clean. Fork CI cannot run (PR conflicting); local gates stand in. Waiting on maintainer hands-on try.
