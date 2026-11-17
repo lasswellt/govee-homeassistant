@@ -6931,8 +6931,8 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
         return success
 
-    async def async_send_raw_ptreal(self, device_id: str, frame: bytes) -> bool:
-        """Send a raw ptReal BLE frame to a device (developer/debug aid).
+    async def async_send_raw_ptreal(self, device_id: str, frame: bytes | list[bytes]) -> bool:
+        """Send raw ptReal BLE frame(s) to a device (developer/debug aid).
 
         This is a debug path for issue #208 (H7026 and similar RGBIC devices
         where the Platform API cannot address every segment): it lets a
@@ -6941,19 +6941,58 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         applies no optimistic state update. Sending a wrong frame can put the
         light into an unexpected mode.
 
+        A list of frames is delivered in ONE ptReal message, the way the Govee
+        app uploads a scene: an ``a3`` multi-packet carrying the scene data
+        followed by its ``33 05 04`` activation. Sent as separate messages the
+        device activates the scene without its data (a rainbow cycle).
+
+        A device with a healthy LAN transport gets the message over LAN
+        (``ptReal`` with the same ``command`` list), otherwise it goes over the
+        AWS IoT passthrough. A LAN ptReal write cannot be read back, so the
+        LAN read-health gate is what stands in for confirmation.
+
         Args:
             device_id: Device identifier.
-            frame: Raw command bytes. 1-19 bytes are padded and checksummed
-                via `build_packet`; exactly 20 bytes are sent as-is provided
-                the last byte is a valid XOR checksum of the first 19.
+            frame: Raw command bytes, or a list of them. 1-19 bytes are padded
+                and checksummed via `build_packet`; exactly 20 bytes are sent
+                as-is provided the last byte is a valid XOR checksum of the
+                first 19.
 
         Returns:
-            True if the frame was sent successfully.
+            True if the frame(s) were sent successfully.
         """
         device = self._devices.get(device_id)
         if not device or device.is_group:
             _LOGGER.debug("Unknown or group device for raw ptReal: %s", device_id)
             return False
+
+        frames = frame if isinstance(frame, list) else [frame]
+        if not frames:
+            _LOGGER.debug("No raw ptReal frames for %s", device_id)
+            return False
+
+        packets: list[bytes] = []
+        for raw in frames:
+            if not raw or len(raw) > 20:
+                _LOGGER.debug("Invalid raw ptReal frame length for %s: %d bytes", device_id, len(raw))
+                return False
+            if len(raw) == 20:
+                if calculate_checksum(list(raw[:19])) != raw[19]:
+                    _LOGGER.debug("Invalid raw ptReal checksum for %s", device_id)
+                    return False
+                packets.append(bytes(raw))
+            else:
+                packets.append(build_packet(list(raw)))
+
+        encoded = [encode_packet_base64(packet) for packet in packets]
+
+        lan_ip = self._lan_ptreal_ip(device_id, device)
+        if lan_ip is not None and self._lan_client is not None:
+            if await self._lan_client.async_send_command(lan_ip, "ptReal", {"command": encoded}):
+                self._record_transport_send(device_id, "lan")
+                _LOGGER.debug("Sent %d raw ptReal frame(s) to %s over LAN", len(packets), device_id)
+                return True
+            self._record_transport_failure(device_id, "lan", "send_failed")
 
         if not self._ble_manager.available:
             _LOGGER.debug(
@@ -6962,28 +7001,37 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             )
             return False
 
-        if not frame or len(frame) > 20:
-            _LOGGER.debug("Invalid raw ptReal frame length for %s: %d bytes", device_id, len(frame))
-            return False
-
-        if len(frame) == 20:
-            if calculate_checksum(list(frame[:19])) != frame[19]:
-                _LOGGER.debug("Invalid raw ptReal checksum for %s", device_id)
-                return False
-            packet = bytes(frame)
-        else:
-            packet = build_packet(list(frame))
-
-        result = await self._ble_manager.async_send_ble_packet(device_id, device.sku, encode_packet_base64(packet))
+        payload: str | list[str] = encoded if isinstance(frame, list) else encoded[0]
+        result: bool = await self._ble_manager.async_send_ble_packet(device_id, device.sku, payload)
 
         _LOGGER.debug(
             "Sent raw ptReal %s to %s: %s",
-            packet.hex(),
+            ",".join(packet.hex() for packet in packets),
             device_id,
             "ok" if result else "failed",
         )
 
         return result
+
+    def _lan_ptreal_ip(self, device_id: str, device: GoveeDevice) -> str | None:
+        """Return the LAN IP to carry a raw ptReal write, or None to use AWS IoT.
+
+        Same gates as a LAN control write: LAN client up, a correlated
+        non-group device, read-proven LAN health (or a write-only override)
+        and no active write suppression.
+        """
+        if self._lan_client is None or device.is_group or looks_like_group_id(device_id):
+            return None
+        info = self._lan_devices.get(device_id)
+        if info is None:
+            return None
+        if device_id not in self._lan_write_only:
+            health = self._transport.get(device_id, "lan")
+            if health is None or not health.is_available:
+                return None
+        if self._lan_writes_suppressed(device_id):
+            return None
+        return info.ip
 
     @staticmethod
     def _preserve_optimistic_field(

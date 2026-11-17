@@ -58,14 +58,15 @@ class BlePassthroughManager:
         self,
         device_id: str,
         sku: str,
-        encoded_packet: str,
+        encoded_packet: str | list[str],
     ) -> bool:
-        """Send a base64-encoded BLE packet via MQTT ptReal.
+        """Send base64-encoded BLE packet(s) via MQTT ptReal.
 
         Args:
             device_id: Device identifier.
             sku: Device SKU.
-            encoded_packet: Base64-encoded BLE packet.
+            encoded_packet: Base64-encoded BLE packet, or a list of them sent
+                in one ptReal message.
 
         Returns:
             True if packet was sent successfully.

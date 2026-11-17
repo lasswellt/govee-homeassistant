@@ -634,7 +634,7 @@
     },
     "send_raw_ptreal": {
       "name": "Send raw ptReal frame",
-      "description": "Developer/debug tool that sends a raw Govee BLE command frame to the device over AWS IoT (a checksum is added automatically when 19 bytes or fewer are given). A wrong frame can leave the light in an unexpected mode.",
+      "description": "Developer/debug tool that sends raw Govee BLE command frames to the device, over the local network when its LAN connection is healthy and over AWS IoT otherwise (a checksum is added automatically when 19 bytes or fewer are given). Several comma-separated frames go out together in one message, the way the Govee app uploads a scene. A wrong frame can leave the light in an unexpected mode.",
       "fields": {
         "device_id": {
           "name": "Device",
@@ -642,7 +642,7 @@
         },
         "frame": {
           "name": "Frame",
-          "description": "The raw BLE command frame as hex bytes, separated by spaces or colons (e.g. \"33 05 15 01 FF 00 00\"). Up to 20 bytes; a checksum is appended automatically for 19 bytes or fewer."
+          "description": "The raw BLE command frame as hex bytes, separated by spaces or colons (e.g. \"33 05 15 01 FF 00 00\"). Up to 20 bytes; a checksum is appended automatically for 19 bytes or fewer. Separate several frames with commas to send them in one message."
         }
       }
     },
@@ -697,7 +697,10 @@
       "message": "{frame} is not a valid raw ptReal frame. Provide 1-20 hex bytes, optionally separated by spaces or colons, with a valid checksum if 20 bytes are given."
     },
     "ptreal_unavailable": {
-      "message": "Could not send the raw ptReal frame to {device}. This requires the account (email/password) login with AWS IoT connected, and the device must not be a group."
+      "message": "Could not send the raw ptReal frame to {device}. This requires a healthy LAN connection to the device or the account (email/password) login with AWS IoT connected, and the device must not be a group."
+    },
+    "too_many_ptreal_frames": {
+      "message": "{count} frames were given, but at most {max} can be sent in one message."
     },
     "segment_passthrough_failed": {
       "message": "Segment 4 of {device} can only be set over the AWS IoT passthrough, which is not connected or did not accept the command. Check the Govee account login and MQTT connection, then try again. Other requested segments may already have changed."
