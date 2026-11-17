@@ -65,6 +65,8 @@ def _make_grouped_segment_entity(
     entity._is_on = True
     entity._brightness = 255
     entity._rgb_color = (255, 255, 255)
+    entity._brightness_supported = True
+    entity._brightness_range = (0, 100)
     entity.async_write_ha_state = MagicMock()
     # async_turn_on/off now also fire a dispatcher signal (SEGMENT_MODE_BOTH
     # sync, #164-adjacent) — real async_dispatcher_send() needs hass.data to

@@ -8,8 +8,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.components.light import ATTR_EFFECT, ColorMode, LightEntityFeature
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from custom_components.govee.light import DIY_EFFECT_PREFIX, GoveeLightEntity
+from custom_components.govee.scene_cache import scenes_refreshed_signal
 from custom_components.govee.models import (
     BrightnessCommand,
     ColorCommand,
@@ -227,6 +229,8 @@ class TestLightEffectSupport:
     async def test_async_added_to_hass_loads_scenes(self, mock_coordinator, mock_light_device, mock_scenes):
         """Test async_added_to_hass loads scenes and builds effect mapping."""
         entity = GoveeLightEntity(mock_coordinator, mock_light_device, enable_scenes=True)
+        entity.hass = MagicMock()
+        entity.hass.data = {}
 
         # Patch super().async_added_to_hass and async_get_last_state
         with (
@@ -246,6 +250,17 @@ class TestLightEffectSupport:
 
         mock_coordinator.async_get_scenes.assert_called_once_with(mock_light_device.device_id)
         assert entity.effect_list == ["Sunrise", "Sunset", "Party", "Movie"]
+
+        # A "Refresh scenes" press rebuilds the effect list (an empty refresh keeps it).
+        entity.async_write_ha_state = MagicMock()
+        signal = scenes_refreshed_signal(mock_light_device.device_id)
+        async_dispatcher_send(entity.hass, signal, [], [])
+        assert entity.effect_list == ["Sunrise", "Sunset", "Party", "Movie"]
+        entity.async_write_ha_state.assert_not_called()
+
+        async_dispatcher_send(entity.hass, signal, [{"name": "Aurora", "value": {"id": 9}}], [])
+        assert entity.effect_list == ["Aurora"]
+        entity.async_write_ha_state.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_async_added_to_hass_skips_scenes_when_disabled(self, mock_coordinator, mock_light_device):
@@ -374,6 +389,10 @@ def diy_coordinator(mock_diy_light_device, diy_state, mock_scenes, mock_diy_scen
 
 async def _add_to_hass(entity: GoveeLightEntity) -> None:
     """Run async_added_to_hass without the HA base-class machinery."""
+    if entity.hass is None:
+        # The scene-refresh subscription needs hass.data for the dispatcher.
+        entity.hass = MagicMock()
+        entity.hass.data = {}
     with (
         patch.object(GoveeLightEntity.__bases__[0], "async_added_to_hass", new_callable=AsyncMock),
         patch.object(entity, "async_get_last_state", new_callable=AsyncMock, return_value=None),
@@ -408,6 +427,42 @@ class TestLightDIYEffects:
             f"{DIY_EFFECT_PREFIX}Campfire",
             f"{DIY_EFFECT_PREFIX}Sunset",
         ]
+
+    async def test_refresh_rebuilds_diy_effects(self, diy_coordinator, mock_diy_light_device):
+        """A "Refresh scenes" press rebuilds the DIY effects after the catalog ones."""
+        entity = GoveeLightEntity(diy_coordinator, mock_diy_light_device)
+        await _add_to_hass(entity)
+        entity.async_write_ha_state = MagicMock()
+        signal = scenes_refreshed_signal(mock_diy_light_device.device_id)
+
+        # A refresh that returns DIY scenes only keeps the catalog effects.
+        async_dispatcher_send(entity.hass, signal, [], [{"name": "Aurora", "value": 77}])
+        assert entity.effect_list == ["Sunrise", "Sunset", "Party", "Movie", f"{DIY_EFFECT_PREFIX}Aurora"]
+        entity.async_write_ha_state.assert_called_once()
+
+        # A new catalog scene named like the prefixed DIY effect pushes the DIY one to a counter.
+        async_dispatcher_send(
+            entity.hass,
+            signal,
+            [{"name": f"{DIY_EFFECT_PREFIX}Aurora", "value": {"id": 9}}],
+            [{"name": "Aurora", "value": 77}],
+        )
+        assert entity.effect_list == [f"{DIY_EFFECT_PREFIX}Aurora", f"{DIY_EFFECT_PREFIX}Aurora (1)"]
+
+    async def test_refresh_ignored_when_both_scene_options_disabled(self, diy_coordinator, mock_diy_light_device):
+        """With scenes and DIY scenes off, the light doesn't subscribe to refreshes."""
+        entity = GoveeLightEntity(diy_coordinator, mock_diy_light_device, enable_scenes=False, enable_diy_scenes=False)
+        await _add_to_hass(entity)
+        entity.async_write_ha_state = MagicMock()
+
+        async_dispatcher_send(
+            entity.hass,
+            scenes_refreshed_signal(mock_diy_light_device.device_id),
+            [{"name": "Aurora", "value": {"id": 9}}],
+            [{"name": "Aurora", "value": 77}],
+        )
+        assert entity.effect_list is None
+        entity.async_write_ha_state.assert_not_called()
 
     async def test_diy_only_device_skips_catalog_fetch(self, diy_coordinator, mock_diy_only_device):
         """Without the catalog capability only DIY scenes are fetched."""
@@ -728,10 +783,11 @@ class TestBrightnessConversion:
     def test_device_to_ha_normal(self, mock_coordinator, mock_light_device):
         """Test normal brightness conversion from device (0-100) to HA (0-255)."""
         entity = GoveeLightEntity(mock_coordinator, mock_light_device, enable_scenes=False)
-        # Device range is (0, 100); device=50 → 50% → 127
-        assert entity._device_to_ha_brightness(50) == 127
+        # Device range is (0, 100); device=50 → 50% → 128 (reads back as 50 %)
+        assert entity._device_to_ha_brightness(50) == 128
         assert entity._device_to_ha_brightness(100) == 255
-        assert entity._device_to_ha_brightness(0) == 0
+        # A lit light never reports brightness 0.
+        assert entity._device_to_ha_brightness(0) == 1
 
     def test_device_to_ha_clamped_when_exceeding_range(self, mock_coordinator, mock_light_device):
         """Test brightness is clamped to 255 when device value exceeds declared range.
@@ -743,10 +799,10 @@ class TestBrightnessConversion:
         # Device claims range (0, 100) but API returns 254 → unclamped would be 647
         assert entity._device_to_ha_brightness(254) == 255
 
-    def test_device_to_ha_clamped_at_zero(self, mock_coordinator, mock_light_device):
-        """Test brightness is clamped to 0 for negative device values."""
+    def test_device_to_ha_clamped_at_lowest(self, mock_coordinator, mock_light_device):
+        """Test brightness is clamped to HA's lowest level for negative device values."""
         entity = GoveeLightEntity(mock_coordinator, mock_light_device, enable_scenes=False)
-        assert entity._device_to_ha_brightness(-10) == 0
+        assert entity._device_to_ha_brightness(-10) == 1
 
     def test_ha_to_device_clamped_to_device_range(self, mock_coordinator, mock_light_device):
         """Test HA-to-device conversion is clamped to device range."""
@@ -784,8 +840,8 @@ class TestBrightnessConversion:
         )
         entity = GoveeLightEntity(mock_coordinator, device, enable_scenes=False)
         assert entity._device_to_ha_brightness(254) == 255
-        assert entity._device_to_ha_brightness(127) == 127
-        assert entity._device_to_ha_brightness(0) == 0
+        assert entity._device_to_ha_brightness(127) == 128
+        assert entity._device_to_ha_brightness(0) == 1
 
 
 class TestSegmentModeSetup:

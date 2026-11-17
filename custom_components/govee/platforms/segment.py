@@ -23,10 +23,11 @@ from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.restore_state import RestoreEntity
 
+from ..brightness import ha_to_device_brightness
 from ..const import SUFFIX_SEGMENT
 from ..coordinator import GoveeCoordinator
 from ..entity import GoveeEntity
-from ..models import GoveeDevice, RGBColor, SegmentColorCommand
+from ..models import GoveeDevice, RGBColor, SegmentBrightnessCommand, SegmentColorCommand
 from .grouped_segment import segments_optimistic_signal
 
 _LOGGER = logging.getLogger(__name__)
@@ -79,15 +80,20 @@ class GoveeSegmentEntity(GoveeEntity, LightEntity, RestoreEntity):
         self._brightness = 255
         self._rgb_color: tuple[int, int, int] = (255, 255, 255)
 
+        # Segment brightness is only real when the device advertises
+        # segmentedBrightness; otherwise nothing could ever send it.
+        self._brightness_supported = device.supports_segment_brightness
+        self._brightness_range = device.segment_brightness_range
+
     @property
     def is_on(self) -> bool:
         """Return True if segment is on."""
         return self._is_on
 
     @property
-    def brightness(self) -> int:
-        """Return brightness (0-255)."""
-        return self._brightness
+    def brightness(self) -> int | None:
+        """Return brightness (0-255), or None when the device cannot set it per segment."""
+        return self._brightness if self._brightness_supported else None
 
     @property
     def rgb_color(self) -> tuple[int, int, int]:
@@ -95,22 +101,33 @@ class GoveeSegmentEntity(GoveeEntity, LightEntity, RestoreEntity):
         return self._rgb_color
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn the segment on with optional parameters."""
-        # Update brightness if provided
-        if ATTR_BRIGHTNESS in kwargs:
-            self._brightness = kwargs[ATTR_BRIGHTNESS]
+        """Turn the segment on with optional parameters.
 
-        # Update color if provided
-        if ATTR_RGB_COLOR in kwargs:
-            self._rgb_color = kwargs[ATTR_RGB_COLOR]
+        The optimistic values are only stored once the write is accepted, so
+        a rejected command never leaves an unsent colour behind for the next
+        state write or the restore cache.
+        """
+        send_brightness = self._brightness_supported and ATTR_BRIGHTNESS in kwargs
+        brightness = kwargs[ATTR_BRIGHTNESS] if send_brightness else self._brightness
+        rgb_color = tuple(kwargs.get(ATTR_RGB_COLOR, self._rgb_color))
 
-        # Create segment color command
-        r, g, b = self._rgb_color
+        r, g, b = rgb_color
         color = RGBColor(r=r, g=g, b=b)
+        indices = (self._segment_index,)
 
-        await self._async_send_command(SegmentColorCommand(segment_indices=(self._segment_index,), color=color))
+        # A lit segment changing only its brightness needs no colour write; an
+        # off segment is black and has to be relit with its colour first.
+        if ATTR_RGB_COLOR in kwargs or not send_brightness or not self._is_on:
+            await self._async_send_command(SegmentColorCommand(segment_indices=indices, color=color))
+            self._rgb_color = (r, g, b)
+            self._is_on = True
+        if send_brightness:
+            device_brightness = ha_to_device_brightness(self._brightness_range, brightness)
+            await self._async_send_command(
+                SegmentBrightnessCommand(segment_indices=indices, brightness=device_brightness)
+            )
+            self._brightness = brightness
 
-        self._is_on = True
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:

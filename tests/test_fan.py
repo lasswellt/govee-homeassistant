@@ -1444,6 +1444,20 @@ class TestTieredWorkModeSpeeds:
 
         assert h7121_entity.percentage == expected
 
+    @pytest.mark.parametrize(("work_mode", "expected"), [(1, "low"), (2, "medium"), (3, "high")])
+    def test_preset_follows_the_tier_and_is_offered(self, h7121_entity, work_mode, expected):
+        # Low is workMode 1, the same number as the default manual mode, so
+        # it used to read back as "normal", which is not in preset_modes.
+        h7121_entity._test_state.work_mode = work_mode
+
+        assert h7121_entity.preset_mode == expected
+        assert h7121_entity.preset_mode in h7121_entity.preset_modes
+
+    def test_unknown_work_mode_has_no_preset(self, h7121_entity):
+        h7121_entity._test_state.work_mode = 99
+
+        assert h7121_entity.preset_mode is None
+
     def test_sleep_has_no_percentage(self, h7121_entity):
         h7121_entity._test_state.work_mode = 16
 

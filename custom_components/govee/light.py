@@ -25,8 +25,9 @@ from homeassistant.components.light import (  # type: ignore[attr-defined]
     LightEntity,
     LightEntityFeature,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoredExtraData, RestoreEntity
 
@@ -50,6 +51,7 @@ from .const import (
     SUFFIX_MAIN_PANEL,
     SUFFIX_RING,
 )
+from .brightness import device_to_ha_brightness, ha_to_device_brightness
 from .coordinator import GoveeConfigEntry, GoveeCoordinator
 from .entity import GoveeEntity
 from .models import (
@@ -65,13 +67,11 @@ from .models import (
 from .models.device import INSTANCE_BACKGROUND_LIGHT_TOGGLE, INSTANCE_MAIN_LIGHT_TOGGLE, INSTANCE_NIGHT_LIGHT
 from .platforms.grouped_segment import GoveeGroupedSegmentEntity
 from .platforms.segment import GoveeSegmentEntity
+from .scene_cache import scenes_refreshed_signal
 
 _LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 0
-
-# Home Assistant brightness range
-HA_BRIGHTNESS_MAX = 255
 
 # Colour temperature the main-panel entity falls back to when switched on with
 # nothing to go on — no service-call attributes and no restored previous value.
@@ -80,6 +80,9 @@ MAIN_LIGHT_ON_KELVIN = 4000
 
 # DIY scenes share the effect list with the catalog scenes. To avoid collision they get a prefix.
 DIY_EFFECT_PREFIX = "DIY: "
+
+# The H1232 main panel takes a 1-100 brightness over ptReal.
+MAIN_PANEL_BRIGHTNESS_RANGE = (1, 100)
 
 
 async def async_setup_entry(
@@ -352,17 +355,11 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
 
     def _ha_to_device_brightness(self, ha_brightness: int) -> int:
         """Convert HA brightness (0-255) to device range, respecting min."""
-        ratio = ha_brightness / HA_BRIGHTNESS_MAX
-        result = int(self._brightness_min + ratio * (self._brightness_max - self._brightness_min))
-        return max(self._brightness_min, min(self._brightness_max, result))
+        return ha_to_device_brightness((self._brightness_min, self._brightness_max), ha_brightness)
 
     def _device_to_ha_brightness(self, device_brightness: int) -> int:
         """Convert device brightness to HA range (0-255), respecting min."""
-        device_range = self._brightness_max - self._brightness_min
-        if device_range <= 0:
-            return 0
-        result = int((device_brightness - self._brightness_min) / device_range * HA_BRIGHTNESS_MAX)
-        return max(0, min(HA_BRIGHTNESS_MAX, result))
+        return device_to_ha_brightness((self._brightness_min, self._brightness_max), device_brightness)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the light on with optional parameters."""
@@ -516,6 +513,31 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
             if diy_scenes:
                 self._build_diy_effect_mapping(diy_scenes)
 
+        # A "Refresh scenes" press rebuilds the effect list too.
+        if (self._enable_scenes or self._enable_diy_scenes) and not self._device.is_group:
+            self.async_on_remove(
+                async_dispatcher_connect(
+                    self.hass,
+                    scenes_refreshed_signal(self._device_id),
+                    self._handle_scenes_refreshed,
+                )
+            )
+
+    @callback
+    def _handle_scenes_refreshed(self, scenes: list[dict[str, Any]], diy_scenes: list[dict[str, Any]]) -> None:
+        """Rebuild the effect list from a refreshed catalog; an empty list keeps the current effects."""
+        changed = False
+        if self._enable_scenes and scenes:
+            self._build_effect_mapping(scenes)
+            changed = True
+        # DIY names are de-duplicated against the catalog effects, so they are
+        # rebuilt after the catalog.
+        if self._enable_diy_scenes and diy_scenes:
+            self._build_diy_effect_mapping(diy_scenes)
+            changed = True
+        if changed:
+            self.async_write_ha_state()
+
 
 class GoveeMainLightEntity(GoveeLightEntity):
     """The main downlight panel of a two-zone Ceiling Light Pro (issue #131).
@@ -552,6 +574,10 @@ class GoveeMainLightEntity(GoveeLightEntity):
     def __init__(self, coordinator: GoveeCoordinator, device: GoveeDevice) -> None:
         """Initialize the main-panel entity."""
         super().__init__(coordinator, device, enable_scenes=False, enable_diy_scenes=False)
+        # The parent names itself after the device (_attr_name = None), and HA
+        # returns _attr_name before it looks at the translation key — without
+        # this the panel would carry the bare device name too.
+        del self._attr_name
         self._attr_unique_id = f"{device.device_id}{SUFFIX_MAIN_LIGHT_TOGGLE}"
 
         # What to return to on turn_on. Only ever holds a non-black colour.
@@ -735,16 +761,10 @@ class GoveeNightLightEntity(GoveeEntity, LightEntity):
         self._brightness_min, self._brightness_max = device.brightness_range
 
     def _ha_to_device_brightness(self, ha_brightness: int) -> int:
-        ratio = ha_brightness / HA_BRIGHTNESS_MAX
-        result = int(self._brightness_min + ratio * (self._brightness_max - self._brightness_min))
-        return max(self._brightness_min, min(self._brightness_max, result))
+        return ha_to_device_brightness((self._brightness_min, self._brightness_max), ha_brightness)
 
     def _device_to_ha_brightness(self, device_brightness: int) -> int:
-        device_range = self._brightness_max - self._brightness_min
-        if device_range <= 0:
-            return 0
-        result = int((device_brightness - self._brightness_min) / device_range * HA_BRIGHTNESS_MAX)
-        return max(0, min(HA_BRIGHTNESS_MAX, result))
+        return device_to_ha_brightness((self._brightness_min, self._brightness_max), device_brightness)
 
     @property
     def color_mode(self) -> ColorMode:
@@ -914,22 +934,28 @@ class GoveeMainPanelLight(GoveeEntity, LightEntity, RestoreEntity):
         kelvin: int | None = None
         if ATTR_RGB_COLOR in kwargs:
             r, g, b = kwargs[ATTR_RGB_COLOR]
-            self._rgb_color = (r, g, b)
-            self._color_mode = ColorMode.RGB
             rgb = RGBColor(r=r, g=g, b=b)
         elif ATTR_COLOR_TEMP_KELVIN in kwargs:
             kelvin = max(PTREAL_ZONE_MIN_KELVIN, min(PTREAL_ZONE_MAX_KELVIN, int(kwargs[ATTR_COLOR_TEMP_KELVIN])))
-            self._color_temp_kelvin = kelvin
-            self._color_mode = ColorMode.COLOR_TEMP
 
+        ha_brightness: int | None = kwargs.get(ATTR_BRIGHTNESS)
         device_brightness: int | None = None
-        if ATTR_BRIGHTNESS in kwargs:
-            self._brightness = kwargs[ATTR_BRIGHTNESS]
-            device_brightness = round(self._brightness * 100 / HA_BRIGHTNESS_MAX)
+        if ha_brightness is not None:
+            device_brightness = ha_to_device_brightness(MAIN_PANEL_BRIGHTNESS_RANGE, ha_brightness)
 
         if rgb is not None or kelvin is not None or device_brightness is not None:
             if not await self._async_set_zone(rgb=rgb, brightness=device_brightness, kelvin=kelvin):
                 raise self._command_failed()
+
+        # Only keep the optimistic values once the zone accepted them.
+        if rgb is not None:
+            self._rgb_color = rgb.as_tuple
+            self._color_mode = ColorMode.RGB
+        elif kelvin is not None:
+            self._color_temp_kelvin = kelvin
+            self._color_mode = ColorMode.COLOR_TEMP
+        if ha_brightness is not None:
+            self._brightness = ha_brightness
 
         self.async_write_ha_state()
 

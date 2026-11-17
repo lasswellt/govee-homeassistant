@@ -192,8 +192,8 @@ class TestPurifierModeSelectEntity:
         """Test current option returns Low."""
         assert purifier_mode_entity.current_option == "Low"
 
-    def test_current_option_default_on_none(self, purifier_mode_entity, mock_coordinator):
-        """Test current option returns first option when state is None."""
+    def test_current_option_unknown_on_none(self, purifier_mode_entity, mock_coordinator):
+        """Test current option is unknown (None) when no purifier mode is reported."""
         from custom_components.govee.models import GoveeDeviceState
 
         state = GoveeDeviceState(
@@ -204,7 +204,7 @@ class TestPurifierModeSelectEntity:
         )
         # No purifier_mode set
         mock_coordinator.get_state.return_value = state
-        assert purifier_mode_entity.current_option == "Sleep"
+        assert purifier_mode_entity.current_option is None
 
     async def test_select_purifier_mode(self, purifier_mode_entity, mock_coordinator):
         """Test selecting purifier mode."""
@@ -319,7 +319,7 @@ class TestPurifierGearWorkModeSelectEntity:
         """current_option reads work_mode/mode_value for the gear path."""
         assert gear_mode_entity.current_option == "Low"
 
-    def test_current_option_other_work_mode_falls_back(self, gear_mode_entity, mock_coordinator):
-        """A non-gear work_mode (Auto) falls back to the default option."""
+    def test_current_option_other_work_mode_is_unknown(self, gear_mode_entity, mock_coordinator):
+        """A non-gear work_mode (Auto) means no gear option is active."""
         mock_coordinator.get_state.return_value.work_mode = 3  # Auto
-        assert gear_mode_entity.current_option == "Sleep"
+        assert gear_mode_entity.current_option is None

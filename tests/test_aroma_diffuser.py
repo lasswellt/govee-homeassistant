@@ -226,7 +226,7 @@ class TestPresetSceneSelectEntity:
     def test_current_option_matches_state(self, preset_scene_entity):
         assert preset_scene_entity.current_option == "Morgen"
 
-    def test_current_option_defaults_when_unset(self, preset_scene_entity, mock_coordinator):
+    def test_current_option_unknown_when_unset(self, preset_scene_entity, mock_coordinator):
         state = GoveeDeviceState(
             device_id=preset_scene_entity._device_id,
             online=True,
@@ -234,7 +234,8 @@ class TestPresetSceneSelectEntity:
             source="api",
         )
         mock_coordinator.get_state.return_value = state
-        assert preset_scene_entity.current_option == "Bach"
+        # Nothing reported: unknown, not a made-up first scene.
+        assert preset_scene_entity.current_option is None
 
     async def test_select_sends_integer_id_not_name(self, preset_scene_entity, mock_coordinator):
         await preset_scene_entity.async_select_option("Morgen")

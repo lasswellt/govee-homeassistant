@@ -130,7 +130,7 @@ async def async_refresh_scenes_handler(hass: HomeAssistant, call: ServiceCall) -
         if found is None:
             raise _device_not_found(raw_id)
         coordinator, device_id = found
-        await coordinator.async_get_scenes(device_id, refresh=True)
+        await coordinator.async_refresh_scenes(device_id)
         _LOGGER.debug("Refreshed scenes for device %s", device_id)
         return
 
@@ -142,8 +142,8 @@ async def async_refresh_scenes_handler(hass: HomeAssistant, call: ServiceCall) -
         )
     for coordinator in coordinators:
         for dev_id, device in coordinator.devices.items():
-            if device.supports_scenes:
-                await coordinator.async_get_scenes(dev_id, refresh=True)
+            if device.supports_scenes or device.supports_diy_scenes:
+                await coordinator.async_refresh_scenes(dev_id)
     _LOGGER.debug("Refreshed scenes for all devices")
 
 
