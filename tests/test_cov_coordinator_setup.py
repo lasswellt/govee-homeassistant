@@ -1046,6 +1046,39 @@ class TestDiscoverLeakSensors:
         assert coord.leak_sensors == {}
 
 
+class TestBffSegmentCounts:
+    """#301: the account's segmentCount reaches the H3A53 only."""
+
+    @pytest.mark.asyncio
+    async def test_discovery_applies_the_count_to_the_allowlisted_sku_only(self, monkeypatch):
+        coord = _coordinator(iot=CREDS)
+        coord._schedule_bff_poll = MagicMock()
+        _add(coord, _light("AA:BB:CC:DD:EE:01", "H3A53"))
+        _add(coord, _light("AA:BB:CC:DD:EE:02", "H6072"))
+        inner = MagicMock()
+        inner.fetch_bff_leak_sensors = AsyncMock(return_value=([], {}, {}))
+        inner.bff_segment_counts = MagicMock(return_value={"AA:BB:CC:DD:EE:01": 6, "AA:BB:CC:DD:EE:02": 9, "gone": 4})
+        _patch_auth(monkeypatch, inner)
+
+        await coord._discover_leak_sensors()
+
+        assert coord._devices["AA:BB:CC:DD:EE:01"].bff_segment_count == 6
+        assert coord._devices["AA:BB:CC:DD:EE:02"].bff_segment_count is None
+
+    @pytest.mark.asyncio
+    async def test_bff_failure_keeps_the_api_count(self, monkeypatch):
+        coord = _coordinator(iot=CREDS)
+        _add(coord, _light("AA:BB:CC:DD:EE:01", "H3A53"))
+        inner = MagicMock()
+        inner.fetch_bff_leak_sensors = AsyncMock(side_effect=GoveeApiError("down"))
+        inner.bff_segment_counts = MagicMock(return_value={"AA:BB:CC:DD:EE:01": 6})
+        _patch_auth(monkeypatch, inner)
+
+        await coord._discover_leak_sensors()
+
+        assert coord._devices["AA:BB:CC:DD:EE:01"].bff_segment_count is None
+
+
 class TestApplyBffThermoBattery:
     def test_device_without_state_is_skipped(self):
         coord = _coordinator()
