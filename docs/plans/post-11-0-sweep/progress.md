@@ -11,3 +11,4 @@ Ruling: spec-defect; side-agent review: T-005 merged the daily-release.yml bumps
 ## 2026-11-17T04:12:22Z verify T-008 ok=true (0642e53; count rides the setup leak-sensor BFF fetch, no extra call; +TestBffSegmentCounts in test_cov_coordinator_setup.py, Tier 2)
 ## 2026-11-17T04:15:30Z verify T-002 ok=true (c6dea06; core marketplace tests 1206 passed, ruff/mypy clean in core clone; draft only, nothing upstream)
 ## 2026-11-17T04:15:30Z T-012 local gates: 4665 passed py3.12, 99.74 % (min 96.88 % ble_advertisement), config_flow 100 %, flake8/black/mypy clean; py3.14 suite 4664 passed 1 skipped; HA 2026.11.1 import: no govee deprecations
+## 2026-11-17T04:21:27Z verify T-012 ok=true (0b5bf4e; main CI 4/4 success). Remaining: T-013 after tonight's release (2026-11-18T02:00Z) creates the next tag

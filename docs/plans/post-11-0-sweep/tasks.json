@@ -1,7 +1,7 @@
 {
   "$schema": "blitz-tasks/1.0",
   "plan": "post-11-0-sweep",
-  "updated": "2026-11-17T04:15:29Z",
+  "updated": "2026-11-17T04:21:21Z",
   "tasks": [
     {
       "id": "T-001",
@@ -612,11 +612,53 @@
           "timeout": 120
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-17T04:21:21Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "set -o pipefail; .cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= --cov=custom_components.govee --cov-report=term --cov-fail-under=95 2>&1 | tail -3",
+            "exit": 0,
+            "duration_ms": 50307,
+            "tail": "\nRequired test coverage of 95% reached. Total coverage: 99.74%\n4665 passed in 48.32s",
+            "recorded_at": "2026-11-17T04:21:19Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/flake8 custom_components tests && .cc-sessions/venv312/bin/black --check -q . && .cc-sessions/venv312/bin/mypy custom_components/govee",
+            "exit": 0,
+            "duration_ms": 1030,
+            "tail": "Success: no issues found in 59 source files",
+            "recorded_at": "2026-11-17T04:21:20Z"
+          },
+          {
+            "cmd": "grep -q '\"version\": \"2026.11.0\"' custom_components/govee/manifest.json",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-17T04:21:20Z"
+          },
+          {
+            "cmd": "grep -q 'download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093' .github/workflows/daily-release.yml",
+            "exit": 0,
+            "duration_ms": 4,
+            "tail": "",
+            "recorded_at": "2026-11-17T04:21:20Z"
+          },
+          {
+            "cmd": "git fetch -q origin && test \"$(git rev-parse HEAD)\" = \"$(git rev-parse origin/main)\" && test -z \"$(gh run list --commit $(git rev-parse HEAD) --json conclusion --jq '.[]|select(.conclusion!=\"success\")|.conclusion')\"",
+            "exit": 0,
+            "duration_ms": 889,
+            "tail": "",
+            "recorded_at": "2026-11-17T04:21:21Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "Replaces T-011 (which depended on T-005). Gate only. Check per-module coverage >=96 % and config_flow.py 100 % from the term report; run once on the HA 2026.11 lane (py3.14 venv-ha2611 under the fa710ecc session scratchpad). The download-artifact v4 pin check proves #291/#292/#294 did NOT land before tonight's run. Must be done before 2026-11-18T02:00Z."
     },
