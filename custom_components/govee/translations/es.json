@@ -244,6 +244,15 @@
       },
       "govee_bottom_light": {
         "name": "Luz inferior"
+      },
+      "govee_ambient_light": {
+        "name": "Luz ambiental"
+      },
+      "govee_wall_washing_light": {
+        "name": "Luz de pared"
+      },
+      "govee_desk_light": {
+        "name": "Luz de escritorio"
       }
     },
     "sensor": {
