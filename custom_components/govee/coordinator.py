@@ -99,6 +99,7 @@ from .const import (
     DEFAULT_DAILY_REQUEST_BUDGET,
     KETTLE_FOLLOWUP_MIN_REMAINING,
     DEFAULT_ENABLE_MQTT_CONTROL,
+    BFF_SEGMENT_COUNT_SKUS,
     MQTT_COLOR_SKUS,
     DEFAULT_MQTT_STATUS_INTERVAL,
     DEFAULT_PROBE_POLL_INTERVAL,
@@ -2519,6 +2520,19 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         except Exception as err:
             _LOGGER.warning("Unexpected error fetching device topics: %s", err)
 
+    def _apply_bff_segment_counts(self, counts: dict[str, int]) -> None:
+        """Adopt the account's segment count for SKUs in ``BFF_SEGMENT_COUNT_SKUS`` (#301).
+
+        Runs during setup, before platforms are forwarded, so segment entities
+        are created from the account count. Without BFF data the API count stays.
+        """
+        for device_id, count in counts.items():
+            device = self._devices.get(device_id)
+            if device is None or device.sku.upper() not in BFF_SEGMENT_COUNT_SKUS:
+                continue
+            _LOGGER.debug("Segment count for %s from the account: %d", device.sku, count)
+            self._devices[device_id] = dataclasses.replace(device, bff_segment_count=count)
+
     async def _discover_leak_sensors(self) -> None:
         """Discover leak sensor sub-devices via BFF API.
 
@@ -2535,13 +2549,16 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             self._bff_device_census = auth_client.bff_device_census()
             self._bff_response_skeleton = auth_client.bff_response_skeleton()
             self._bff_device_values = auth_client.bff_device_values()
+            bff_segment_counts.update(auth_client.bff_segment_counts())
             return result
 
+        bff_segment_counts: dict[str, int] = {}
         try:
             # A short-lived auth client per call, consistent with
             # _fetch_device_topics(). The hass= param shares HA's managed
             # aiohttp.ClientSession, so no new TCP connections are created.
             fetched = await self._async_bff_call(_op, "leak-sensor list")
+            self._apply_bff_segment_counts(bff_segment_counts)
             if fetched is None:
                 return
             sensor_data, hub_data, thermo_readings = fetched

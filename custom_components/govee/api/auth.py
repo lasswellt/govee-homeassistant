@@ -1491,6 +1491,25 @@ class GoveeAuthClient:
             out.append(entry)
         return out
 
+    def bff_segment_counts(self) -> dict[str, int]:
+        """Positive ``deviceSettings.segmentCount`` per device of the last BFF list (#301).
+
+        Accepts ints and digit strings; zero, negative, boolean and garbage
+        values are skipped so the Developer API count stays in force.
+        """
+        counts: dict[str, int] = {}
+        for device in self._last_bff_raw_devices:
+            if not isinstance(device, dict):
+                continue
+            device_id = device.get("device")
+            if not isinstance(device_id, str) or not device_id:
+                continue
+            settings = _as_dict(_as_dict(device.get("deviceExt")).get("deviceSettings"))
+            count = _safe_int(settings.get("segmentCount"))
+            if count is not None and count > 0:
+                counts[device_id] = count
+        return counts
+
     async def request_verification_code(
         self,
         email: str,

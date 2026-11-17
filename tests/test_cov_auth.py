@@ -1068,6 +1068,30 @@ class TestDiagnosticsViews:
         assert "Kitchen Sink" not in dump
         assert "GW" not in dump
 
+    @pytest.mark.parametrize(
+        ("settings", "expected"),
+        [
+            ({"segmentCount": 6}, 6),
+            ({"segmentCount": "12"}, 12),
+            ({}, None),
+            ({"segmentCount": 0}, None),
+            ({"segmentCount": -3}, None),
+            ({"segmentCount": "many"}, None),
+            ({"segmentCount": True}, None),
+            (json.dumps({"segmentCount": 8}), 8),
+        ],
+    )
+    def test_bff_segment_counts_keeps_positive_counts_only(self, settings, expected):
+        client = GoveeAuthClient(session=_session())
+        client._last_bff_raw_devices = [
+            "garbage",
+            {"sku": "H3A53", "deviceExt": {"deviceSettings": settings}},
+            {"sku": "H3A53", "device": "", "deviceExt": {"deviceSettings": {"segmentCount": 4}}},
+        ]
+        client._last_bff_raw_devices[1]["device"] = "AA:01"
+
+        assert client.bff_segment_counts() == ({} if expected is None else {"AA:01": expected})
+
     def test_census_and_values_skip_entries_that_are_not_objects(self):
         # A malformed entry cannot reach the retained list through the fetch (it
         # would fail on it), but the diagnostics views must never raise on what they hold.
