@@ -5644,6 +5644,13 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             HomeAssistantError: H8057 Segment 4 needs an AWS IoT passthrough
                 that is unavailable or failed to publish.
         """
+        device = self._devices.get(device_id)
+        if (
+            isinstance(command, MusicModeCommand)
+            and device is not None
+            and getattr(device, "music_mode_requires_rgb", False) is True
+        ):
+            command = dataclasses.replace(command, rgb_required=True)
         confirmer = self._command_confirmer
         # Before dispatch: a newer command makes a pending confirm stale, and
         # the confirm compares against the value from before this one (#245).
