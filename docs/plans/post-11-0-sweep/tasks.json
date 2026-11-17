@@ -1,7 +1,7 @@
 {
   "$schema": "blitz-tasks/1.0",
   "plan": "post-11-0-sweep",
-  "updated": "2026-11-17T04:04:58Z",
+  "updated": "2026-11-17T04:15:29Z",
   "tasks": [
     {
       "id": "T-001",
@@ -21,11 +21,32 @@
           "timeout": 60
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-17T04:06:30Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "gh api repos/lasswellt/govee-homeassistant/issues/295/comments --jq '[.[]|select(.user.login==\"lasswellt\")|.body|test(\"190454\")]|any' | grep -qx true",
+            "exit": 0,
+            "duration_ms": 333,
+            "tail": "",
+            "recorded_at": "2026-11-17T04:06:30Z"
+          },
+          {
+            "cmd": "gh api graphql -f query='{repository(owner:\"lasswellt\",name:\"govee-homeassistant\"){issue(number:295){isPinned}}}' --jq .data.repository.issue.isPinned | grep -qx true",
+            "exit": 0,
+            "duration_ms": 319,
+            "tail": "",
+            "recorded_at": "2026-11-17T04:06:30Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "Maintainer approved posting now + pin (2026-11-16, option 1). Outward action, gh needs dangerouslyDisableSandbox. Reply content: cause = HA 2026.11 core Marketplace async_pre_install domain check (homeassistant/components/marketplace/repositories/integration.py) vs a stale LaggAt/hacs-govee record still marked installed after the HACS->Marketplace migration; not caused by v2026.11.0; link home-assistant/core#190454. Workaround: Settings > Devices & services > Devices, search Marketplace, open it, disable the integration; back up /config/.storage/marketplace.repositories; in the LaggAt/hacs-govee record delete only the \"installed\": true line; save, re-enable, retry update. WARNING: never 'Delete and uninstall' the LaggAt entry (deletes custom_components/govee and the config entry). Mention we are proposing a core fix. Ask no more 'same here' comments (use reactions). Cite no version of ours. Keep issue open. Pin: gh issue pin 295."
     },
@@ -56,11 +77,46 @@
           "timeout": 10
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-17T04:15:29Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "grep -q 'async_pre_install' docs/upstream/core-190454.patch",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-17T04:15:29Z"
+          },
+          {
+            "cmd": "grep -qE '^\\+\\+\\+ b/tests/components/marketplace/' docs/upstream/core-190454.patch",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-17T04:15:29Z"
+          },
+          {
+            "cmd": "grep -qE 'issue_tracker|documentation' docs/upstream/core-190454.patch",
+            "exit": 0,
+            "duration_ms": 4,
+            "tail": "",
+            "recorded_at": "2026-11-17T04:15:29Z"
+          },
+          {
+            "cmd": "grep -qE '^## Tests run' docs/upstream/core-190454-marketplace-stale-owner.md && grep -q '190454' docs/upstream/core-190454-marketplace-stale-owner.md",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-17T04:15:29Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "DRAFT ONLY: never push, fork or open the upstream PR; maintainer reviews docs/upstream/* first. Shallow-clone home-assistant/core dev into the session scratchpad. Change homeassistant/components/marketplace/repositories/integration.py async_pre_install: when another installed INTEGRATION record has the same domain, read custom_components/<domain>/manifest.json (reuse the json_loads_object pattern of _check_loadable_manifest); if its documentation or issue_tracker URL names self's repo (github.com/<full_name>, case-insensitive) or its version equals self.data.installed_version and not the other record's, treat the other record as stale: clear its installed flag (persist via the repositories store), log a warning naming both repos, and continue; otherwise raise integration_owned as today. Tests in tests/components/marketplace (stale record cleared; genuine conflict still raises; unreadable manifest still raises). Run those tests in a core dev venv (uv pip install -r requirements_test.txt in a py3.14 venv) and record the command + result under '## Tests run'. The .md holds PR title, body (problem, cases from #190454: govee, bermuda, senec, miwifi, eon_next, sigen), design, risks. Export with git format-patch/diff into docs/upstream/core-190454.patch."
     },
@@ -82,11 +138,32 @@
           "timeout": 30
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-17T04:07:32Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "grep -q 'home-assistant/actions/hassfest@86d4564712fa02543c808e3a693dd04f9d3f8361' .github/workflows/hacs-hass.yaml",
+            "exit": 0,
+            "duration_ms": 4,
+            "tail": "",
+            "recorded_at": "2026-11-17T04:07:31Z"
+          },
+          {
+            "cmd": "test \"$(gh pr view 290 --json state --jq .state)\" = MERGED",
+            "exit": 0,
+            "duration_ms": 455,
+            "tail": "",
+            "recorded_at": "2026-11-17T04:07:32Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "Research §PR validation: SHA = home-assistant/actions master HEAD; CI green. Workflow-only, no release trigger. git fetch origin +refs/pull/290/head:refs/pr/290 && git merge --no-ff refs/pr/290 (or gh pr merge 290 --merge)."
     },
@@ -108,11 +185,32 @@
           "timeout": 30
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-17T04:07:43Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "python3 -c \"import sys,yaml; d=yaml.safe_load(open('.github/dependabot.yml')); ig=[i for u in d['updates'] for i in u.get('ignore',[]) if i.get('dependency-name')=='pytest']; sys.exit(0 if ig and all('update-types' not in i for i in ig) else 1)\"",
+            "exit": 0,
+            "duration_ms": 42,
+            "tail": "",
+            "recorded_at": "2026-11-17T04:07:43Z"
+          },
+          {
+            "cmd": "test \"$(gh pr view 293 --json state --jq .state)\" = CLOSED",
+            "exit": 0,
+            "duration_ms": 349,
+            "tail": "",
+            "recorded_at": "2026-11-17T04:07:43Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "CI run 43666603327: pytest-homeassistant-custom-component 0.13.205 depends on pytest==8.3.4 -> ResolutionImpossible; dependabot.yml:22-25 ignores only semver-major. Drop update-types on the pytest entry; update its comment (plugin pins pytest exactly; #280, #293). Close #293 with a one-line comment naming the pin (outward action approved by plan)."
     },
@@ -176,11 +274,39 @@
           "timeout": 300
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-17T04:08:40Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "git merge-base --is-ancestor refs/pr/300 HEAD",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-17T04:08:37Z"
+          },
+          {
+            "cmd": "grep -q 'too_many_ptreal_frames' custom_components/govee/strings.json && grep -q 'too_many_ptreal_frames' custom_components/govee/translations/en.json",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-17T04:08:37Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_services.py tests/test_cov_coordinator_control.py",
+            "exit": 0,
+            "duration_ms": 2631,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 35%]\n........................................................................ [ 70%]\n............................................................             [100%]\n204 passed in 1.16s",
+            "recorded_at": "2026-11-17T04:08:40Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "Maintainer: merge on local gates (fork CI never ran). Research: merge-tree clean onto b87f171; 4650 passed, 99.74 %, config_flow 100 %, lint/mypy/black clean. git fetch origin +refs/pull/300/head:refs/pr/300; git merge --no-ff refs/pr/300 -m 'Merge PR #300: send_raw_ptreal multi-frame and LAN when healthy (#301)'. Behaviour change (single frames prefer LAN when healthy) is scoped to the debug service; name it in the release notes. No fixups required."
     },
@@ -208,11 +334,39 @@
           "timeout": 300
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-17T04:09:46Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "grep -qE 'BFF_SEGMENT_COUNT_SKUS: Final = frozenset\\(\\{[^}]*\"H3A53\"' custom_components/govee/const.py",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-17T04:09:43Z"
+          },
+          {
+            "cmd": "grep -q 'bff_segment_count' custom_components/govee/models/device.py && grep -q '\"bff\"' custom_components/govee/models/device.py",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-17T04:09:43Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_cov_models.py tests/test_models.py tests/test_segment.py",
+            "exit": 0,
+            "duration_ms": 2290,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 29%]\n........................................................................ [ 59%]\n........................................................................ [ 89%]\n..........................                                               [100%]\n242 passed in 0.81s",
+            "recorded_at": "2026-11-17T04:09:46Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "Research §New issues #301: segment_count_resolution (models/device.py:1374-1420) = override > size.max clamp > api; BFF deviceSettings.segmentCount read nowhere; H3A53 count follows install length (9->11: reporter's BFF segmentCount 11, a1 frame 0b). Add frozen field bff_segment_count: int | None = None to GoveeDevice; in resolution, when sku in BFF_SEGMENT_COUNT_SKUS and bff_segment_count is a positive int, effective=bff_segment_count, source='bff' (ranked above override); include 'bff' key in the returned dict; update both docstrings. Other SKUs unchanged (test: a non-allow-listed SKU with bff_segment_count set keeps its api/override result). const.py comment cites #301."
     },
@@ -242,11 +396,39 @@
           "timeout": 300
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-17T04:12:22Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "grep -q 'segmentCount' custom_components/govee/api/auth.py",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-17T04:12:20Z"
+          },
+          {
+            "cmd": "grep -q 'bff_segment_count' custom_components/govee/coordinator.py",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-17T04:12:20Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_cov_auth.py tests/test_auth.py tests/test_cov_coordinator_setup.py",
+            "exit": 0,
+            "duration_ms": 2738,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 20%]\n........................................................................ [ 41%]\n........................................................................ [ 61%]\n........................................................................ [ 82%]\n...............................................................          [100%]\n351 passed in 1.29s",
+            "recorded_at": "2026-11-17T04:12:22Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "BFF parsing lives in api/auth.py (_bff_devices :422; deviceSettings via _as_dict at :699/:726/:925, may arrive as a JSON string). Expose a {device_id: int} map of positive segmentCount values (ints or digit strings). In coordinator discovery, after the BFF fetch, dataclasses.replace(device, bff_segment_count=n) for devices whose sku is in BFF_SEGMENT_COUNT_SKUS. Segment entities are created at platform setup from segment_count: make sure the BFF data is applied before platforms are forwarded on first setup; if BFF arrives later (login failure / 2FA), keep the API count — a changed length takes effect on reload (say so in the release notes). Tests: parse (int, string, missing, zero, garbage) and coordinator application for H3A53 vs another SKU. Commit subject references (#301)."
     },
@@ -272,11 +454,39 @@
           "timeout": 10
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-17T04:08:57Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "! grep -nE 'Tower / pedestal fans.*H7105' README.md",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-17T04:08:57Z"
+          },
+          {
+            "cmd": "! grep -n 'H7105/H7107' README.md",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-17T04:08:57Z"
+          },
+          {
+            "cmd": "grep -n 'H7107' README.md >/dev/null",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-17T04:08:57Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "Maintainer chose remove (not caveat). README.md:84 row -> 'H7101, H7102, H7106, H7107'; '(H7105/H7107)' -> '(H7107)' at :84, :136, :180, :449. Leave const.py MQTT_OSCILLATION_SKUS and protocol docs unchanged. Commit subject 'docs(README): drop the H7105, which Govee's Developer API does not list (#209)' so the release bot replies on #209 (docs-only commit does not by itself trigger a release; tonight ships anyway)."
     },
@@ -298,11 +508,32 @@
           "timeout": 10
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-17T04:09:15Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "for n in 284 286 285 296 297 298 299; do grep -q \"^## #$n$\" docs/release-replies.md || exit 1; done",
+            "exit": 0,
+            "duration_ms": 11,
+            "tail": "",
+            "recorded_at": "2026-11-17T04:09:15Z"
+          },
+          {
+            "cmd": "python3 scripts/release_replies.py --help >/dev/null 2>&1 || test -f scripts/release_replies.py",
+            "exit": 0,
+            "duration_ms": 62,
+            "tail": "",
+            "recorded_at": "2026-11-17T04:09:15Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "close: yes for #284 and #286 (jhemak confirmed on v2026.11.0). close: no for the rest: #285 (attach the diagnostics offered, after updating to >=2026.11.0; we'll look for paramId on Lightning-A/B/C), #296 (Platform API returns options: [] for diyScene; 'helles TV-Licht' is a snapshot and works via the Snapshot select; account-side DIY parked), #297 (no playlist API known; suggest an HA script cycling effects; park), #298 (version + diagnostics + whether they're DIY or snapshots in the app), #299 (SKU + diagnostics; a DreamView mode select is possible only if the device exposes movieMode options). #209 and #301 get automatic replies via commit refs; #295 replied directly (T-001); #293 closed by T-004."
     },
