@@ -1324,6 +1324,114 @@ class TestRawPtreal:
 
         assert await coord.async_send_raw_ptreal(DEV, bytes([0x33])) is False
 
+    @pytest.mark.asyncio
+    async def test_frame_list_goes_out_in_one_message(self):
+        coord = _coordinator()
+        _add(coord, _device())
+        coord._ble_manager = _ble_manager()
+
+        upload = build_packet([0xA3, 0x00, 0x01, 0x02])
+        activate = [0x33, 0x05, 0x04, 0xDC, 0x83]
+
+        assert await coord.async_send_raw_ptreal(DEV, [upload, bytes(activate)]) is True
+
+        coord._ble_manager.async_send_ble_packet.assert_awaited_once_with(
+            DEV,
+            "H6072",
+            [encode_packet_base64(upload), encode_packet_base64(build_packet(activate))],
+        )
+
+    @pytest.mark.asyncio
+    async def test_frame_list_with_a_bad_frame_sends_nothing(self):
+        coord = _coordinator()
+        _add(coord, _device())
+        coord._ble_manager = _ble_manager()
+
+        assert await coord.async_send_raw_ptreal(DEV, [bytes([0x33]), bytes(21)]) is False
+        assert await coord.async_send_raw_ptreal(DEV, []) is False
+        coord._ble_manager.async_send_ble_packet.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_healthy_lan_carries_the_frames(self):
+        coord = _coordinator()
+        _add(coord, _device())
+        coord._ble_manager = _ble_manager(available=False)
+        client = MagicMock()
+        client.async_send_command = AsyncMock(return_value=True)
+        _lan_ready(coord, client)
+
+        frames = [build_packet([0xA3, 0x00, 0x01, 0x02]), bytes([0x33, 0x05, 0x04, 0xDC, 0x83])]
+        assert await coord.async_send_raw_ptreal(DEV, frames) is True
+
+        client.async_send_command.assert_awaited_once_with(
+            IP,
+            "ptReal",
+            {"command": [encode_packet_base64(frames[0]), encode_packet_base64(build_packet(list(frames[1])))]},
+        )
+        coord._ble_manager.async_send_ble_packet.assert_not_awaited()
+        lan = coord._transport.get(DEV, "lan")
+        assert lan is not None and lan.last_send_ts is not None
+
+    @pytest.mark.asyncio
+    async def test_lan_send_failure_falls_back_to_aws_iot(self):
+        coord = _coordinator()
+        _add(coord, _device())
+        coord._ble_manager = _ble_manager()
+        client = MagicMock()
+        client.async_send_command = AsyncMock(return_value=False)
+        _lan_ready(coord, client)
+
+        assert await coord.async_send_raw_ptreal(DEV, bytes([0x33, 0x05, 0x01])) is True
+
+        client.async_send_command.assert_awaited_once()
+        coord._ble_manager.async_send_ble_packet.assert_awaited_once_with(
+            DEV, "H6072", encode_packet_base64(build_packet([0x33, 0x05, 0x01]))
+        )
+        lan = coord._transport.get(DEV, "lan")
+        assert lan is not None and lan.last_failure_reason == "send_failed"
+
+    @pytest.mark.parametrize("gate", ["unhealthy", "suppressed", "not_correlated"])
+    @pytest.mark.asyncio
+    async def test_lan_gates_route_to_aws_iot(self, gate):
+        coord = _coordinator()
+        _add(coord, _device())
+        coord._ble_manager = _ble_manager()
+        client = MagicMock()
+        client.async_send_command = AsyncMock(return_value=True)
+        _lan_ready(coord, client)
+        if gate == "unhealthy":
+            coord._record_transport_failure(DEV, "lan", "stale")
+        elif gate == "suppressed":
+            coord._lan_writes_suppressed = MagicMock(return_value=True)
+        else:
+            coord._lan_devices.clear()
+
+        assert coord._lan_ptreal_ip(DEV, coord._devices[DEV]) is None
+        assert await coord.async_send_raw_ptreal(DEV, bytes([0x33])) is True
+        client.async_send_command.assert_not_awaited()
+        coord._ble_manager.async_send_ble_packet.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_write_only_lan_override_skips_the_health_gate(self):
+        coord = _coordinator()
+        _add(coord, _device())
+        coord._ble_manager = _ble_manager()
+        client = MagicMock()
+        client.async_send_command = AsyncMock(return_value=True)
+        _lan_ready(coord, client)
+        coord._record_transport_failure(DEV, "lan", "never_reads")
+        coord._lan_write_only.add(DEV)
+
+        assert coord._lan_ptreal_ip(DEV, coord._devices[DEV]) == IP
+
+    def test_group_never_rides_lan(self):
+        coord = _coordinator()
+        _add(coord, _device())
+        _lan_ready(coord, MagicMock())
+
+        assert coord._lan_ptreal_ip(DEV, replace(coord._devices[DEV], is_group=True)) is None
+        assert coord._lan_ptreal_ip("11825917", coord._devices[DEV]) is None
+
 
 # --------------------------------------------------------------------------- #
 # Optimistic state application

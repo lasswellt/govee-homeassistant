@@ -253,6 +253,46 @@ class TestSendRawPtrealService:
 
         assert excinfo.value.translation_key == "ptreal_unavailable"
 
+    async def test_comma_separated_frames_go_out_as_one_list(self, monkeypatch):
+        """Several frames (a scene upload plus its activation) reach the coordinator together."""
+        device_id = "AA:BB:CC:DD:EE:FF:00:66"
+        coordinator = _make_coordinator(_make_device(segment_count=0, device_id=device_id), device_id)
+        coordinator.async_send_raw_ptreal = AsyncMock(return_value=True)
+        monkeypatch.setattr(LOOKUP, lambda hass, raw: (coordinator, device_id))
+        upload = "00" * 20
+
+        await async_send_raw_ptreal_handler(MagicMock(), _build_ptreal_call(device_id, f"{upload}, 33 05 04 dc 83"))
+
+        coordinator.async_send_raw_ptreal.assert_awaited_once_with(
+            device_id, [bytes.fromhex(upload), bytes.fromhex("330504dc83")]
+        )
+
+    async def test_one_bad_frame_in_a_list_rejects_the_call(self, monkeypatch):
+        """Nothing is sent when any frame in the list is invalid, and the error names that frame."""
+        coordinator = MagicMock()
+        coordinator.async_send_raw_ptreal = AsyncMock()
+        monkeypatch.setattr(LOOKUP, lambda hass, raw: (coordinator, "dev"))
+
+        with pytest.raises(ServiceValidationError) as excinfo:
+            await async_send_raw_ptreal_handler(MagicMock(), _build_ptreal_call("dev", "33 05,ZZ"))
+
+        assert excinfo.value.translation_key == "invalid_ptreal_frame"
+        assert excinfo.value.translation_placeholders["frame"] == "ZZ"
+        coordinator.async_send_raw_ptreal.assert_not_called()
+
+    async def test_too_many_frames_rejected(self, monkeypatch):
+        """More frames than one message can sensibly carry is a validation error."""
+        coordinator = MagicMock()
+        coordinator.async_send_raw_ptreal = AsyncMock()
+        monkeypatch.setattr(LOOKUP, lambda hass, raw: (coordinator, "dev"))
+
+        with pytest.raises(ServiceValidationError) as excinfo:
+            await async_send_raw_ptreal_handler(MagicMock(), _build_ptreal_call("dev", ",".join(["33 05"] * 65)))
+
+        assert excinfo.value.translation_key == "too_many_ptreal_frames"
+        assert excinfo.value.translation_placeholders == {"count": "65", "max": "64"}
+        coordinator.async_send_raw_ptreal.assert_not_called()
+
     async def test_registered_service_delegates_to_handler(self, hass, monkeypatch):
         """The registered service callback invokes the module-level handler."""
         device_id = "AA:BB:CC:DD:EE:FF:00:55"

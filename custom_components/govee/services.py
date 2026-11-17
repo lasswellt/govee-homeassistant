@@ -38,6 +38,9 @@ ATTR_DEVICE_ID = "device_id"
 ATTR_RGB_COLOR = "rgb_color"
 ATTR_SEGMENTS = "segments"
 ATTR_FRAME = "frame"
+# Upper bound on comma-separated frames in one send_raw_ptreal call; a scene
+# upload is a handful of packets, the largest stock scenes stay well under this.
+MAX_PTREAL_FRAMES = 64
 ATTR_DURATION = "duration"
 ATTR_INTERVAL = "interval"
 
@@ -194,16 +197,8 @@ async def async_set_segment_color_handler(hass: HomeAssistant, call: ServiceCall
     _LOGGER.debug("Set segments %s to color %s on device %s", segments, rgb, device_id)
 
 
-async def async_send_raw_ptreal_handler(hass: HomeAssistant, call: ServiceCall) -> None:
-    """Handle ``govee.send_raw_ptreal`` (developer/debug aid for issue #208).
-
-    Sends an arbitrary BLE ptReal command frame to a device over the AWS IoT
-    passthrough. Frames of 19 bytes or fewer get a checksum appended by the
-    coordinator; a 20-byte frame must already carry a valid XOR checksum.
-    """
-    raw_id = call.data[ATTR_DEVICE_ID]
-    raw_frame = call.data[ATTR_FRAME]
-
+def _parse_ptreal_frame(raw_frame: str) -> bytes:
+    """Parse one hex ptReal frame, raising ``invalid_ptreal_frame`` when it isn't valid."""
     cleaned = raw_frame.replace(" ", "").replace(":", "")
     try:
         frame = bytes.fromhex(cleaned)
@@ -223,6 +218,30 @@ async def async_send_raw_ptreal_handler(hass: HomeAssistant, call: ServiceCall) 
             translation_key="invalid_ptreal_frame",
             translation_placeholders={"frame": raw_frame},
         )
+    return frame
+
+
+async def async_send_raw_ptreal_handler(hass: HomeAssistant, call: ServiceCall) -> None:
+    """Handle ``govee.send_raw_ptreal`` (developer/debug aid for issue #208).
+
+    Sends an arbitrary BLE ptReal command frame to a device, over LAN when the
+    device's LAN transport is healthy and the AWS IoT passthrough otherwise.
+    Frames of 19 bytes or fewer get a checksum appended by the coordinator; a
+    20-byte frame must already carry a valid XOR checksum. Several
+    comma-separated frames are sent together in one ptReal message, which is
+    how the Govee app uploads a scene (``a3`` multi-packet plus activation).
+    """
+    raw_id = call.data[ATTR_DEVICE_ID]
+    raw_frame = call.data[ATTR_FRAME]
+
+    parts = raw_frame.split(",")
+    if len(parts) > MAX_PTREAL_FRAMES:
+        raise ServiceValidationError(
+            translation_domain=DOMAIN,
+            translation_key="too_many_ptreal_frames",
+            translation_placeholders={"count": str(len(parts)), "max": str(MAX_PTREAL_FRAMES)},
+        )
+    frames = [_parse_ptreal_frame(part) for part in parts]
 
     found = _get_coordinator_for_device(hass, raw_id)
     if found is None:
@@ -232,13 +251,14 @@ async def async_send_raw_ptreal_handler(hass: HomeAssistant, call: ServiceCall) 
     device = coordinator.devices.get(device_id)
     device_name = device.name if device is not None else device_id
 
-    if not await coordinator.async_send_raw_ptreal(device_id, frame):
+    payload: bytes | list[bytes] = frames[0] if len(frames) == 1 else frames
+    if not await coordinator.async_send_raw_ptreal(device_id, payload):
         raise HomeAssistantError(
             translation_domain=DOMAIN,
             translation_key="ptreal_unavailable",
             translation_placeholders={"device": device_name},
         )
-    _LOGGER.debug("Sent raw ptReal frame %s to device %s", frame.hex(), device_id)
+    _LOGGER.debug("Sent raw ptReal frame(s) %s to device %s", ",".join(f.hex() for f in frames), device_id)
 
 
 async def async_request_status_handler(hass: HomeAssistant, call: ServiceCall) -> None:
