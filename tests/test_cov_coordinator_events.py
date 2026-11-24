@@ -1031,6 +1031,18 @@ class TestReportedBrightnessInState:
 
         assert coord._states[DEV].brightness == 50
 
+    @pytest.mark.parametrize("pushed", [None, "", "n/a"])
+    def test_mqtt_push_with_unparseable_brightness_is_not_remapped(self, pushed):
+        coord = _coordinator()
+        coord._devices[DEV] = _brightness_light("H6054")
+        state = GoveeDeviceState.create_empty(DEV)
+        state.brightness = 50
+        coord._states[DEV] = state
+
+        coord._on_mqtt_state_update(DEV, {"onOff": 1, "brightness": pushed})
+
+        assert coord._states[DEV].brightness == 50
+
     def test_mqtt_push_leaves_other_sku(self):
         coord = _coordinator()
         coord._devices[DEV] = _brightness_light("H6072")

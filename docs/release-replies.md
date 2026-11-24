@@ -44,3 +44,7 @@ brief: Thank the reporter for the diagnostics. They show the Govee account lists
 ## #241
 close: no
 brief: Thank Migz93 for the diagnostics. Explain that Govee's Platform API exposes no DreamView or video capability for the H6099, so there is no switch we can build from it, but the diagnostics taken with Video Mode on show the device reporting its own mode over the account channel, which suggests state may be readable. We can't yet tell what a command to turn video mode off looks like, so ask for one more diagnostics download (Settings > Devices & services > Govee > the H6099 > Download diagnostics) taken with Video Mode switched off in the Govee app, so we can compare the two reports and work out the frame. Keep the issue open as a feature request.
+
+## #305
+close: no
+brief: Thank WaldenL for the report and the exact warnings. Say the integration now links leak sensors and hub-bridged devices to their hub with `via_device_id` on Home Assistant 2026.11 and later (and keeps `via_device` on older versions), so the three deprecation warnings should be gone; cite the released version. Ask them to update and confirm the warnings no longer appear and the leak sensors still show under their hub. If any leak sensor or hub device turns unavailable or fails to load after updating, ask them to attach the full RuntimeError traceback from Settings > System > Logs. Keep the issue open until they confirm.

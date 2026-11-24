@@ -172,6 +172,7 @@ from .models import (
     TransportHealth,
     TransportKind,
 )
+from .models.state import _coerce_int
 from .models.transport import TRANSPORT_KINDS
 from .transport_health import TransportHealthTracker
 from .models.commands import (
@@ -4116,7 +4117,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
         # Update state from MQTT data (also flips online back True — issue #68)
         state.update_from_mqtt(state_data, ceiling_fan=ceiling_fan)
-        if device is not None and "brightness" in state_data:
+        # Map only a value update_from_mqtt actually took: a null/empty
+        # brightness leaves the already-mapped value, which must not be mapped
+        # a second time (#307).
+        if device is not None and _coerce_int(state_data.get("brightness")) is not None:
             state.brightness = normalize_reported_brightness(device.sku, state.brightness, device.brightness_range)
         if ceiling_fan:
             state.update_ceiling_fan_from_frames(self._op_frames_from(state_data))
