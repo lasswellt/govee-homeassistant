@@ -11,6 +11,7 @@ a translated HomeAssistantError.
 from __future__ import annotations
 
 import logging
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 from homeassistant.const import EntityCategory
@@ -181,6 +182,22 @@ class TestEntityAttributes:
         bridged = GoveeDevice.synthetic_thermometer("AA:BB:CC:DD:EE:FF:53:10", "H5310", "Cellar", "AA:BB:HUB")
         entity, _ = self._entity(bridged, {})
         assert entity.device_info["via_device"] == (DOMAIN, "AA:BB:HUB")
+
+    def test_device_info_links_by_registry_id_on_new_ha(self, monkeypatch):
+        from custom_components.govee import registry
+
+        monkeypatch.setattr(registry, "supports_via_device_id", lambda: True)
+        fake = MagicMock(spec=["async_get_device_by_identifier"])
+        fake.async_get_device_by_identifier.return_value = SimpleNamespace(id="hub-id")
+        monkeypatch.setattr(registry.dr, "async_get", lambda hass: fake)
+        bridged = GoveeDevice.synthetic_thermometer("AA:BB:CC:DD:EE:FF:53:10", "H5310", "Cellar", "AA:BB:HUB")
+        entity, _ = self._entity(bridged, {})
+        entity.hass = MagicMock()
+
+        info = entity.device_info
+
+        assert info["via_device_id"] == "hub-id"
+        assert "via_device" not in info
 
 
 class TestEntityCommands:

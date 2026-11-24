@@ -10,13 +10,14 @@ Provides common functionality for all Govee entities:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_EXPOSE_TRANSPORT_ENTITIES, DOMAIN
+from .registry import hub_link_info
 
 if TYPE_CHECKING:
     from .coordinator import GoveeCoordinator
@@ -57,16 +58,21 @@ class GoveeEntity(CoordinatorEntity["GoveeCoordinator"]):
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information for device registry."""
+        # Gateway-bridged devices (e.g. H5310 via H5044) link to their hub so HA
+        # shows the relationship. The hub is registered first (#86).
+        hub_link: dict[str, Any] = {}
+        if self._device.hub_device_id:
+            hub_link = hub_link_info(
+                self.hass, (DOMAIN, self._device.hub_device_id), self.coordinator._config_entry.entry_id
+            )
         info = DeviceInfo(
             identifiers={(DOMAIN, self._device.device_id)},
             name=self._device.name,
             manufacturer="Govee",
             model=self._device.sku,
         )
-        # Gateway-bridged devices (e.g. H5310 via H5044) link to their hub so HA
-        # shows the relationship. The hub is registered first (#86).
-        if self._device.hub_device_id:
-            info["via_device"] = (DOMAIN, self._device.hub_device_id)
+        for key, value in hub_link.items():
+            cast(Any, info)[key] = value
         return info
 
     @property

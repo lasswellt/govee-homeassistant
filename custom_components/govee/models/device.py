@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field, replace
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from homeassistant.helpers.device_registry import DeviceInfo
 
@@ -1609,18 +1609,27 @@ class GoveeLeakSensorState:
     lower_probe_wet: bool | None = None  # H5059 dual-probe only; None = not yet reported (#224)
 
 
-def leak_sensor_device_info(sensor: GoveeLeakSensor, domain: str) -> DeviceInfo:
+def leak_sensor_device_info(sensor: GoveeLeakSensor, domain: str, hub_link: dict[str, Any]) -> DeviceInfo:
     """Build the HA DeviceInfo for a leak sensor.
 
     Shared across binary_sensor, sensor, and event platforms.
+
+    Args:
+        sensor: The leak sensor.
+        domain: Integration domain.
+        hub_link: Hub link keys from ``registry.hub_link_info`` (models stay I/O-free).
+
+    Returns:
+        DeviceInfo for the sensor, linked to its hub per ``hub_link``.
     """
     info = DeviceInfo(
         identifiers={(domain, sensor.device_id)},
         name=sensor.name,
         manufacturer="Govee",
         model=sensor.sku,
-        via_device=(domain, sensor.hub_device_id),
     )
+    for key, value in hub_link.items():
+        cast(Any, info)[key] = value
     if sensor.hw_version:
         info["hw_version"] = sensor.hw_version
     if sensor.sw_version:

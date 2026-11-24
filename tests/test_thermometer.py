@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
 import pytest
+
+from custom_components.govee import registry
 
 from custom_components.govee.models import (
     GoveeCapability,
@@ -586,12 +591,26 @@ class TestThermoDeviceInfoViaDevice:
             name="Pool",
             hub_device_id=hub_device_id,
         )
-        stub = SimpleNamespace(_device=device)
+        stub = SimpleNamespace(
+            _device=device,
+            hass=MagicMock(),
+            coordinator=SimpleNamespace(_config_entry=SimpleNamespace(entry_id="entry")),
+        )
         return GoveeEntity.device_info.fget(stub)
 
     def test_via_device_set_when_bridged(self):
         info = self._device_info("11:22:33:44:55:66:77:88")
         assert info["via_device"] == ("govee", "11:22:33:44:55:66:77:88")
+
+    def test_via_device_id_on_new_ha(self, monkeypatch):
+        monkeypatch.setattr(registry, "supports_via_device_id", lambda: True)
+        fake = MagicMock(spec=["async_get_device_by_identifier"])
+        fake.async_get_device_by_identifier.return_value = SimpleNamespace(id="hub-id")
+        monkeypatch.setattr(registry.dr, "async_get", lambda hass: fake)
+        info = self._device_info("11:22:33:44:55:66:77:88")
+        assert info["via_device_id"] == "hub-id"
+        assert "via_device" not in info
+        fake.async_get_device_by_identifier.assert_called_once_with(("govee", "11:22:33:44:55:66:77:88"), "entry")
 
     def test_no_via_device_when_not_bridged(self):
         info = self._device_info("")
