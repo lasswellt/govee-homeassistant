@@ -2,12 +2,13 @@
 
 A comprehensive technical reference for Govee device communication protocols, compiled from official documentation, PCAP analysis of the Android app, and community reverse engineering efforts.
 
-**Last Updated:** September 11, 2026 (the H7152 push decoding; see the git history for per-section changes)
+**Last Updated:** November 24, 2026 (second diagnostics pass, 2026-05 → 2026-11: §9.7 and §13; see the git history for per-section changes)
 **Data Sources:**
 - `docs/PCAPdroid_24_Jan_16_00_31.pcap` - Android app network capture
 - `logs/PCAPdroid_09_Jan_19_27_26.pcap` - Reference capture
 - Live AWS IoT MQTT capture sessions (January 2026)
 - User-submitted API responses from GitHub issues (February–March 2026)
+- Diagnostics downloads attached to GitHub issues and pull requests (March–November 2026; see §13)
 
 ---
 
@@ -25,7 +26,7 @@ A comprehensive technical reference for Govee device communication protocols, co
 10. [Scene & DIY Modes](#10-scene--diy-modes)
 11. [PCAP Analysis Details](#11-pcap-analysis-details)
 12. [References](#12-references)
-13. [Findings from Submitted Diagnostics](#13-findings-from-submitted-diagnostics-2026-03--2026-09)
+13. [Findings from Submitted Diagnostics](#13-findings-from-submitted-diagnostics-2026-03--2026-11)
 
 Per-model capability lists, state readback and account-list data for every SKU seen in a diagnostics download live in [`device-catalog.md`](device-catalog.md).
 
@@ -2777,7 +2778,7 @@ Devices with hardware HDMI passthrough expose `dreamViewToggle` via the cloud AP
 
 ---
 
-### 9.7 Models from submitted diagnostics (2026-03 → 2026-09)
+### 9.7 Models from submitted diagnostics (2026-03 → 2026-11)
 
 Capability lists below are as the Developer API `/user/devices` returned them in diagnostics attached to the referenced issues (parameters abbreviated to options, ranges and segment sizes; `dataType`/`required` dropped). Readback notes are from the same captures' `/device/state`. Models already covered above are not repeated; the full per-model table including account-list data is in [`device-catalog.md`](device-catalog.md).
 
@@ -2886,6 +2887,30 @@ Capability lists below are as the Developer API `/user/devices` returned them in
 - Seen in #131.
 
 
+#### H1A42 (`devices.types.light`)
+
+```json
+[
+  {"type": "devices.capabilities.color_setting", "instance": "colorRgb", "parameters": {"range": {"min": 0, "max": 16777215, "precision": 1}}},
+  {"type": "devices.capabilities.color_setting", "instance": "colorTemperatureK", "parameters": {"range": {"min": 1000, "max": 10000, "precision": 1}}},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "diyScene"},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "lightScene"},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "snapshot"},
+  {"type": "devices.capabilities.music_setting", "instance": "musicMode", "parameters": {"fields": [{"fieldName": "musicMode", "options": [{"name": "Energic", "value": 0}, {"name": "Rhythm", "value": 1}, {"name": "Spectrum", "value": 2}, {"name": "Rolling", "value": 3}, {"name": "Separation", "value": 4}, {"name": "Hopping", "value": 5}, {"name": "Piano Keys", "value": 6}, {"name": "Fountain", "value": 7}, {"name": "Day and Night", "value": 8}, {"name": "Sprouting", "value": 9}, {"name": "Shiny", "value": 10}, {"name": "Splash", "value": 11}, {"name": "Orbit", "value": 12}, {"name": "UFO", "value": 13}, {"name": "Spring", "value": 14}, {"name": "Luminous", "value": 15}]}, {"unit": "unit.percent", "fieldName": "sensitivity", "range": {"min": 0, "max": 100, "precision": 1}}, {"fieldName": "autoColor", "options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}, {"fieldName": "rgb", "range": {"min": 0, "max": 16777215, "precision": 1}}]}},
+  {"type": "devices.capabilities.on_off", "instance": "powerSwitch", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}},
+  {"type": "devices.capabilities.range", "instance": "brightness", "parameters": {"unit": "unit.percent", "range": {"min": 1, "max": 100, "precision": 1}}},
+  {"type": "devices.capabilities.segment_color_setting", "instance": "segmentedBrightness", "parameters": {"fields": [{"fieldName": "segment", "size": {"min": 1, "max": 15}, "elementRange": {"min": 0, "max": 14}, "elementType": "INTEGER"}, {"fieldName": "brightness", "range": {"min": 0, "max": 100, "precision": 1}}]}},
+  {"type": "devices.capabilities.segment_color_setting", "instance": "segmentedColorRgb", "parameters": {"fields": [{"fieldName": "segment", "size": {"min": 1, "max": 15}, "elementRange": {"min": 0, "max": 14}, "elementType": "INTEGER"}, {"fieldName": "rgb", "range": {"min": 0, "max": 16777215, "precision": 1}}]}},
+  {"type": "devices.capabilities.toggle", "instance": "gradientToggle", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}}
+]
+```
+
+- Readback: real values for `brightness`, `colorRgb`, `colorTemperatureK`, `online`, `powerSwitch`; `""` for `diyScene`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
+- Account (BFF) list: present — model-specific `deviceSettings` keys `segmentCount`; `lastDeviceData` keys `online`.
+- AWS IoT push `state` keys `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`, `wifiFuncList`; `op.command` frame headers `aa05`, `aa11`, `aa12`, `aa23`, `aa40`, `aa41`, `aaa5`, `aaf1`.
+- Seen in #261.
+
+
 #### H6008 (`devices.types.light`)
 
 ```json
@@ -2988,6 +3013,55 @@ Capability lists below are as the Developer API `/user/devices` returned them in
 - Rejected: `musicMode={"musicMode": 1, "sensitivity": 78, "autoColor": 1} -> HTTP 200 Parameter value out of range`.
 - Rejected: `musicMode={"musicMode": 1, "sensitivity": 79, "autoColor": 1} -> HTTP 200 Parameter value out of range`.
 - Seen in #72, #186.
+
+
+#### H6046 (`devices.types.light`)
+
+```json
+[
+  {"type": "devices.capabilities.color_setting", "instance": "colorRgb", "parameters": {"range": {"min": 0, "max": 16777215, "precision": 1}}},
+  {"type": "devices.capabilities.color_setting", "instance": "colorTemperatureK", "parameters": {"range": {"min": 2000, "max": 9000, "precision": 1}}},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "diyScene"},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "lightScene"},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "snapshot"},
+  {"type": "devices.capabilities.music_setting", "instance": "musicMode", "parameters": {"fields": [{"fieldName": "musicMode", "options": [{"name": "Vivid", "value": 1}, {"name": "Rhythm", "value": 2}, {"name": "Strike", "value": 3}, {"name": "Vibrate", "value": 4}, {"name": "Beat", "value": 5}, {"name": "Torch", "value": 6}, {"name": "RainbowCircle", "value": 7}, {"name": "Shiny", "value": 8}]}, {"unit": "unit.percent", "fieldName": "sensitivity", "range": {"min": 0, "max": 100, "precision": 1}}, {"fieldName": "autoColor", "options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}, {"fieldName": "rgb", "range": {"min": 0, "max": 16777215, "precision": 1}}]}},
+  {"type": "devices.capabilities.on_off", "instance": "powerSwitch", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}},
+  {"type": "devices.capabilities.range", "instance": "brightness", "parameters": {"unit": "unit.percent", "range": {"min": 1, "max": 100, "precision": 1}}},
+  {"type": "devices.capabilities.segment_color_setting", "instance": "segmentedBrightness", "parameters": {"fields": [{"fieldName": "segment", "size": {"min": 1, "max": 15}, "elementRange": {"min": 0, "max": 14}, "elementType": "INTEGER"}, {"fieldName": "brightness", "range": {"min": 0, "max": 100, "precision": 1}}]}},
+  {"type": "devices.capabilities.segment_color_setting", "instance": "segmentedColorRgb", "parameters": {"fields": [{"fieldName": "segment", "size": {"min": 1, "max": 15}, "elementRange": {"min": 0, "max": 14}, "elementType": "INTEGER"}, {"fieldName": "rgb", "range": {"min": 0, "max": 16777215, "precision": 1}}]}},
+  {"type": "devices.capabilities.toggle", "instance": "gradientToggle", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}}
+]
+```
+
+- Readback: real values for `brightness`, `colorRgb`, `colorTemperatureK`, `online`, `powerSwitch`; `""` for `diyScene`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
+- Earlier captures (#126) had it in the account list only; the 2026-05 → 2026-11 captures show the Developer API returning it.
+- Account (BFF) list: present; `lastDeviceData` keys `online`.
+- AWS IoT push `state` keys `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`; `op.command` frame headers `aa05`, `aa11`, `aa12`, `aa23`, `aa33`, `aaa5`.
+- Seen in #126, #241.
+
+
+#### H6052 (`devices.types.light`)
+
+```json
+[
+  {"type": "devices.capabilities.color_setting", "instance": "colorRgb", "parameters": {"range": {"min": 0, "max": 16777215, "precision": 1}}},
+  {"type": "devices.capabilities.color_setting", "instance": "colorTemperatureK", "parameters": {"range": {"min": 2000, "max": 9000, "precision": 1}}},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "diyScene"},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "lightScene"},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "snapshot"},
+  {"type": "devices.capabilities.music_setting", "instance": "musicMode", "parameters": {"fields": [{"fieldName": "musicMode", "options": [{"name": "Spectrum", "value": 1}, {"name": "Vibrate", "value": 2}, {"name": "Energic", "value": 3}, {"name": "Rhythm", "value": 4}]}, {"unit": "unit.percent", "fieldName": "sensitivity", "range": {"min": 0, "max": 100, "precision": 1}}, {"fieldName": "autoColor", "options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}, {"fieldName": "rgb", "range": {"min": 0, "max": 16777215, "precision": 1}}]}},
+  {"type": "devices.capabilities.on_off", "instance": "powerSwitch", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}},
+  {"type": "devices.capabilities.range", "instance": "brightness", "parameters": {"unit": "unit.percent", "range": {"min": 1, "max": 100, "precision": 1}}},
+  {"type": "devices.capabilities.segment_color_setting", "instance": "segmentedBrightness", "parameters": {"fields": [{"fieldName": "segment", "size": {"min": 1, "max": 15}, "elementRange": {"min": 0, "max": 14}, "elementType": "INTEGER"}, {"fieldName": "brightness", "range": {"min": 0, "max": 100, "precision": 1}}]}},
+  {"type": "devices.capabilities.segment_color_setting", "instance": "segmentedColorRgb", "parameters": {"fields": [{"fieldName": "segment", "size": {"min": 1, "max": 15}, "elementRange": {"min": 0, "max": 14}, "elementType": "INTEGER"}, {"fieldName": "rgb", "range": {"min": 0, "max": 16777215, "precision": 1}}]}},
+  {"type": "devices.capabilities.toggle", "instance": "gradientToggle", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}}
+]
+```
+
+- Readback: real values for `brightness`, `colorRgb`, `colorTemperatureK`, `online`, `powerSwitch`; `""` for `diyScene`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
+- Account (BFF) list: present; `lastDeviceData` keys `online`.
+- AWS IoT push `state` keys `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`; `op.command` frame headers `aa05`, `aa11`, `aa12`, `aa23`.
+- Seen in #241.
 
 
 #### H6054 (`devices.types.light`)
@@ -3107,6 +3181,57 @@ Capability lists below are as the Developer API `/user/devices` returned them in
 - Readback: real values for `brightness`, `colorRgb`, `colorTemperatureK`, `online`, `powerSwitch`; `""` for `diyScene`, `dreamViewToggle`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
 - Segments: `elementRange` 0–14 but `size.max` 7 — the count is clamped to 7 (see §13.6).
 - Seen in #60, #104.
+
+
+#### H607C (`devices.types.light`)
+
+```json
+[
+  {"type": "devices.capabilities.color_setting", "instance": "colorRgb", "parameters": {"range": {"min": 0, "max": 16777215, "precision": 1}}},
+  {"type": "devices.capabilities.color_setting", "instance": "colorTemperatureK", "parameters": {"range": {"min": 2200, "max": 6500, "precision": 1}}},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "diyScene"},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "lightScene"},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "snapshot"},
+  {"type": "devices.capabilities.music_setting", "instance": "musicMode", "parameters": {"fields": [{"fieldName": "musicMode", "options": [{"name": "Touching", "value": 0}, {"name": "Rhythm", "value": 1}, {"name": "Hopping", "value": 2}, {"name": "Blend", "value": 3}, {"name": "Luminous", "value": 4}, {"name": "Fantasy", "value": 5}, {"name": "Stippling", "value": 6}, {"name": "Splash", "value": 7}, {"name": "Spring", "value": 8}]}, {"unit": "unit.percent", "fieldName": "sensitivity", "range": {"min": 0, "max": 100, "precision": 1}}, {"fieldName": "autoColor", "options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}, {"fieldName": "rgb", "range": {"min": 0, "max": 16777215, "precision": 1}}]}},
+  {"type": "devices.capabilities.on_off", "instance": "powerSwitch", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}},
+  {"type": "devices.capabilities.range", "instance": "brightness", "parameters": {"unit": "unit.percent", "range": {"min": 1, "max": 100, "precision": 1}}},
+  {"type": "devices.capabilities.segment_color_setting", "instance": "segmentedBrightness", "parameters": {"fields": [{"fieldName": "segment", "size": {"min": 1, "max": 16}, "elementRange": {"min": 0, "max": 14}, "elementType": "INTEGER"}, {"fieldName": "brightness", "range": {"min": 0, "max": 100, "precision": 1}}]}},
+  {"type": "devices.capabilities.segment_color_setting", "instance": "segmentedColorRgb", "parameters": {"fields": [{"fieldName": "segment", "size": {"min": 1, "max": 16}, "elementRange": {"min": 0, "max": 14}, "elementType": "INTEGER"}, {"fieldName": "rgb", "range": {"min": 0, "max": 16777215, "precision": 1}}]}},
+  {"type": "devices.capabilities.toggle", "instance": "baseLightToggle", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}},
+  {"type": "devices.capabilities.toggle", "instance": "dreamViewToggle", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}},
+  {"type": "devices.capabilities.toggle", "instance": "gradientToggle", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}},
+  {"type": "devices.capabilities.toggle", "instance": "pillarLightToggle", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}}
+]
+```
+
+- Readback: real values for `brightness`, `colorRgb`, `colorTemperatureK`, `online`, `powerSwitch`; `""` for `baseLightToggle`, `diyScene`, `dreamViewToggle`, `gradientToggle`, `lightScene`, `musicMode`, `pillarLightToggle`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
+- Segments: `elementRange` 0–14 but `size.max` 16; the integration clamps to 16.
+- Account (BFF) list: present — model-specific `deviceSettings` keys `dspVersionSoft`; `lastDeviceData` keys `online`.
+- AWS IoT push `state` keys `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`; `op.command` frame headers `aa05`, `aa07`, `aa11`, `aa12`, `aa23`, `aa41`, `aaa4`, `aaa5`.
+- Seen in #241, #306.
+
+
+#### H6088 (`devices.types.light`)
+
+```json
+[
+  {"type": "devices.capabilities.color_setting", "instance": "colorRgb", "parameters": {"range": {"min": 0, "max": 16777215, "precision": 1}}},
+  {"type": "devices.capabilities.color_setting", "instance": "colorTemperatureK", "parameters": {"range": {"min": 2000, "max": 9000, "precision": 1}}},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "diyScene"},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "lightScene"},
+  {"type": "devices.capabilities.music_setting", "instance": "musicMode", "parameters": {"fields": [{"fieldName": "musicMode", "options": [{"name": "Shiny", "value": 1}, {"name": "Luminous", "value": 2}, {"name": "Rolling", "value": 3}, {"name": "HeartBeating", "value": 4}, {"name": "Hopping", "value": 5}, {"name": "PianoKeys", "value": 6}, {"name": "Waves", "value": 7}, {"name": "Colorful", "value": 8}]}, {"unit": "unit.percent", "fieldName": "sensitivity", "range": {"min": 0, "max": 100, "precision": 1}}, {"fieldName": "autoColor", "options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}, {"fieldName": "rgb", "range": {"min": 0, "max": 16777215, "precision": 1}}]}},
+  {"type": "devices.capabilities.on_off", "instance": "powerSwitch", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}},
+  {"type": "devices.capabilities.range", "instance": "brightness", "parameters": {"unit": "unit.percent", "range": {"min": 1, "max": 100, "precision": 1}}},
+  {"type": "devices.capabilities.segment_color_setting", "instance": "segmentedBrightness", "parameters": {"fields": [{"fieldName": "segment", "size": {"min": 1, "max": 6}, "elementRange": {"min": 0, "max": 14}, "elementType": "INTEGER"}, {"fieldName": "brightness", "range": {"min": 0, "max": 100, "precision": 1}}]}},
+  {"type": "devices.capabilities.segment_color_setting", "instance": "segmentedColorRgb", "parameters": {"fields": [{"fieldName": "segment", "size": {"min": 1, "max": 6}, "elementRange": {"min": 0, "max": 14}, "elementType": "INTEGER"}, {"fieldName": "rgb", "range": {"min": 0, "max": 16777215, "precision": 1}}]}},
+  {"type": "devices.capabilities.toggle", "instance": "gradientToggle", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}}
+]
+```
+
+- Readback: real values for `brightness`, `colorRgb`, `colorTemperatureK`, `online`, `powerSwitch`; `""` for `diyScene`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`.
+- Segments: `elementRange` 0–14 but `size.max` 6; the integration clamps to 6.
+- Account (BFF) list: present — model-specific `deviceSettings` keys `spec`; `lastDeviceData` keys `online`.
+- Seen in #203.
 
 
 #### H6095 (`devices.types.light`)
@@ -3452,6 +3577,31 @@ Capability lists below are as the Developer API `/user/devices` returned them in
 - Seen in #104.
 
 
+#### H618A (`devices.types.light`)
+
+```json
+[
+  {"type": "devices.capabilities.color_setting", "instance": "colorRgb", "parameters": {"range": {"min": 0, "max": 16777215, "precision": 1}}},
+  {"type": "devices.capabilities.color_setting", "instance": "colorTemperatureK", "parameters": {"range": {"min": 2700, "max": 6500, "precision": 1}}},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "diyScene"},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "lightScene"},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "snapshot"},
+  {"type": "devices.capabilities.music_setting", "instance": "musicMode", "parameters": {"fields": [{"fieldName": "musicMode", "options": [{"name": "Energic", "value": 1}, {"name": "Rhythm", "value": 2}, {"name": "Spectrum", "value": 3}, {"name": "Rolling", "value": 4}, {"name": "Separation", "value": 5}, {"name": "Hopping", "value": 6}, {"name": "PianoKeys", "value": 7}, {"name": "Fountain", "value": 8}, {"name": "DayAndNight", "value": 9}, {"name": "Sprouting", "value": 10}, {"name": "Shiny", "value": 11}]}, {"unit": "unit.percent", "fieldName": "sensitivity", "range": {"min": 0, "max": 100, "precision": 1}}, {"fieldName": "autoColor", "options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}, {"fieldName": "rgb", "range": {"min": 0, "max": 16777215, "precision": 1}}]}},
+  {"type": "devices.capabilities.on_off", "instance": "powerSwitch", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}},
+  {"type": "devices.capabilities.range", "instance": "brightness", "parameters": {"unit": "unit.percent", "range": {"min": 1, "max": 100, "precision": 1}}},
+  {"type": "devices.capabilities.segment_color_setting", "instance": "segmentedBrightness", "parameters": {"fields": [{"fieldName": "segment", "size": {"min": 1, "max": 15}, "elementRange": {"min": 0, "max": 14}, "elementType": "INTEGER"}, {"fieldName": "brightness", "range": {"min": 0, "max": 100, "precision": 1}}]}},
+  {"type": "devices.capabilities.segment_color_setting", "instance": "segmentedColorRgb", "parameters": {"fields": [{"fieldName": "segment", "size": {"min": 1, "max": 15}, "elementRange": {"min": 0, "max": 14}, "elementType": "INTEGER"}, {"fieldName": "rgb", "range": {"min": 0, "max": 16777215, "precision": 1}}]}},
+  {"type": "devices.capabilities.toggle", "instance": "gradientToggle", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}}
+]
+```
+
+- Readback: real values for `brightness`, `colorRgb`, `colorTemperatureK`, `online`, `powerSwitch`; `""` for `diyScene`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
+- LAN API: answered discovery in at least one capture.
+- Account (BFF) list: present; `lastDeviceData` keys `online`.
+- AWS IoT push `state` keys `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`; `op.command` frame headers `aa05`, `aa11`, `aa12`, `aa23`, `aa41`, `aaa5`.
+- Seen in #281, #57.
+
+
 #### H618E (`devices.types.light`)
 
 ```json
@@ -3591,6 +3741,31 @@ Capability lists below are as the Developer API `/user/devices` returned them in
 - Seen in #104.
 
 
+#### H61B5 (`devices.types.light`)
+
+```json
+[
+  {"type": "devices.capabilities.color_setting", "instance": "colorRgb", "parameters": {"range": {"min": 0, "max": 16777215, "precision": 1}}},
+  {"type": "devices.capabilities.color_setting", "instance": "colorTemperatureK", "parameters": {"range": {"min": 2000, "max": 9000, "precision": 1}}},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "diyScene"},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "lightScene"},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "snapshot"},
+  {"type": "devices.capabilities.music_setting", "instance": "musicMode", "parameters": {"fields": [{"fieldName": "musicMode", "options": [{"name": "Energic", "value": 1}, {"name": "Rhythm", "value": 2}, {"name": "Spectrum", "value": 3}, {"name": "Rolling", "value": 4}, {"name": "Separation", "value": 5}, {"name": "Hopping", "value": 6}, {"name": "PianoKeys", "value": 7}, {"name": "Fountain", "value": 8}, {"name": "DayAndNight", "value": 9}, {"name": "Sprouting", "value": 10}, {"name": "Shiny", "value": 11}]}, {"unit": "unit.percent", "fieldName": "sensitivity", "range": {"min": 0, "max": 100, "precision": 1}}, {"fieldName": "autoColor", "options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}, {"fieldName": "rgb", "range": {"min": 0, "max": 16777215, "precision": 1}}]}},
+  {"type": "devices.capabilities.on_off", "instance": "powerSwitch", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}},
+  {"type": "devices.capabilities.range", "instance": "brightness", "parameters": {"unit": "unit.percent", "range": {"min": 1, "max": 100, "precision": 1}}},
+  {"type": "devices.capabilities.segment_color_setting", "instance": "segmentedBrightness", "parameters": {"fields": [{"fieldName": "segment", "size": {"min": 1, "max": 15}, "elementRange": {"min": 0, "max": 14}, "elementType": "INTEGER"}, {"fieldName": "brightness", "range": {"min": 0, "max": 100, "precision": 1}}]}},
+  {"type": "devices.capabilities.segment_color_setting", "instance": "segmentedColorRgb", "parameters": {"fields": [{"fieldName": "segment", "size": {"min": 1, "max": 15}, "elementRange": {"min": 0, "max": 14}, "elementType": "INTEGER"}, {"fieldName": "rgb", "range": {"min": 0, "max": 16777215, "precision": 1}}]}},
+  {"type": "devices.capabilities.toggle", "instance": "gradientToggle", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}}
+]
+```
+
+- Readback: real values for `brightness`, `colorRgb`, `colorTemperatureK`, `online`, `powerSwitch`; `""` for `diyScene`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
+- Earlier captures (#128) had it in the account list only; the 2026-05 → 2026-11 captures show the Developer API returning it.
+- Account (BFF) list: present — model-specific `deviceSettings` keys `ic_sub_1`, `ic_sub_2`; `lastDeviceData` keys `online`.
+- AWS IoT push `state` keys `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`, `wifiFuncList`; `op.command` frame headers `aa05`, `aa11`, `aa12`, `aa23`, `aa40`, `aa41`, `aaa5`.
+- Seen in #128, #241.
+
+
 #### H61BE (`devices.types.light`)
 
 ```json
@@ -3727,6 +3902,30 @@ Capability lists below are as the Developer API `/user/devices` returned them in
 - Seen in #60.
 
 
+#### H6871 (`devices.types.light`)
+
+```json
+[
+  {"type": "devices.capabilities.color_setting", "instance": "colorRgb", "parameters": {"range": {"min": 0, "max": 16777215, "precision": 1}}},
+  {"type": "devices.capabilities.color_setting", "instance": "colorTemperatureK", "parameters": {"range": {"min": 2000, "max": 9000, "precision": 1}}},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "diyScene"},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "lightScene"},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "snapshot"},
+  {"type": "devices.capabilities.music_setting", "instance": "musicMode", "parameters": {"fields": [{"fieldName": "musicMode", "options": [{"name": "Energic", "value": 0}, {"name": "Rhythm", "value": 1}, {"name": "Separation", "value": 2}, {"name": "Hopping", "value": 3}, {"name": "Piano Keys", "value": 4}, {"name": "Fountain", "value": 5}, {"name": "Day and Night", "value": 6}, {"name": "Flow", "value": 7}, {"name": "Spin", "value": 8}, {"name": "Blend", "value": 9}, {"name": "Spring", "value": 10}, {"name": "Ripple", "value": 11}]}, {"unit": "unit.percent", "fieldName": "sensitivity", "range": {"min": 0, "max": 100, "precision": 1}}, {"fieldName": "autoColor", "options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}, {"fieldName": "rgb", "range": {"min": 0, "max": 16777215, "precision": 1}}]}},
+  {"type": "devices.capabilities.on_off", "instance": "powerSwitch", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}},
+  {"type": "devices.capabilities.range", "instance": "brightness", "parameters": {"unit": "unit.percent", "range": {"min": 1, "max": 100, "precision": 1}}},
+  {"type": "devices.capabilities.segment_color_setting", "instance": "segmentedBrightness", "parameters": {"fields": [{"fieldName": "segment", "size": {"min": 1, "max": 15}, "elementRange": {"min": 0, "max": 14}, "elementType": "INTEGER"}, {"fieldName": "brightness", "range": {"min": 0, "max": 100, "precision": 1}}]}},
+  {"type": "devices.capabilities.segment_color_setting", "instance": "segmentedColorRgb", "parameters": {"fields": [{"fieldName": "segment", "size": {"min": 1, "max": 15}, "elementRange": {"min": 0, "max": 14}, "elementType": "INTEGER"}, {"fieldName": "rgb", "range": {"min": 0, "max": 16777215, "precision": 1}}]}},
+  {"type": "devices.capabilities.toggle", "instance": "dreamViewToggle", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}},
+  {"type": "devices.capabilities.toggle", "instance": "gradientToggle", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}}
+]
+```
+
+- Readback: real values for `brightness`, `colorRgb`, `colorTemperatureK`, `online`, `powerSwitch`; `""` for `diyScene`, `dreamViewToggle`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
+- Account (BFF) list: present; `lastDeviceData` keys `online`.
+- Seen in #306.
+
+
 #### H7020 (`devices.types.light`)
 
 ```json
@@ -3748,6 +3947,30 @@ Capability lists below are as the Developer API `/user/devices` returned them in
 - Segments: 30 (`size.max` and `elementRange` agree).
 - Account (BFF) list: present — `deviceSettings` has `wifiFuncList`; `lastDeviceData` keys `online`.
 - Seen in #131.
+
+
+#### H702B (`devices.types.light`)
+
+```json
+[
+  {"type": "devices.capabilities.color_setting", "instance": "colorRgb", "parameters": {"range": {"min": 0, "max": 16777215, "precision": 1}}},
+  {"type": "devices.capabilities.color_setting", "instance": "colorTemperatureK", "parameters": {"range": {"min": 2700, "max": 6500, "precision": 1}}},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "diyScene"},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "lightScene"},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "snapshot"},
+  {"type": "devices.capabilities.music_setting", "instance": "musicMode", "parameters": {"fields": [{"fieldName": "musicMode", "options": [{"name": "Rhythm", "value": 0}, {"name": "Sway", "value": 1}, {"name": "Flow", "value": 2}, {"name": "Star", "value": 3}, {"name": "Twinkle", "value": 4}, {"name": "Hopping", "value": 5}, {"name": "Rolling", "value": 6}, {"name": "Day and Night", "value": 7}, {"name": "Piano Keys", "value": 8}, {"name": "Separation", "value": 9}]}, {"unit": "unit.percent", "fieldName": "sensitivity", "range": {"min": 0, "max": 100, "precision": 1}}, {"fieldName": "autoColor", "options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}, {"fieldName": "rgb", "range": {"min": 0, "max": 16777215, "precision": 1}}]}},
+  {"type": "devices.capabilities.on_off", "instance": "powerSwitch", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}},
+  {"type": "devices.capabilities.range", "instance": "brightness", "parameters": {"unit": "unit.percent", "range": {"min": 1, "max": 100, "precision": 1}}},
+  {"type": "devices.capabilities.segment_color_setting", "instance": "segmentedBrightness", "parameters": {"fields": [{"fieldName": "segment", "size": {"min": 1, "max": 30}, "elementRange": {"min": 0, "max": 29}, "elementType": "INTEGER"}, {"fieldName": "brightness", "range": {"min": 0, "max": 100, "precision": 1}}]}},
+  {"type": "devices.capabilities.segment_color_setting", "instance": "segmentedColorRgb", "parameters": {"fields": [{"fieldName": "segment", "size": {"min": 1, "max": 30}, "elementRange": {"min": 0, "max": 29}, "elementType": "INTEGER"}, {"fieldName": "rgb", "range": {"min": 0, "max": 16777215, "precision": 1}}]}},
+  {"type": "devices.capabilities.toggle", "instance": "gradientToggle", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}}
+]
+```
+
+- Readback: real values for `brightness`, `colorRgb`, `colorTemperatureK`, `online`, `powerSwitch`; `""` for `diyScene`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
+- Account (BFF) list: present — model-specific `deviceSettings` keys `segmentCount`; `lastDeviceData` keys `online`.
+- AWS IoT push `state` keys `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`; `op.command` frame headers `aa05`, `aa11`, `aa12`, `aa23`, `aa40`, `aa41`.
+- Seen in #281.
 
 
 #### H7037 (`devices.types.light`)
@@ -3794,6 +4017,31 @@ Capability lists below are as the Developer API `/user/devices` returned them in
 - Segments: 45 (`size.max` and `elementRange` agree).
 - Account (BFF) list: present — `deviceSettings` has `wifiFuncList`; `lastDeviceData` keys `online`.
 - Seen in #150.
+
+
+#### H7045 (`devices.types.light`)
+
+```json
+[
+  {"type": "devices.capabilities.color_setting", "instance": "colorRgb", "parameters": {"range": {"min": 0, "max": 16777215, "precision": 1}}},
+  {"type": "devices.capabilities.color_setting", "instance": "colorTemperatureK", "parameters": {"range": {"min": 2700, "max": 6500, "precision": 1}}},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "diyScene"},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "lightScene"},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "snapshot"},
+  {"type": "devices.capabilities.music_setting", "instance": "musicMode", "parameters": {"fields": [{"fieldName": "musicMode", "options": [{"name": "Cover", "value": 0}, {"name": "Flowing Light", "value": 1}, {"name": "Color Painting", "value": 2}, {"name": "Fire", "value": 3}, {"name": "Light Waves", "value": 4}, {"name": "Smudge", "value": 5}, {"name": "Rhythm", "value": 6}, {"name": "Sway", "value": 7}, {"name": "Hopping", "value": 8}, {"name": "Flow", "value": 9}, {"name": "Separation", "value": 10}, {"name": "Luminous", "value": 11}]}, {"unit": "unit.percent", "fieldName": "sensitivity", "range": {"min": 0, "max": 100, "precision": 1}}, {"fieldName": "autoColor", "options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}, {"fieldName": "rgb", "range": {"min": 0, "max": 16777215, "precision": 1}}]}},
+  {"type": "devices.capabilities.on_off", "instance": "powerSwitch", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}},
+  {"type": "devices.capabilities.range", "instance": "brightness", "parameters": {"unit": "unit.percent", "range": {"min": 1, "max": 100, "precision": 1}}},
+  {"type": "devices.capabilities.segment_color_setting", "instance": "segmentedBrightness", "parameters": {"fields": [{"fieldName": "segment", "size": {"min": 1, "max": 15}, "elementRange": {"min": 0, "max": 14}, "elementType": "INTEGER"}, {"fieldName": "brightness", "range": {"min": 0, "max": 100, "precision": 1}}]}},
+  {"type": "devices.capabilities.segment_color_setting", "instance": "segmentedColorRgb", "parameters": {"fields": [{"fieldName": "segment", "size": {"min": 1, "max": 15}, "elementRange": {"min": 0, "max": 14}, "elementType": "INTEGER"}, {"fieldName": "rgb", "range": {"min": 0, "max": 16777215, "precision": 1}}]}},
+  {"type": "devices.capabilities.toggle", "instance": "dreamViewToggle", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}}
+]
+```
+
+- Readback: none captured.
+- LAN API: answered discovery in at least one capture.
+- Account (BFF) list: present — model-specific `deviceSettings` keys `segmentCount`, `spec`; `lastDeviceData` keys `online`.
+- AWS IoT push `state` keys `result`; `op.command` frame headers `3305`, `a358`.
+- Seen in #239.
 
 
 #### H705A (`devices.types.light`)
@@ -3901,6 +4149,24 @@ Capability lists below are as the Developer API `/user/devices` returned them in
 - Seen in #150.
 
 
+#### H7073 (`devices.types.light`)
+
+```json
+[
+  {"type": "devices.capabilities.dynamic_scene", "instance": "diyScene"},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "lightScene"},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "snapshot"},
+  {"type": "devices.capabilities.on_off", "instance": "powerSwitch", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}},
+  {"type": "devices.capabilities.range", "instance": "brightness", "parameters": {"unit": "unit.percent", "range": {"min": 1, "max": 100, "precision": 1}}}
+]
+```
+
+- Readback: real values for `brightness`, `online`, `powerSwitch`; `""` for `diyScene`, `lightScene`, `snapshot`.
+- Account (BFF) list: present; `lastDeviceData` keys `online`.
+- AWS IoT push `state` keys `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`, `wifiFuncList`; `op.command` frame headers `aa05`, `aa11`, `aa12`, `aa23`, `aa41`, `aa42`, `ac00`, `acff`.
+- Seen in #240.
+
+
 #### H7076 (`devices.types.light`)
 
 ```json
@@ -3948,6 +4214,30 @@ Capability lists below are as the Developer API `/user/devices` returned them in
 
 - Segments: 24 (`size.max` and `elementRange` agree).
 - Seen in #60.
+
+
+#### H7086 (`devices.types.light`)
+
+```json
+[
+  {"type": "devices.capabilities.color_setting", "instance": "colorRgb", "parameters": {"range": {"min": 0, "max": 16777215, "precision": 1}}},
+  {"type": "devices.capabilities.color_setting", "instance": "colorTemperatureK", "parameters": {"range": {"min": 2700, "max": 6500, "precision": 1}}},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "diyScene"},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "lightScene"},
+  {"type": "devices.capabilities.dynamic_scene", "instance": "snapshot"},
+  {"type": "devices.capabilities.music_setting", "instance": "musicMode", "parameters": {"fields": [{"fieldName": "musicMode", "options": [{"name": "Rhythm", "value": 0}, {"name": "Cover", "value": 1}, {"name": "Meteor shower", "value": 2}, {"name": "Party", "value": 3}, {"name": "Smudge", "value": 4}, {"name": "Rolling", "value": 5}, {"name": "Flowing Light", "value": 6}, {"name": "Torch", "value": 7}, {"name": "Energic", "value": 8}]}, {"unit": "unit.percent", "fieldName": "sensitivity", "range": {"min": 0, "max": 100, "precision": 1}}, {"fieldName": "autoColor", "options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}, {"fieldName": "rgb", "range": {"min": 0, "max": 16777215, "precision": 1}}]}},
+  {"type": "devices.capabilities.on_off", "instance": "powerSwitch", "parameters": {"options": [{"name": "on", "value": 1}, {"name": "off", "value": 0}]}},
+  {"type": "devices.capabilities.range", "instance": "brightness", "parameters": {"unit": "unit.percent", "range": {"min": 1, "max": 100, "precision": 1}}},
+  {"type": "devices.capabilities.segment_color_setting", "instance": "segmentedBrightness", "parameters": {"fields": [{"fieldName": "segment", "size": {"min": 1, "max": 4}, "elementRange": {"min": 0, "max": 3}, "elementType": "INTEGER"}, {"fieldName": "brightness", "range": {"min": 0, "max": 100, "precision": 1}}]}},
+  {"type": "devices.capabilities.segment_color_setting", "instance": "segmentedColorRgb", "parameters": {"fields": [{"fieldName": "segment", "size": {"min": 1, "max": 4}, "elementRange": {"min": 0, "max": 3}, "elementType": "INTEGER"}, {"fieldName": "rgb", "range": {"min": 0, "max": 16777215, "precision": 1}}]}}
+]
+```
+
+- Readback: real values for `brightness`, `colorRgb`, `colorTemperatureK`, `online`, `powerSwitch`; `""` for `diyScene`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
+- LAN API: answered discovery in at least one capture.
+- Account (BFF) list: present — model-specific `deviceSettings` keys `discriminator`, `manualCode`; `lastDeviceData` keys `online`.
+- AWS IoT push `state` keys `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`, `wifiFuncList`; `op.command` frame headers `aa05`, `aa11`, `aa12`, `aa23`, `aa41`, `aaa5`.
+- Seen in #239.
 
 
 #### H70B6 (`devices.types.light`)
@@ -4125,6 +4415,36 @@ Capability lists below are as the Developer API `/user/devices` returned them in
 - Readback: real values for `online`, `sensorHumidity`, `sensorTemperature`.
 - Account (BFF) list: present — `deviceSettings` has `fahOpen`, `battery`, `wifiFuncList`; `lastDeviceData` keys `avgDayHum`, `avgDayTem`, `hum`, `lastTime`, `online`, `tem`.
 - Seen in #83, #99, #102, #132, #159.
+
+
+#### H5100 (`devices.types.thermometer`)
+
+```json
+[
+  {"type": "devices.capabilities.property", "instance": "sensorHumidity"},
+  {"type": "devices.capabilities.property", "instance": "sensorTemperature"}
+]
+```
+
+- Readback: real values for `online`, `sensorHumidity`, `sensorTemperature`.
+- Gateway-bridged via `H5151`.
+- Account (BFF) list: present — model-specific `deviceSettings` keys `battery`, `criticalOnOff`, `delayPushTime`, `emailWarningOnOff`, `fahOpen`, `gatewayId`, `gatewayInfo`, `gatewayVersionHard`, `gatewayVersionSoft`, `gwSubType`, `humCali`, `humMax`, `humMin`, `humWarning`, `netWaring`, `normalPushOnOff`, `temCali`, `temMax`, `temMin`, `temWarning`, `uploadRate`, `wifiLevel`; `lastDeviceData` keys `avgDayHum`, `avgDayTem`, `hum`, `lastTime`, `online`, `tem`.
+- Seen in #209, #246.
+
+
+#### H5102 (`devices.types.thermometer`)
+
+```json
+[
+  {"type": "devices.capabilities.property", "instance": "sensorHumidity"},
+  {"type": "devices.capabilities.property", "instance": "sensorTemperature"}
+]
+```
+
+- Readback: real values for `online`, `sensorHumidity`, `sensorTemperature`.
+- Gateway-bridged via `H5151`.
+- Account (BFF) list: present — model-specific `deviceSettings` keys `battery`, `bdType`, `criticalOnOff`, `delayPushTime`, `emailWarningOnOff`, `fahOpen`, `gatewayId`, `gatewayInfo`, `gatewayVersionHard`, `gatewayVersionSoft`, `gwSubType`, `humCali`, `humMax`, `humMin`, `humWarning`, `netWaring`, `normalPushOnOff`, `temCali`, `temMax`, `temMin`, `temWarning`, `uploadRate`, `wifiLevel`; `lastDeviceData` keys `avgDayHum`, `avgDayTem`, `hum`, `lastTime`, `online`, `tem`.
+- Seen in #209.
 
 
 #### H5110 (`devices.types.thermometer`)
@@ -4667,72 +4987,101 @@ All connections use Perfect Forward Secrecy (PFS), preventing decryption with pr
 
 ---
 
-## 13. Findings from Submitted Diagnostics (2026-03 → 2026-09)
+## 13. Findings from Submitted Diagnostics (2026-03 → 2026-11)
 
-Sixty-seven diagnostics downloads (and inline dumps) attached to issues and pull requests between March and September 2026 were read end to end; the per-model results are in [`device-catalog.md`](device-catalog.md) (107 SKUs). The cross-cutting facts, which apply beyond any one model:
+Two passes over the diagnostics downloads (and inline dumps) attached to issues and pull requests: 67 files from 2026-03-06 → 2026-09-06, and 86 readable files from 2026-05-24 → 2026-11-24 (109 attachments; the rest were logs, exports, a LAN-discovery excerpt, and five files their uploaders had deleted). The windows overlap, so counts below are per pass and are not added together. The per-model results are in [`device-catalog.md`](device-catalog.md) (148 SKUs). The cross-cutting facts, which apply beyond any one model:
 
 ### 13.1 Instances the Developer API never reads back
 
 `/device/state` returns `""` for these instances on essentially every capture that advertises them, so an integration must keep its own state for them (optimistic + `RestoreEntity`) and must not treat `""` as "off" or "none":
 
-| Instance | Captures returning `""` | Notes |
-|---|---|---|
-| `lightScene`, `diyScene` | 45 each | on every light seen — the active scene is never reported |
-| `snapshot` | 36 | |
-| `segmentedColorRgb`, `segmentedBrightness` | 34 / 33 | per-segment colour is write-only |
-| `musicMode` | 33 | |
-| `gradientToggle` | 24 | |
-| `dreamViewToggle` | 16 | |
-| `mainLightToggle`, `backgroundLightToggle` | 5 each | ceiling-fan lights (H1250/H1270/H1310/H1370) |
-| `fanToggle`, `fanSpeedMode`, `reverseAirflowToggle` | 2 each | H1310 — see §13.4 |
-| `sensorTemperature`, `sensorHumidity` | 2 each | battery thermometers between uploads (H5179/H5112 class) |
+| Instance | Captures returning `""` (03→09) | (05→11) | Notes |
+|---|---|---|---|
+| `lightScene`, `diyScene` | 45 each | 41 each | on every light seen — the active scene is never reported |
+| `snapshot` | 36 | 38 | |
+| `segmentedColorRgb`, `segmentedBrightness` | 34 / 33 | 31 / 29 | per-segment colour is write-only |
+| `musicMode` | 33 | 29 | |
+| `gradientToggle` | 24 | 22 | |
+| `dreamViewToggle` | 16 | 14 | |
+| `mainLightToggle`, `backgroundLightToggle` | 5 each | 13 each | ceiling-fan lights (H1250/H1270/H1310/H1370) and the H60A6 |
+| `fanToggle`, `fanSpeedMode`, `reverseAirflowToggle` | 2 each | 4 each | H1310, H1370 — see §13.4 |
+| `fanOscillateToggle` | — | 2 | H1370 |
+| zone toggles | — | 1–2 each | `leftLightToggle`/`rightLightToggle`/`backLightToggle` (H605A, H605B), `light1Toggle`–`light3Toggle` (H60B2), `pillarLightToggle`/`baseLightToggle` (H607C), `rippleLightToggle`/`sideLightToggle`/`bottomLightToggle` (H60B0): every zone toggle seen is write-only |
+| `movieMode` | — | 2 | H66A0, H66A1 |
+| `nightlightScene`, and `colorRgb` on purifiers | — | 3 | H7124, H7129: the purifier nightlight never reads back, even online |
+| `workMode` | — | 2 | H7126, online (other purifiers and humidifiers read it back) |
+| `presetScene` | — | 1 | H7161 aroma diffuser |
+| `thermostatToggle` | — | 1 | H7130 heater |
+| `sensorTemperature`, `sensorHumidity` | 2 each | 11 / 7 | only battery thermometers reporting `online=false` (H5075, H5111, H5112, H5179) |
+| `humidity` | — | 3 | humidifiers H7140/H7141/H7142, all `online=false` |
 
-Everything else (`powerSwitch`, `brightness`, `colorRgb`, `colorTemperatureK`, `online`, `workMode` on purifiers/humidifiers, property sensors) reads back with a real value.
+An offline device returns `""` for everything, core values included: the H6008 (#150) and H60B0 (#83) answered `""` for `powerSwitch`, `brightness`, `colorRgb` and `colorTemperatureK` with `online=false`. Online, everything else (`powerSwitch`, `brightness`, `colorRgb` on lights, `colorTemperatureK`, `online`, `workMode` on purifiers/humidifiers other than the H7126, property sensors) reads back with a real value.
 
 ### 13.2 Models the account list knows but the Developer API does not return
 
-Seen in `bff_device_values` with no Developer-API entry at all: **H3500, H3510, H5086, H5122, H5126, H5129, H6006, H6046, H605C, H616C, H61B5, H7057, H7075, H7162, H805C**. For these the public API is not a path; support needs the account channels (AWS IoT / BFF) or BLE. The H616C case (#122) was confirmed by Govee support as "not enabled for the Developer API"; the others have not been asked about.
+Seen in the account list with no Developer-API entry, in a capture that lists every device the API returned: **H3351, H3500, H3510, H5086, H5104, H5122, H5126, H5129, H6006, H605C, H616C, H7057, H7075, H7094, H7105, H7162, H805C, H8057**. For these the public API is not a path; support needs the account channels (AWS IoT / BFF) or BLE. The H616C case (#122) was confirmed by Govee support as "not enabled for the Developer API"; the others have not been asked about.
+
+The list is not fixed. The H6046 (#126) and H61B5 (#128) were on it after the first pass; in the 2026-05 → 2026-11 captures (#241) the Developer API returns both as full RGBIC lights with segments and music modes (§9.7). Another 17 models in the newer captures appear only in the account list of captures that hold just the devices the integration created; those can't distinguish "not returned" from "returned but unsupported", and the catalog marks them "presence unknown".
 
 ### 13.3 Gateway-bridged sensors
 
-Every gateway relationship observed, from `deviceSettings.gatewayInfo`:
+Every gateway relationship observed, from `deviceSettings.gatewayInfo` and the integration's account-list census:
 
 | Sensor | Gateway | Seen in |
 |---|---|---|
 | H5058 | H5043 | #134 |
+| H5059 | H5044 | #87, #101 |
 | H5109 | H5042 | #62, #83, #96, #132, #134 |
-| H5110 | H5044 | #83, #102, #114, #132 |
+| H5110 | H5044 | #83, #102, #114, #132, #214 |
+| H5110 | H5151 | #102 |
 | H5112 | H5044 | #150 |
-| H5220 | H5044 | #114, #128 |
+| H5220 | H5044 | #102, #114, #128, #214 |
 | H5310 | H5044 | #86, #97, #150, #157 |
-| H5111 | H5151 | #83, #134, #144 |
+| H5111 | H5042 | #83 |
+| H5111 | H5151 | #83, #134, #144, #236 |
+| H5075 | H5151 | #102 |
+| H5100 | H5151 | #209 |
+| H5102 | H5151 | #209 |
+
+A model is not tied to one gateway: the H5110 and H5111 each appear behind two different gateways (H5044/H5151 and H5042/H5151) on different accounts.
 
 `lastDeviceData` keys seen across all thermometer/hygrometer entries: `tem`, `tem2`, `hum`, `online`, `gwonline`, `lastTime`, `logTime`, `logType`, `read`, `bind`, `avgDayTem`, `avgDayHum`. `tem2` only appears on dual-probe models (H5112). The account's °C/°F preference (`fahOpen`) sits in `deviceSettings` for thermometers listed there.
 
+Since 2026-06 the account list's `deviceSettings` for every Wi-Fi device also carries an app-wide key set that says nothing about the model, kettle notification flags included (`boilWaterCompletedNotiOnOff`, `completionNotiOnOff`, `autoShutDownOnOff` on lights), alongside `appVersion`, `language`, `playState`, `wifiMac` and `wifiName`. Model-specific keys seen beyond it: `segmentCount` (H1A42, H6062, H6099, H7020, H702B, H7039, H7045, H707C, H805C), `sceneSeg` (H707C, H805C), `shapes` (H6061), `subDevices` (multi-part devices such as the H1310/H1370 fan lights, H60B2, H66A0/H66A1, H7105, H7152), `mcuHardVersion`/`mcuSoftVersion` (purifiers, heaters, humidifiers, dehumidifiers), `dspVersionSoft` (H607C, H60B3, H61F2, H6604, H707C, H70C2), `waterShortageOnOff` (humidifiers), `filterExpireOnOff` (H7124, H7126, H7129), `powerOffMemory` (H1250, H60A6), `installType` (H3500), `ic_sub_1`/`ic_sub_2` (H612D, H612F, H61B5), and `discriminator`/`manualCode` (Matter pairing data).
+
 ### 13.4 AWS IoT push shapes
 
-The `state` object of a device push carried only these keys across every capture: `onOff`, `brightness`, `color`, `colorTemInKelvin`, `mode`, `sta` (`stc` string, undecoded), `result`, `wifiFuncList`. Nothing device-class-specific (no fan, toggle, sensor or segment fields) travels in `state`; that information rides as BLE-format frames in `op.command` (§6.4.1) — the H1310's `aa 31`/`aa 42`/`aa 36` fan and light frames, the H7107's `aa 1d` swing arc, the H5192's `0x24`/`0x12`/`0x0F` probe frames, and light strips' `aa 05`/`aa 13`/`aa a5` status packets all arrive that way. Since 2026.9.0 the integration attaches them to diagnostics as `last_mqtt_message._op_frames`.
+The `state` object of a device push carried only these keys across every capture: `onOff`, `brightness`, `color`, `colorTemInKelvin`, `mode`, `sta` (`stc` string, undecoded), `result`, `wifiFuncList`, plus `wifiHardVersion` and `bleHardVersion` in five captures of the newer pass (H605B, H6099, H6199, H66A0, H70B6). Nothing device-class-specific (no fan, toggle, sensor or segment fields) travels in `state`; that information rides as BLE-format frames in `op.command` (§6.4.1) — the H1310's `aa 31`/`aa 42`/`aa 36` fan and light frames, the H7107's `aa 1d` swing arc, the H5192's `0x24`/`0x12`/`0x0F` probe frames, and light strips' `aa 05`/`aa 13`/`aa a5` status packets all arrive that way. Since 2026.9.0 the integration attaches them to diagnostics as `last_mqtt_message._op_frames`; the per-model catalog lists the frame headers each model sent.
 
-Hub `multiSync` frames observed: header `ee 34` (16 captures — leak and thermometer sub-device reports) and `ee 35` (2 captures, #87 — the H5059 wet alarm variant).
+Hub `multiSync` frames observed: header `ee 34` (16 captures in the first pass, 18 in the second — leak and thermometer sub-device reports), `ee 35` (2 captures, #87 — the H5059 wet alarm variant), and `3a 05` (1 capture, #214, on an account with H5220 thermometers behind an H5044; 20 bytes, `3a 05 03 00 00 <2 bytes> …`, undecoded).
 
-### 13.5 Rejected control commands
+### 13.5 Rejected and unconfirmed control commands
 
-Every non-success answer to a control write in the captures:
+Every non-success answer to a control write in the captures (`recent_commands` in diagnostics since 2026.9; logs for the rest):
 
 | SKU | Command | Answer |
 |---|---|---|
-| H6022 | `musicMode={"musicMode": 1, ...}` | HTTP 200, `Parameter value out of range` — the H6022 advertises modes 3/4/5/6 only (#186; fixed by sending the first advertised mode) |
+| H6022 | `musicMode={"musicMode": 1, ...}` | HTTP 200, `Parameter value out of range` — the H6022 advertises modes 3/4/5/6 only (#186; fixed in v2026.9.2 by sending the first advertised mode; the #306 capture on 2026.11.0 has no rejection) |
 | H6159 | `powerSwitch`, `brightness` over LAN | `device reported a different value than was sent` — the LAN readback disagrees with the write (#149) |
+| H60B0 | `powerSwitch`, `brightness`, `colorRgb` over LAN | same LAN read-back disagreement (#83) |
+| H1270 | `colorRgb`, `colorTemperatureK` over LAN | same LAN read-back disagreement (#246) |
+| H60A6 | `powerSwitch` over LAN | `no readback within the confirm window`; the following AWS IoT write was delivered. The H60A6 reboots on a LAN power-off (#308), so the integration no longer sends power-off over LAN to it |
+| H1270 | `brightness`, `colorRgb` over BLE | connect failed: no Bluetooth adapter or proxy slot could reach the device (#246) — a host-side failure, not a device answer |
+| H6008, H619A | any control | HTTP 401, empty body, `Invalid API key` (#272 log) — an account-level failure; every write on the entry fails the same way until the key is replaced |
 
 Govee's cloud otherwise answered `200 success` to everything — including commands the device then ignored (H6054 colour in #158, phantom segment indices in #160/#143). A `success` body is not evidence the device acted.
 
 ### 13.6 Capability shapes worth knowing
 
-- `segment` fields carry both `size {min,max}` (max array length per command) and `elementRange {min,max}` (index range). **They usually do not agree.** `elementRange` is `0–14` on almost every RGBIC model regardless of how many segments it has, while `size.max` varies per model and tracks the physical count. Captures with `elementRange 0–14` and a different `size.max`: H6061 (21), H61BE (20), H61A0 (18), H6097 (14), H60A1 (13, brightness field only), H70C2/H70C4/H70C5/H70C9 (10), H6072 (8), H6076 (7), H7060 (4). `GoveeDevice.segment_count` therefore clamps the `elementRange`-derived count to `size.max`; `SKU_SEGMENT_OVERRIDES` exists for the case where both numbers are wrong (H7076: both say 15, four segments respond — #160; H7075: 15 vs 3 — #161). A `size.max` *above* `elementRange.max + 1` (H6061, H61BE, H61A0) means the device accepts more indices per call than it advertises indices — the count is still `elementRange.max + 1` there.
-- `musicMode` option value sets differ per model and are not contiguous: H1270 offers 0–11 named effects, H6054 0–7, H6022 {3,4,5,6}. Never assume `1` exists.
+- `segment` fields carry both `size {min,max}` (max array length per command) and `elementRange {min,max}` (index range). **They usually do not agree.** `elementRange` is `0–14` on almost every RGBIC model regardless of how many segments it has, while `size.max` varies per model and tracks the physical count. Captures with `elementRange 0–14` and a different `size.max`: H605B (24), H6061 (21), H61BE (20), H61A0 (18), H607C (16), H6097 and H6099 (14), H60A1 (13, brightness field only), H70C2/H70C4/H70C5/H70C9 (10), H6072 (8), H6076 (7), H6088 (6), H7060 (4). `GoveeDevice.segment_count` therefore clamps the `elementRange`-derived count to `size.max`; `SKU_SEGMENT_OVERRIDES` exists for the case where both numbers are wrong (H7076: both say 15, four segments respond — #160; H7075: 15 vs 3 — #161; H1A42: both say 15, five respond — #261). A `size.max` *above* `elementRange.max + 1` (H605B, H6061, H61BE, H61A0, H607C) means the device accepts more indices per call than it advertises indices — the count is still `elementRange.max + 1` there.
+- `musicMode` option value sets differ per model and are not contiguous: H1270 offers 0–11 named effects, H6054 0–7, H6022 {3,4,5,6}, H6046 and H618A start at 1. Never assume `0` or `1` exists.
 - `workMode` on purifiers/humidifiers/dehumidifiers advertises `modeValue` options with `None` values for named modes (gearMode/Custom/Auto) — the numeric range lives on the manual mode only.
 - Ceiling-fan combos (H1250/H1270/H1310/H1370) report as `devices.types.light`; the fan is detectable only from `fanToggle` + `fanSpeedMode`.
-- Groups (`BaseGroup`, `SameModeGroup`, `DreamViewScenic` in the device list) have numeric ids and a single capability; `/device/state` returns 400 for them.
+- Groups (`BaseGroup`, `SameModeGroup`, `DreamViewScenic` in the device list) have numeric ids and a single capability, `on_off/powerSwitch`, in every capture of both passes; `/device/state` returns 400 for them.
+
+### 13.7 OpenAPI events channel
+
+Captures with the official events channel connected (44 of the 51 newer captures that report it) show one event shape only: the H5054 water detector's `devices.capabilities.event` / `bodyAppearedEvent`, with state `{"name": "LEAKED", "value": 1, "message": "Leaked"}` and `{"name": "UN_LEAKED", "value": 2, "message": "Un_Leaked"}` (#62). No light, sensor reading or other model sent an event in any capture, so the channel is an alarm path for event-capability devices, not a state feed.
 
 ---
 

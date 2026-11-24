@@ -1,6 +1,6 @@
 # Device catalog from submitted diagnostics
 
-Everything below was read out of the diagnostics downloads (and inline dumps) attached to issues and pull requests between 2026-03-06 and 2026-09-06 — 67 files, 107 SKUs. It records what Govee's APIs actually returned for each model, not what the integration supports; see the README for the support table and `govee-protocol-reference.md` for protocol detail.
+Everything below was read out of the diagnostics downloads (and inline dumps) attached to issues and pull requests in two passes: 2026-03-06 → 2026-09-06 (67 files, 107 SKUs) and 2026-05-24 → 2026-11-24 (109 attachments: 86 readable diagnostics, a LAN-discovery excerpt, 17 logs and exports, and 5 files their uploaders had deleted). 148 SKUs in all. It records what Govee's APIs actually returned for each model, not what the integration supports; see the README for the support table and `govee-protocol-reference.md` for protocol detail. Device names, ids, MAC and IP addresses, Wi-Fi names, BLE names and user-named snapshots/DIY scenes from the captures are left out on purpose.
 
 How to read an entry:
 
@@ -9,9 +9,14 @@ How to read an entry:
 - **Account (BFF) list** — whether the model appears in the app-account device list, which `deviceSettings` / `lastDeviceData` keys it carried, and the gateway it hangs off.
 - **AWS IoT push** — the keys seen in the device's `state` push, when a capture had one.
 - **Rejected commands** — control commands Govee answered with an error, verbatim.
+- **Rejected or unconfirmed commands** — from the `recent_commands` log newer diagnostics carry: the transport the integration used (`cloud`, `lan`, `mqtt`, `ble`) and either Govee's error or the integration's own confirmation verdict ("device reported a different value than was sent", "no readback within the confirm window"). A LAN mismatch is a read-back disagreement, not a refusal by Govee.
+- **Segments** — the integration's segment resolution (`api` = `elementRange.max + 1`, `size.max`, the `SKU_SEGMENT_OVERRIDES` entry, and the count it used).
+- **Event push** — instances and state names seen on the official OpenAPI events channel.
 - **Seen in** — the issues/PRs the captures came from.
 
-Models the account list knows but the Developer API never returned (no `type`, no capabilities — they are BLE-only or simply not enabled for the public API): H3500, H3510, H5086, H5122, H5126, H5129, H6006, H6046, H605C, H616C, H61B5, H7057, H7075, H7162, H805C.
+Models the account list knows but the Developer API never returned in a capture that lists every API device (no `type`, no capabilities — they are BLE-only or simply not enabled for the public API): H3351, H3500, H3510, H5086, H5104, H5122, H5126, H5129, H6006, H605C, H616C, H7057, H7075, H7094, H7105, H7162, H8057, H805C. H6046 and H61B5 were on this list after the first pass; the newer captures (#241 for the H6046) show the Developer API returning both as full RGBIC lights. Entries marked "presence unknown" come from captures that hold only the devices the integration created, so they can't tell an unreturned model from an unsupported one.
+
+Since 2026-06 the account list's `deviceSettings` for Wi-Fi devices also carries an app-wide key set that says nothing about the model: `address`, `appVersion`, `autoShutDownOnOff`, `bleName`, `boilWaterCompletedNotiOnOff`, `completionNotiOnOff`, `device`, `deviceName`, `ic`, `language`, `matterId`, `pactCode`, `pactType`, `playState`, `secretCode`, `sku`, `supportBleBroadV3`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiHardVersion`, `wifiMac`, `wifiName`, `wifiSoftVersion` (the kettle flags appear on lights too). Entries call it "the common Wi-Fi key set" and list only the keys beyond it.
 
 ## H1250
 
@@ -34,13 +39,13 @@ Capabilities:
 
 State readback: `brightness`=100/80, `colorRgb`=16711680/16768952, `colorTemperatureK`=0/4500, `online`=true, `powerSwitch`=0/1; returns `""` for `backgroundLightToggle`, `diyScene`, `gradientToggle`, `lightScene`, `mainLightToggle`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `powerOffMemory`.
 
 AWS IoT push `state` keys: `result`.
 
 ## H1270
 
-Developer API type `devices.types.light`; seen in #131.
+Developer API type `devices.types.light`; seen in #131, #246.
 
 Capabilities:
 
@@ -62,11 +67,20 @@ State readback: `brightness`=100, `colorRgb`=0, `colorTemperatureK`=6500, `onlin
 
 Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
 
-AWS IoT push `state` keys: `result`.
+AWS IoT push `state` keys: `result`; `op.command` frame headers: `3305`.
+
+Segments (integration's resolution): api 12, size.max 12, no override → 12.
+
+Rejected or unconfirmed commands (2026-05 → 2026-11, `recent_commands`):
+
+- ble brightness=8 → BLE: no Bluetooth adapter/proxy slot could reach the device (connect failed)
+- ble colorRgb=13089535 → BLE: no Bluetooth adapter/proxy slot could reach the device (connect failed)
+- lan colorRgb=13089535 → device reported a different value than was sent
+- lan colorTemperatureK=3494 → device reported a different value than was sent
 
 ## H1310
 
-Developer API type `devices.types.light`; LAN API reachable in at least one capture; seen in #74, #114, #181.
+Developer API type `devices.types.light`; LAN API reachable in at least one capture; seen in #74, #102, #114, #181, #214.
 
 Capabilities:
 
@@ -93,7 +107,7 @@ AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `o
 
 ## H1370
 
-Developer API type `devices.types.light`; seen in #105, #114.
+Developer API type `devices.types.light`; seen in #102, #105, #114, #214.
 
 Capabilities:
 
@@ -119,9 +133,15 @@ Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `devi
 
 AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`, `wifiFuncList`.
 
+## H1401
+
+Developer API presence unknown (seen only in the account list; the capture holds only the devices the integration created); seen in #105.
+
+Account (BFF) list: yes (census row only; the capture has no key dump for it).
+
 ## H14C0
 
-Developer API type `devices.types.light`; seen in #131.
+Developer API type `devices.types.light`; LAN API reachable in at least one capture; seen in #57, #131.
 
 Capabilities:
 
@@ -137,17 +157,61 @@ State readback: `brightness`=100, `colorRgb`=0, `colorTemperatureK`=2700, `onlin
 
 Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
 
+## H1741
+
+Developer API presence unknown (seen only in the account list; the capture holds only the devices the integration created); seen in #105.
+
+Account (BFF) list: yes (census row only; the capture has no key dump for it).
+
+## H1A42
+
+Developer API type `devices.types.light`; seen in #261.
+
+Capabilities:
+
+- `color_setting/colorRgb` — range 0–16777215
+- `color_setting/colorTemperatureK` — range 1000–10000
+- `dynamic_scene/diyScene`
+- `dynamic_scene/lightScene`
+- `dynamic_scene/snapshot`
+- `music_setting/musicMode` — field musicMode options Energic=0, Rhythm=1, Spectrum=2, Rolling=3, Separation=4, Hopping=5, Piano Keys=6, Fountain=7, Day and Night=8, Sprouting=9, Shiny=10, Splash=11, Orbit=12, UFO=13, Spring=14, Luminous=15; field sensitivity range 0–100; field autoColor options on=1, off=0; field rgb range 0–16777215
+- `on_off/powerSwitch` — options on=1, off=0
+- `range/brightness` — range 1–100; unit.percent
+- `segment_color_setting/segmentedBrightness` — field segment size 1–15 elementRange 0–14; field brightness range 0–100
+- `segment_color_setting/segmentedColorRgb` — field segment size 1–15 elementRange 0–14; field rgb range 0–16777215
+- `toggle/gradientToggle` — options on=1, off=0
+
+State readback: `brightness`=100/57, `colorRgb`=0/15873316, `colorTemperatureK`=0/2272, `online`=true, `powerSwitch`=0/1; returns `""` for `diyScene`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top) plus `segmentCount`; `lastDeviceData` keys: `online`.
+
+AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`, `wifiFuncList`; `op.command` frame headers: `aa05`, `aa11`, `aa12`, `aa23`, `aa40`, `aa41`, `aaa5`, `aaf1`.
+
+Segments (integration's resolution): api 15, size.max 15, no override → 15.
+
+## H3200
+
+Developer API presence unknown (seen only in the account list; the capture holds only the devices the integration created); seen in #214.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top) plus `spec`; `lastDeviceData` keys: `online`.
+
+## H3351
+
+Not returned by the Developer API; seen in #306.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top); `lastDeviceData` keys: `online`.
+
 ## H3500
 
-Not returned by the Developer API; seen in #114.
+Not returned by the Developer API; seen in #102, #114, #214.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportBleBroadV3`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportBleBroadV3`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `installType`, `spec`.
 
 ## H3510
 
-Not returned by the Developer API; seen in #114.
+Not returned by the Developer API; seen in #102, #114, #214.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportBleBroadV3`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportBleBroadV3`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `spec`.
 
 ## H5053
 
@@ -174,6 +238,8 @@ State readback: `online`=false.
 
 Account (BFF) list: yes — `deviceSettings` carries `battery`, `deviceName`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `gwonline`, `lastTime`, `online`, `read`.
 
+Event push (OpenAPI events channel): `bodyAppearedEvent [LEAKED]`, `bodyAppearedEvent [UN_LEAKED]`.
+
 ## H5058
 
 Developer API type `devices.types.sensor`; gateway: `H5043`; seen in #134.
@@ -182,11 +248,11 @@ Capabilities:
 
 - `event/bodyAppearedEvent`
 
-Account (BFF) list: yes — `deviceSettings` carries `battery`, `deviceName`, `gatewayInfo`, `sno`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `gwonline`, `lastTime`, `online`, `read`.
+Account (BFF) list: yes — `deviceSettings` carries `battery`, `deviceName`, `gatewayInfo`, `sno`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `gwonline`, `lastTime`, `online`, `read`. Newer captures add `batteryWarning`, `criticalOnOff`, `deviceType`, `emailWarningOnOff`, `gatewayId`, `gatewayVersionHard`, `gatewayVersionSoft`, `gwSubType`, `muteLevel`, `openPush`, `pushState`, `smsWarningOnOff`.
 
 ## H5059
 
-Developer API type `devices.types.sensor`; seen in #87, #101.
+Developer API type `devices.types.sensor`; gateway: `H5044`; seen in #87, #101.
 
 Capabilities:
 
@@ -194,20 +260,20 @@ Capabilities:
 
 State readback: `online`=false.
 
-Account (BFF) list: not seen (captures without account login, or not listed).
+Account (BFF) list: yes (census row only; the capture has no key dump for it).
 
 ## H5075
 
-Developer API type `devices.types.thermometer`; seen in #83, #99, #102, #132, #159.
+Developer API type `devices.types.thermometer`; gateway: `H5151`; seen in #83, #99, #102, #105, #132, #159.
 
 Capabilities:
 
 - `property/sensorHumidity`
 - `property/sensorTemperature`
 
-State readback: `online`=false/true, `sensorHumidity`=""/41.7/46.6, `sensorTemperature`=""/68.36/71.24.
+State readback: `online`=false/true, `sensorHumidity`=""/41.7/46.6, `sensorTemperature`=""/68.36/71.24; returns `""` for `sensorHumidity`, `sensorTemperature`.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `battery`, `bleName`, `deviceName`, `fahOpen`, `pactCode`, `pactType`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `avgDayHum`, `avgDayTem`, `hum`, `lastTime`, `online`, `tem`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `battery`, `bleName`, `deviceName`, `fahOpen`, `pactCode`, `pactType`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `avgDayHum`, `avgDayTem`, `hum`, `lastTime`, `online`, `tem`. Newer captures add `bdType`, `criticalOnOff`, `emailWarningOnOff`, `gwSubType`, `humCali`, `humMax`, `humMin`, `humWarning`, `netWaring`, `normalPushOnOff`, `temCali`, `temMax`, `temMin`, `temWarning`, `uploadRate`, `wifiLevel`.
 
 ## H5080
 
@@ -219,7 +285,7 @@ Capabilities:
 
 State readback: `online`=true, `powerSwitch`=0/1.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `pactCode`, `pactType`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `pactCode`, `pactType`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `spec`.
 
 ## H5083
 
@@ -235,13 +301,13 @@ Account (BFF) list: not seen (captures without account login, or not listed).
 
 ## H5086
 
-Not returned by the Developer API; seen in #114.
+Not returned by the Developer API; seen in #102, #114, #214.
 
 Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `pactCode`, `pactType`, `supportBleBroadV3`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
 
 ## H5089
 
-Developer API type `devices.types.socket`; seen in #59, #114.
+Developer API type `devices.types.socket`; seen in #59, #102, #114, #214.
 
 Capabilities:
 
@@ -257,20 +323,54 @@ State readback: `brightness`=17/18, `colorRgb`=16769647/65280, `nightlightScene`
 
 Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `subDevices`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
 
-## H5103
+## H5100
 
-Developer API type `devices.types.thermometer`; seen in #85.
+Developer API type `devices.types.thermometer`; gateway: `H5151`; seen in #209, #246.
 
 Capabilities:
 
 - `property/sensorHumidity`
 - `property/sensorTemperature`
 
-Account (BFF) list: not seen (captures without account login, or not listed).
+State readback: `online`=true, `sensorHumidity`=46.6/49.7/50.2/59.9, `sensorTemperature`=69.44/70.53/71.42/72.86.
+
+Account (BFF) list: yes — `deviceSettings` carries `address`, `battery`, `bleName`, `criticalOnOff`, `delayPushTime`, `device`, `deviceName`, `emailWarningOnOff`, `fahOpen`, `gatewayId`, `gatewayInfo`, `gatewayVersionHard`, `gatewayVersionSoft`, `gwSubType`, `humCali`, `humMax`, `humMin`, `humWarning`, `netWaring`, `normalPushOnOff`, `pactCode`, `pactType`, `sku`, `temCali`, `temMax`, `temMin`, `temWarning`, `uploadRate`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiHardVersion`, `wifiLevel`, `wifiSoftVersion`; `lastDeviceData` keys: `avgDayHum`, `avgDayTem`, `hum`, `lastTime`, `online`, `tem`.
+
+## H5102
+
+Developer API type `devices.types.thermometer`; gateway: `H5151`; seen in #209.
+
+Capabilities:
+
+- `property/sensorHumidity`
+- `property/sensorTemperature`
+
+State readback: `online`=true, `sensorHumidity`=49.1/49.2/51.3/52.3, `sensorTemperature`=69.08/70.52/71.78/71.97.
+
+Account (BFF) list: yes — `deviceSettings` carries `address`, `battery`, `bdType`, `bleName`, `criticalOnOff`, `delayPushTime`, `device`, `deviceName`, `emailWarningOnOff`, `fahOpen`, `gatewayId`, `gatewayInfo`, `gatewayVersionHard`, `gatewayVersionSoft`, `gwSubType`, `humCali`, `humMax`, `humMin`, `humWarning`, `netWaring`, `normalPushOnOff`, `pactCode`, `pactType`, `sku`, `temCali`, `temMax`, `temMin`, `temWarning`, `uploadRate`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiHardVersion`, `wifiLevel`, `wifiSoftVersion`; `lastDeviceData` keys: `avgDayHum`, `avgDayTem`, `hum`, `lastTime`, `online`, `tem`.
+
+## H5103
+
+Developer API type `devices.types.thermometer`; seen in #85, #209, #236.
+
+Capabilities:
+
+- `property/sensorHumidity`
+- `property/sensorTemperature`
+
+State readback: `online`=true, `sensorHumidity`=54.1/54.5/54.6/54.7, `sensorTemperature`=70.53/70.7.
+
+Account (BFF) list: yes — `deviceSettings` carries `address`, `battery`, `batteryWarning`, `bdType`, `bleName`, `criticalOnOff`, `delayPushTime`, `device`, `deviceName`, `emailWarningOnOff`, `fahOpen`, `goodsType`, `groupOrder`, `gwSubType`, `humCali`, `humMax`, `humMin`, `humWarning`, `netWaring`, `normalPushOnOff`, `pactCode`, `pactType`, `secretCode`, `sku`, `temCali`, `temMax`, `temMin`, `temWarning`, `uploadRate`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiHardVersion`, `wifiLevel`, `wifiMac`, `wifiName`, `wifiSoftVersion`; `lastDeviceData` keys: `avgDayHum`, `avgDayTem`, `hum`, `lastTime`, `online`, `tem`.
+
+## H5104
+
+Not returned by the Developer API; seen in #306.
+
+Account (BFF) list: yes — `deviceSettings` carries `address`, `battery`, `batteryWarning`, `bdType`, `bleName`, `criticalOnOff`, `delayPushTime`, `device`, `deviceName`, `emailWarningOnOff`, `fahOpen`, `gwSubType`, `humCali`, `humMax`, `humMin`, `humWarning`, `netWaring`, `normalPushOnOff`, `pactCode`, `pactType`, `secretCode`, `sku`, `temCali`, `temMax`, `temMin`, `temWarning`, `topic`, `uploadRate`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiHardVersion`, `wifiLevel`, `wifiMac`, `wifiSoftVersion`; `lastDeviceData` keys: `avgDayHum`, `avgDayTem`, `hum`, `lastTime`, `online`, `tem`.
 
 ## H5106
 
-Developer API type `devices.types.thermometer`; seen in #114, #150.
+Developer API type `devices.types.thermometer`; seen in #102, #105, #114, #150, #209, #214.
 
 Capabilities:
 
@@ -280,7 +380,9 @@ Capabilities:
 
 State readback: `airQuality`=1, `online`=true, `sensorHumidity`=48/49/49.2, `sensorTemperature`=71.6/71.78/73.04.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `battery`, `bleName`, `deviceName`, `fahOpen`, `pactCode`, `pactType`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `battery`, `bleName`, `deviceName`, `fahOpen`, `pactCode`, `pactType`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `airQualityOnOff`, `batteryWarning`, `criticalOnOff`, `delayPushTime`, `emailWarningOnOff`, `goodsType`, `groupOrder`, `gwSubType`, `humCali`, `humMax`, `humMin`, `humWarning`, `netWaring`, `normalPushOnOff`, `pm25Max`, `pm25Min`, `pm25Warning`, `standard`, `temCali`, `temMax`, `temMin`, `temWarning`, `uploadRate`, `wifiLevel`.
+
+AWS IoT push `state` keys: `result`; `op.command` frame headers: `0100`, `091a`.
 
 ## H5109
 
@@ -292,11 +394,11 @@ Capabilities:
 
 State readback: `online`=true, `sensorTemperature`=100.83/81.68/84.48.
 
-Account (BFF) list: yes — `deviceSettings` carries `battery`, `deviceName`, `fahOpen`, `gatewayInfo`, `sno`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `avgDayHum`, `avgDayTem`, `hum`, `lastTime`, `online`, `tem`.
+Account (BFF) list: yes — `deviceSettings` carries `battery`, `deviceName`, `fahOpen`, `gatewayInfo`, `sno`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `avgDayHum`, `avgDayTem`, `hum`, `lastTime`, `online`, `tem`. Newer captures add `criticalOnOff`, `deviceType`, `emailWarningOnOff`, `gatewayId`, `gatewayVersionHard`, `gatewayVersionSoft`, `gwSubType`, `humCali`, `humMax`, `humMin`, `humWarning`, `netWaring`, `normalPushOnOff`, `powerSaveModeState`, `pushState`, `temCali`, `temMax`, `temMin`, `temWarning`, `uploadRate`, `wifiLevel`.
 
 ## H5110
 
-Developer API type `devices.types.thermometer`; gateway: `H5044`; seen in #83, #102, #114, #132.
+Developer API type `devices.types.thermometer`; gateway: `H5044`, `H5151`; seen in #83, #102, #114, #132, #214.
 
 Capabilities:
 
@@ -305,19 +407,19 @@ Capabilities:
 
 State readback: `online`=true, `sensorHumidity`=35.9/48.4/48.8, `sensorTemperature`=68.9/71.24/72.14.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `battery`, `bleName`, `deviceName`, `fahOpen`, `gatewayInfo`, `pactCode`, `pactType`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `avgDayHum`, `avgDayTem`, `hum`, `lastTime`, `online`, `tem`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `battery`, `bleName`, `deviceName`, `fahOpen`, `gatewayInfo`, `pactCode`, `pactType`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `avgDayHum`, `avgDayTem`, `hum`, `lastTime`, `online`, `tem`. Newer captures add `batteryWarning`, `bdType`, `criticalOnOff`, `delayPushTime`, `emailWarningOnOff`, `gatewayId`, `gatewayVersionHard`, `gatewayVersionSoft`, `gwSubType`, `humCali`, `humMax`, `humMin`, `humWarning`, `netWaring`, `normalPushOnOff`, `temCali`, `temMax`, `temMin`, `temWarning`, `uploadRate`, `wifiLevel`.
 
 ## H5111
 
-Developer API type `devices.types.thermometer`; gateway: `H5151`; seen in #83, #134, #144.
+Developer API type `devices.types.thermometer`; gateway: `H5151`, `H5042`; seen in #83, #134, #144, #236.
 
 Capabilities:
 
 - `property/sensorTemperature`
 
-State readback: `online`=false/true, `sensorTemperature`=""/-2.2/-4.54.
+State readback: `online`=false/true, `sensorTemperature`=""/-2.2/-4.54; returns `""` for `sensorTemperature`.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `battery`, `bleName`, `deviceName`, `fahOpen`, `gatewayInfo`, `pactCode`, `pactType`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `avgDayHum`, `avgDayTem`, `hum`, `lastTime`, `online`, `tem`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `battery`, `bleName`, `deviceName`, `fahOpen`, `gatewayInfo`, `pactCode`, `pactType`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `avgDayHum`, `avgDayTem`, `hum`, `lastTime`, `online`, `tem`. Newer captures add `batteryWarning`, `bdType`, `criticalOnOff`, `delayPushTime`, `emailWarningOnOff`, `gatewayId`, `gatewayVersionHard`, `gatewayVersionSoft`, `gwSubType`, `humCali`, `humMax`, `humMin`, `humWarning`, `muteLevel`, `netWaring`, `normalPushOnOff`, `temCali`, `temMax`, `temMin`, `temWarning`, `uploadRate`, `wifiLevel`.
 
 ## H5112
 
@@ -330,25 +432,25 @@ Capabilities:
 
 State readback: `online`=false; returns `""` for `sensorHumidity`, `sensorTemperature`.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `battery`, `bleName`, `deviceName`, `fahOpen`, `gatewayInfo`, `pactCode`, `pactType`, `sno`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `avgDayHum`, `avgDayTem`, `hum`, `lastTime`, `online`, `tem`, `tem2`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `battery`, `bleName`, `deviceName`, `fahOpen`, `gatewayInfo`, `pactCode`, `pactType`, `sno`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `avgDayHum`, `avgDayTem`, `hum`, `lastTime`, `online`, `tem`, `tem2`. Newer captures add `batteryWarning`, `criticalOnOff`, `delayPushTime`, `delayPushTime2`, `delayPushTimeHum`, `emailWarningOnOff`, `gatewayId`, `gatewayVersionHard`, `gatewayVersionSoft`, `gatewayWarning`, `gwSubType`, `humCali`, `humMax`, `humMin`, `humWarning`, `muteLevel`, `netWaring`, `normalPushOnOff`, `pb1IconIndex`, `pb2IconIndex`, `probeName1`, `probeName2`, `temCali`, `temCali2`, `temMax`, `temMax2`, `temMin`, `temMin2`, `temWarning`, `temWarning2`, `uploadRate`, `wifiLevel`.
 
 ## H5122
 
-Not returned by the Developer API; seen in #131.
+Not returned by the Developer API; seen in #131, #214.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `battery`, `bleName`, `deviceName`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `bind`, `logTime`, `logType`, `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `battery`, `bleName`, `deviceName`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `bind`, `logTime`, `logType`, `online`. Newer captures add `bdType`, `time`.
 
 ## H5126
 
-Not returned by the Developer API; seen in #114, #128.
+Not returned by the Developer API; seen in #102, #114, #128, #214.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `battery`, `bleName`, `deviceName`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `bind`, `logTime`, `logType`, `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `battery`, `bleName`, `deviceName`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `bind`, `logTime`, `logType`, `online`. Newer captures add `bdType`, `time`.
 
 ## H5129
 
-Not returned by the Developer API; seen in #114.
+Not returned by the Developer API; seen in #102, #114, #214, #306.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `battery`, `bleName`, `deviceName`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `bind`, `logTime`, `logType`, `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `battery`, `bleName`, `deviceName`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `bind`, `logTime`, `logType`, `online`. Newer captures add `bdType`, `time`.
 
 ## H5140
 
@@ -381,7 +483,7 @@ Account (BFF) list: not seen (captures without account login, or not listed).
 
 ## H5179
 
-Developer API type `devices.types.thermometer`; seen in #72, #141.
+Developer API type `devices.types.thermometer`; seen in #72, #141, #209.
 
 Capabilities:
 
@@ -390,7 +492,7 @@ Capabilities:
 
 State readback: `online`=false; returns `""` for `sensorHumidity`, `sensorTemperature`.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `battery`, `bleName`, `deviceName`, `fahOpen`, `pactCode`, `pactType`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `avgDayHum`, `avgDayTem`, `hum`, `lastTime`, `online`, `tem`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `battery`, `bleName`, `deviceName`, `fahOpen`, `pactCode`, `pactType`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `avgDayHum`, `avgDayTem`, `hum`, `lastTime`, `online`, `tem`. Newer captures add `bdType`, `criticalOnOff`, `delayPushTime`, `emailWarningOnOff`, `gwSubType`, `humCali`, `humMax`, `humMin`, `humWarning`, `netWaring`, `normalPushOnOff`, `temCali`, `temMax`, `temMin`, `temWarning`, `uploadRate`, `wifiLevel`.
 
 ## H5192
 
@@ -402,7 +504,7 @@ AWS IoT: a pull device. Readings and alarm limits travel as 20-byte `ptReal` pac
 
 ## H5220
 
-Developer API type `devices.types.thermometer`; gateway: `H5044`; seen in #114, #128.
+Developer API type `devices.types.thermometer`; gateway: `H5044`; seen in #102, #114, #128, #214.
 
 Capabilities:
 
@@ -411,7 +513,7 @@ Capabilities:
 
 State readback: `online`=true, `sensorHumidity`=43.9, `sensorTemperature`=76.28.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `battery`, `bleName`, `deviceName`, `fahOpen`, `gatewayInfo`, `pactCode`, `pactType`, `sno`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `battery`, `bleName`, `deviceName`, `fahOpen`, `gatewayInfo`, `pactCode`, `pactType`, `sno`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `batteryWarning`, `bdType`, `comfortHumMax`, `comfortHumMin`, `comfortTemMax`, `comfortTemMin`, `criticalOnOff`, `delayPushTime`, `emailWarningOnOff`, `gatewayId`, `gatewayVersionHard`, `gatewayVersionSoft`, `gatewayWarning`, `gwSubType`, `humCali`, `humMax`, `humMin`, `humWarning`, `netWaring`, `normalPushOnOff`, `openHourClock`, `standard`, `temCali`, `temMax`, `temMin`, `temWarning`, `uploadRate`, `weatherDisplay`, `weatherForecastOnOff`, `wifiLevel`.
 
 ## H5310
 
@@ -424,17 +526,17 @@ Capabilities:
 
 State readback: `online`=true, `sensorTemperature`=88.34.
 
-Account (BFF) list: yes — `deviceSettings` carries `battery`, `deviceName`, `fahOpen`, `gatewayInfo`, `sno`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `avgDayHum`, `avgDayTem`, `hum`, `lastTime`, `online`, `tem`.
+Account (BFF) list: yes — `deviceSettings` carries `battery`, `deviceName`, `fahOpen`, `gatewayInfo`, `sno`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `avgDayHum`, `avgDayTem`, `hum`, `lastTime`, `online`, `tem`. Newer captures add `batteryWarning`, `criticalOnOff`, `deviceType`, `emailWarningOnOff`, `gatewayId`, `gatewayVersionHard`, `gatewayVersionSoft`, `gatewayWarning`, `gwSubType`, `humCali`, `humMax`, `humMin`, `humWarning`, `muteLevel`, `netWaring`, `normalPushOnOff`, `powerSaveModeState`, `pushState`, `temCali`, `temMax`, `temMin`, `temWarning`, `uploadRate`, `wifiLevel`.
 
 ## H6006
 
-Not returned by the Developer API; seen in #114.
+Not returned by the Developer API; seen in #102, #114, #203, #214.
 
 Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `pactCode`, `pactType`, `subDevices`, `supportBleBroadV3`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
 
 ## H6008
 
-Developer API type `devices.types.light`; seen in #131, #150, #158.
+Developer API type `devices.types.light`; seen in #131, #150, #158, #203, #281.
 
 Capabilities:
 
@@ -445,13 +547,15 @@ Capabilities:
 - `on_off/powerSwitch` — options on=1, off=0
 - `range/brightness` — range 1–100; unit.percent
 
-State readback: `brightness`=""/100/20, `colorRgb`=""/0/16764326, `colorTemperatureK`=""/4000/4300, `online`=false/true, `powerSwitch`=""/0/1; returns `""` for `diyScene`, `lightScene`.
+State readback: `brightness`=""/100/20, `colorRgb`=""/0/16764326, `colorTemperatureK`=""/4000/4300, `online`=false/true, `powerSwitch`=""/0/1; returns `""` for `brightness`, `colorRgb`, `colorTemperatureK`, `diyScene`, `lightScene`, `powerSwitch`.
 
 Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `subDevices`, `supportBleBroadV3`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
 
+AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`, `wifiFuncList`; `op.command` frame headers: `aa05`, `aa11`, `aa12`, `aa23`, `ab00`.
+
 ## H6010
 
-Developer API type `devices.types.light`; seen in #150.
+Developer API type `devices.types.light`; seen in #150, #213.
 
 Capabilities:
 
@@ -465,6 +569,8 @@ Capabilities:
 State readback: `brightness`=100/49/50, `colorRgb`=0, `colorTemperatureK`=3800/4000/4200, `online`=false, `powerSwitch`=1; returns `""` for `diyScene`, `lightScene`.
 
 Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `pactCode`, `pactType`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+
+AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`, `wifiFuncList`; `op.command` frame headers: `aa05`, `aa11`, `aa12`, `aa23`, `ab00`.
 
 ## H601A
 
@@ -509,7 +615,7 @@ AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `o
 
 ## H6022
 
-Developer API type `devices.types.light`; seen in #72, #186.
+Developer API type `devices.types.light`; LAN API reachable in at least one capture; seen in #57, #72, #186, #306.
 
 Capabilities:
 
@@ -525,7 +631,7 @@ Capabilities:
 
 State readback: `brightness`=80, `colorRgb`=16777215, `colorTemperatureK`=0, `online`=true, `powerSwitch`=1; returns `""` for `diyScene`, `lightScene`, `musicMode`, `segmentedColorRgb`, `snapshot`.
 
-Account (BFF) list: not seen (captures without account login, or not listed).
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top) plus `discriminator`, `manualCode`; `lastDeviceData` keys: `online`.
 
 Rejected commands:
 
@@ -537,9 +643,55 @@ Rejected commands:
 
 ## H6046
 
-Not returned by the Developer API; seen in #126.
+Developer API type `devices.types.light` in the 2026-05 → 2026-11 captures (the earlier capture in #126 did not return it); seen in #126, #241.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `pactCode`, `pactType`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Capabilities:
+
+- `color_setting/colorRgb` — range 0–16777215
+- `color_setting/colorTemperatureK` — range 2000–9000
+- `dynamic_scene/diyScene`
+- `dynamic_scene/lightScene`
+- `dynamic_scene/snapshot`
+- `music_setting/musicMode` — field musicMode options Vivid=1, Rhythm=2, Strike=3, Vibrate=4, Beat=5, Torch=6, RainbowCircle=7, Shiny=8; field sensitivity range 0–100; field autoColor options on=1, off=0; field rgb range 0–16777215
+- `on_off/powerSwitch` — options on=1, off=0
+- `range/brightness` — range 1–100; unit.percent
+- `segment_color_setting/segmentedBrightness` — field segment size 1–15 elementRange 0–14; field brightness range 0–100
+- `segment_color_setting/segmentedColorRgb` — field segment size 1–15 elementRange 0–14; field rgb range 0–16777215
+- `toggle/gradientToggle` — options on=1, off=0
+
+State readback: `brightness`=100/47, `colorRgb`=16777215/8454911, `colorTemperatureK`=0/2000, `online`=true, `powerSwitch`=0/1; returns `""` for `diyScene`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top); `lastDeviceData` keys: `online`.
+
+AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`; `op.command` frame headers: `aa05`, `aa11`, `aa12`, `aa23`, `aa33`, `aaa5`.
+
+Segments (integration's resolution): api 15, size.max 15, no override → 15.
+
+## H6052
+
+Developer API type `devices.types.light`; seen in #241.
+
+Capabilities:
+
+- `color_setting/colorRgb` — range 0–16777215
+- `color_setting/colorTemperatureK` — range 2000–9000
+- `dynamic_scene/diyScene`
+- `dynamic_scene/lightScene`
+- `dynamic_scene/snapshot`
+- `music_setting/musicMode` — field musicMode options Spectrum=1, Vibrate=2, Energic=3, Rhythm=4; field sensitivity range 0–100; field autoColor options on=1, off=0; field rgb range 0–16777215
+- `on_off/powerSwitch` — options on=1, off=0
+- `range/brightness` — range 1–100; unit.percent
+- `segment_color_setting/segmentedBrightness` — field segment size 1–15 elementRange 0–14; field brightness range 0–100
+- `segment_color_setting/segmentedColorRgb` — field segment size 1–15 elementRange 0–14; field rgb range 0–16777215
+- `toggle/gradientToggle` — options on=1, off=0
+
+State readback: `brightness`=100/81/90, `colorRgb`=16777215, `colorTemperatureK`=2000/2700, `online`=true, `powerSwitch`=0/1; returns `""` for `diyScene`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top); `lastDeviceData` keys: `online`.
+
+AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`; `op.command` frame headers: `aa05`, `aa11`, `aa12`, `aa23`.
+
+Segments (integration's resolution): api 15, size.max 15, no override → 15.
 
 ## H6054
 
@@ -565,7 +717,7 @@ AWS IoT push `state` keys: `result`.
 
 ## H605A
 
-Developer API type `devices.types.light`; seen in #85, #99.
+Developer API type `devices.types.light`; seen in #85, #99, #246.
 
 Capabilities:
 
@@ -587,7 +739,35 @@ Capabilities:
 
 State readback: `brightness`=100, `colorRgb`=16777215, `colorTemperatureK`=0, `online`=false, `powerSwitch`=0; returns `""` for `backLightToggle`, `diyScene`, `dreamViewToggle`, `gradientToggle`, `leftLightToggle`, `lightScene`, `musicMode`, `rightLightToggle`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
 
-Account (BFF) list: not seen (captures without account login, or not listed).
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top); `lastDeviceData` keys: `online`.
+
+## H605B
+
+Developer API type `devices.types.light`; seen in #220.
+
+Capabilities:
+
+- `color_setting/colorRgb` — range 0–16777215
+- `color_setting/colorTemperatureK` — range 2000–9000
+- `dynamic_scene/diyScene`
+- `dynamic_scene/lightScene`
+- `dynamic_scene/snapshot`
+- `music_setting/musicMode` — field musicMode options Rhythm=1, Windmill=2, Hooray=3, Sprouting=4; field sensitivity range 0–100; field autoColor options on=1, off=0; field rgb range 0–16777215
+- `on_off/powerSwitch` — options on=1, off=0
+- `range/brightness` — range 1–100; unit.percent
+- `segment_color_setting/segmentedBrightness` — field segment size 1–24 elementRange 0–14; field brightness range 0–100
+- `segment_color_setting/segmentedColorRgb` — field segment size 1–24 elementRange 0–14; field rgb range 0–16777215
+- `toggle/backLightToggle` — options on=1, off=0
+- `toggle/dreamViewToggle` — options on=1, off=0
+- `toggle/gradientToggle` — options on=1, off=0
+- `toggle/leftLightToggle` — options on=1, off=0
+- `toggle/rightLightToggle` — options on=1, off=0
+
+State readback: `brightness`=100, `colorRgb`=16711680, `colorTemperatureK`=0, `online`=true, `powerSwitch`=0; returns `""` for `backLightToggle`, `diyScene`, `dreamViewToggle`, `gradientToggle`, `leftLightToggle`, `lightScene`, `musicMode`, `rightLightToggle`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top); `lastDeviceData` keys: `online`.
+
+AWS IoT push `state` keys: `bleHardVersion`, `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `wifiHardVersion`; `op.command` frame headers: `aa05`, `aa11`, `aa12`, `aa23`, `aa36`, `aa55`, `aaa9`, `aaae`.
 
 ## H605C
 
@@ -597,7 +777,7 @@ Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `devi
 
 ## H6061
 
-Developer API type `devices.types.light`; seen in #72.
+Developer API type `devices.types.light`; seen in #72, #246.
 
 Capabilities:
 
@@ -614,11 +794,17 @@ Capabilities:
 - `toggle/dreamViewToggle` — options on=1, off=0
 - `toggle/gradientToggle` — options on=1, off=0
 
-Account (BFF) list: not seen (captures without account login, or not listed).
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top) plus `shapes`; `lastDeviceData` keys: `online`.
+
+## H6062
+
+Developer API presence unknown (seen only in the account list; the capture holds only the devices the integration created); seen in #246.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top) plus `segmentCount`; `lastDeviceData` keys: `online`.
 
 ## H6072
 
-Developer API type `devices.types.light`; seen in #60.
+Developer API type `devices.types.light`; LAN API reachable in at least one capture; seen in #60, #198, #241.
 
 Capabilities:
 
@@ -635,11 +821,19 @@ Capabilities:
 - `toggle/dreamViewToggle` — options on=1, off=0
 - `toggle/gradientToggle` — options on=1, off=0
 
-Account (BFF) list: not seen (captures without account login, or not listed).
+State readback: `brightness`=100/40, `colorRgb`=16777215, `colorTemperatureK`=2000/2304, `online`=true, `powerSwitch`=0/1; returns `""` for `diyScene`, `dreamViewToggle`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top); `lastDeviceData` keys: `online`.
+
+AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`; `op.command` frame headers: `aa05`, `aa11`, `aa12`, `aa23`, `aaa5`, `aaba`.
+
+Segments (integration's resolution): api 15, size.max 8, no override → 8.
+
+LAN status keys: `devStatus:brightness`, `devStatus:color`, `devStatus:colorTemInKelvin`, `devStatus:onOff`.
 
 ## H6076
 
-Developer API type `devices.types.light`; seen in #60, #104.
+Developer API type `devices.types.light`; LAN API reachable in at least one capture; seen in #57, #60, #104, #198, #265, #306.
 
 Capabilities:
 
@@ -658,11 +852,63 @@ Capabilities:
 
 State readback: `brightness`=50, `colorRgb`=0, `colorTemperatureK`=2700, `online`=true, `powerSwitch`=0; returns `""` for `diyScene`, `dreamViewToggle`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
 
-Account (BFF) list: not seen (captures without account login, or not listed).
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top); `lastDeviceData` keys: `online`.
+
+AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`; `op.command` frame headers: `aa05`, `aa11`, `aa12`, `aa23`, `aaa5`.
+
+## H607C
+
+Developer API type `devices.types.light`; seen in #241, #306.
+
+Capabilities:
+
+- `color_setting/colorRgb` — range 0–16777215
+- `color_setting/colorTemperatureK` — range 2200–6500
+- `dynamic_scene/diyScene`
+- `dynamic_scene/lightScene`
+- `dynamic_scene/snapshot`
+- `music_setting/musicMode` — field musicMode options Touching=0, Rhythm=1, Hopping=2, Blend=3, Luminous=4, Fantasy=5, Stippling=6, Splash=7, Spring=8; field sensitivity range 0–100; field autoColor options on=1, off=0; field rgb range 0–16777215
+- `on_off/powerSwitch` — options on=1, off=0
+- `range/brightness` — range 1–100; unit.percent
+- `segment_color_setting/segmentedBrightness` — field segment size 1–16 elementRange 0–14; field brightness range 0–100
+- `segment_color_setting/segmentedColorRgb` — field segment size 1–16 elementRange 0–14; field rgb range 0–16777215
+- `toggle/baseLightToggle` — options on=1, off=0
+- `toggle/dreamViewToggle` — options on=1, off=0
+- `toggle/gradientToggle` — options on=1, off=0
+- `toggle/pillarLightToggle` — options on=1, off=0
+
+State readback: `brightness`=65, `colorRgb`=0, `colorTemperatureK`=2200, `online`=true, `powerSwitch`=1; returns `""` for `baseLightToggle`, `diyScene`, `dreamViewToggle`, `gradientToggle`, `lightScene`, `musicMode`, `pillarLightToggle`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top) plus `dspVersionSoft`; `lastDeviceData` keys: `online`.
+
+AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`; `op.command` frame headers: `aa05`, `aa07`, `aa11`, `aa12`, `aa23`, `aa41`, `aaa4`, `aaa5`.
+
+Segments (integration's resolution): api 15, size.max 16, no override → 15.
+
+## H6088
+
+Developer API type `devices.types.light`; seen in #203.
+
+Capabilities:
+
+- `color_setting/colorRgb` — range 0–16777215
+- `color_setting/colorTemperatureK` — range 2000–9000
+- `dynamic_scene/diyScene`
+- `dynamic_scene/lightScene`
+- `music_setting/musicMode` — field musicMode options Shiny=1, Luminous=2, Rolling=3, HeartBeating=4, Hopping=5, PianoKeys=6, Waves=7, Colorful=8; field sensitivity range 0–100; field autoColor options on=1, off=0; field rgb range 0–16777215
+- `on_off/powerSwitch` — options on=1, off=0
+- `range/brightness` — range 1–100; unit.percent
+- `segment_color_setting/segmentedBrightness` — field segment size 1–6 elementRange 0–14; field brightness range 0–100
+- `segment_color_setting/segmentedColorRgb` — field segment size 1–6 elementRange 0–14; field rgb range 0–16777215
+- `toggle/gradientToggle` — options on=1, off=0
+
+State readback: `brightness`=30, `colorRgb`=16777215, `colorTemperatureK`=0, `online`=true, `powerSwitch`=1; returns `""` for `diyScene`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top) plus `spec`; `lastDeviceData` keys: `online`.
 
 ## H6095
 
-Developer API type `devices.types.light`; LAN API reachable in at least one capture; seen in #175.
+Developer API type `devices.types.light`; LAN API reachable in at least one capture; seen in #175, #241.
 
 Capabilities:
 
@@ -677,7 +923,7 @@ State readback: `brightness`=70, `colorRgb`=507576, `online`=true, `powerSwitch`
 
 Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `subDevices`, `supportBleBroadV3`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
 
-AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`.
+AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`; `op.command` frame headers: `aa05`, `aa11`, `aa12`, `aa23`, `aa34`, `aaa5`.
 
 ## H6097
 
@@ -700,9 +946,35 @@ Capabilities:
 
 Account (BFF) list: not seen (captures without account login, or not listed).
 
+## H6099
+
+Developer API type `devices.types.light`; seen in #241.
+
+Capabilities:
+
+- `color_setting/colorRgb` — range 0–16777215
+- `color_setting/colorTemperatureK` — range 2000–9000
+- `dynamic_scene/diyScene`
+- `dynamic_scene/lightScene`
+- `dynamic_scene/snapshot`
+- `music_setting/musicMode` — field musicMode options Rhythm=1, Spectrum=2, Rolling=3, Separation=4, Hopping=5, PianoKeys=6, Fountain=7, DayAndNight=8, Sprouting=9, Shiny=10, Energic=11; field sensitivity range 0–100; field autoColor options on=1, off=0; field rgb range 0–16777215
+- `on_off/powerSwitch` — options on=1, off=0
+- `range/brightness` — range 1–100; unit.percent
+- `segment_color_setting/segmentedBrightness` — field segment size 1–14 elementRange 0–14; field brightness range 0–100
+- `segment_color_setting/segmentedColorRgb` — field segment size 1–14 elementRange 0–14; field rgb range 0–16777215
+- `toggle/gradientToggle` — options on=1, off=0
+
+State readback: `brightness`=100, `colorRgb`=65280, `colorTemperatureK`=0, `online`=true, `powerSwitch`=1; returns `""` for `diyScene`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top) plus `segmentCount`; `lastDeviceData` keys: `online`.
+
+AWS IoT push `state` keys: `bleHardVersion`, `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`, `wifiHardVersion`; `op.command` frame headers: `aa05`, `aa11`, `aa12`, `aa23`, `aa41`, `aaa9`, `aaae`.
+
+Segments (integration's resolution): api 15, size.max 14, no override → 14.
+
 ## H60A1
 
-Developer API type `devices.types.light`; seen in #85, #104, #114.
+Developer API type `devices.types.light`; LAN API reachable in at least one capture; seen in #57, #85, #102, #104, #105, #114, #214.
 
 Capabilities:
 
@@ -722,7 +994,7 @@ Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `devi
 
 ## H60A6
 
-Developer API type `devices.types.light`; LAN API reachable in at least one capture; seen in #127, #159.
+Developer API type `devices.types.light`; LAN API reachable in at least one capture; seen in #84, #127, #159, #308.
 
 Capabilities:
 
@@ -738,13 +1010,17 @@ Capabilities:
 
 State readback: `brightness`=100/75, `colorRgb`=0/16756308, `colorTemperatureK`=2700/2708, `online`=true, `powerSwitch`=0; returns `""` for `backgroundLightToggle`, `diyScene`, `lightScene`, `mainLightToggle`, `snapshot`.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportBleBroadV3`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportBleBroadV3`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `powerOffMemory`.
 
-AWS IoT push `state` keys: `result`.
+AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `stc`.
+
+Rejected or unconfirmed commands (2026-05 → 2026-11, `recent_commands`):
+
+- lan powerSwitch=0 → no readback within the confirm window
 
 ## H60B0
 
-Developer API type `devices.types.light`; seen in #83.
+Developer API type `devices.types.light`; seen in #83, #211, #246.
 
 Capabilities:
 
@@ -765,11 +1041,25 @@ Capabilities:
 
 State readback: `online`=false; returns `""` for `bottomLightToggle`, `brightness`, `colorRgb`, `colorTemperatureK`, `diyScene`, `dreamViewToggle`, `lightScene`, `musicMode`, `powerSwitch`, `rippleLightToggle`, `segmentedBrightness`, `segmentedColorRgb`, `sideLightToggle`, `snapshot`.
 
-Account (BFF) list: not seen (captures without account login, or not listed).
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top); `lastDeviceData` keys: `online`.
+
+AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`; `op.command` frame headers: `aa05`, `aa11`, `aa12`, `aa23`, `aa41`, `aa42`, `aaa5`.
+
+Rejected or unconfirmed commands (2026-05 → 2026-11, `recent_commands`):
+
+- lan brightness=1 → device reported a different value than was sent
+- lan colorRgb=0 → device reported a different value than was sent
+- lan powerSwitch=0 → device reported a different value than was sent
+
+## H60B1
+
+Developer API presence unknown (seen only in the account list; the capture holds only the devices the integration created); seen in #214.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top); `lastDeviceData` keys: `online`.
 
 ## H60B2
 
-Developer API type `devices.types.light`; seen in #104.
+Developer API type `devices.types.light`; seen in #104, #306.
 
 Capabilities:
 
@@ -790,7 +1080,7 @@ Capabilities:
 
 State readback: `brightness`=26, `colorRgb`=0, `colorTemperatureK`=3967, `online`=true, `powerSwitch`=1; returns `""` for `diyScene`, `dreamViewToggle`, `light1Toggle`, `light2Toggle`, `light3Toggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
 
-Account (BFF) list: not seen (captures without account login, or not listed).
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top) plus `subDevices`; `lastDeviceData` keys: `online`.
 
 ## H60B3
 
@@ -815,7 +1105,7 @@ Capabilities:
 
 State readback: `bottomLightToggle`=1, `brightness`=100, `colorRgb`=0, `colorTemperatureK`=6500, `nebulaLightToggle`=0, `online`=true, `powerSwitch`=0, `sideLightToggle`=1; returns `""` for `diyScene`, `dreamViewToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `dspVersionSoft`.
 
 AWS IoT push `state` keys: `result`.
 
@@ -841,6 +1131,18 @@ State readback: `brightness`=89, `colorRgb`=0, `colorTemperatureK`=5196/5200, `o
 
 Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
 
+## H610A
+
+Developer API presence unknown (seen only in the account list; the capture holds only the devices the integration created); seen in #105.
+
+Account (BFF) list: yes (census row only; the capture has no key dump for it).
+
+## H6125
+
+Developer API presence unknown (seen only in the account list; the capture holds only the devices the integration created); seen in #220.
+
+Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `device`, `deviceName`, `ic`, `pactCode`, `pactType`, `sku`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiHardVersion`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+
 ## H612D
 
 Developer API type `devices.types.light`; seen in #159.
@@ -861,13 +1163,13 @@ Capabilities:
 
 State readback: `brightness`=100, `colorRgb`=16777215, `colorTemperatureK`=0, `online`=true, `powerSwitch`=0; returns `""` for `diyScene`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `ic_sub_1`, `ic_sub_2`.
 
 AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`.
 
 ## H612F
 
-Developer API type `devices.types.light`; seen in #159.
+Developer API type `devices.types.light`; LAN API reachable in at least one capture; seen in #159, #215.
 
 Capabilities:
 
@@ -885,9 +1187,11 @@ Capabilities:
 
 State readback: `brightness`=100, `colorRgb`=16777215, `colorTemperatureK`=0, `online`=true, `powerSwitch`=0; returns `""` for `diyScene`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `discriminator`, `ic_sub_1`, `ic_sub_2`, `manualCode`, `subDevices`.
 
-AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`.
+AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`; `op.command` frame headers: `aa05`, `aa11`, `aa12`, `aa23`, `aa40`, `aa41`.
+
+LAN status keys: `devStatus:brightness`, `devStatus:color`, `devStatus:colorTemInKelvin`, `devStatus:onOff`.
 
 ## H6144
 
@@ -972,9 +1276,11 @@ State readback: `brightness`=100, `colorRgb`=16777215, `colorTemperatureK`=0, `o
 
 Account (BFF) list: not seen (captures without account login, or not listed).
 
+LAN status keys: `devStatus:brightness`, `devStatus:color`, `devStatus:colorTemInKelvin`, `devStatus:onOff`.
+
 ## H6163
 
-Developer API type `devices.types.light`; seen in #60.
+Developer API type `devices.types.light`; seen in #60, #198.
 
 Capabilities:
 
@@ -987,7 +1293,9 @@ Capabilities:
 - `on_off/powerSwitch` — options on=1, off=0
 - `range/brightness` — range 1–100; unit.percent
 
-Account (BFF) list: not seen (captures without account login, or not listed).
+State readback: `brightness`=254, `colorRgb`=4980991, `colorTemperatureK`=0, `online`=true, `powerSwitch`=1; returns `""` for `diyScene`, `lightScene`, `musicMode`, `snapshot`.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top); `lastDeviceData` keys: `online`.
 
 ## H616C
 
@@ -995,9 +1303,19 @@ Not returned by the Developer API; seen in #122.
 
 Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
 
+## H6175
+
+Seen only in a LAN discovery excerpt (no Developer API or account data in that capture); LAN API reachable in at least one capture; seen in #57.
+
+## H617C
+
+Developer API presence unknown (seen only in the account list; the capture holds only the devices the integration created); seen in #246.
+
+Account (BFF) list: yes — `deviceSettings` carries `address`, `appVersion`, `bleName`, `device`, `deviceName`, `language`, `pactCode`, `pactType`, `secretCode`, `sku`, `supportBleBroadV3`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiHardVersion`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+
 ## H6182
 
-Developer API type `devices.types.light`; seen in #104.
+Developer API type `devices.types.light`; seen in #86, #104.
 
 Capabilities:
 
@@ -1014,11 +1332,37 @@ Capabilities:
 
 State readback: `brightness`=100, `colorRgb`=54014, `colorTemperatureK`=0, `online`=true, `powerSwitch`=0; returns `""` for `diyScene`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`.
 
-Account (BFF) list: not seen (captures without account login, or not listed).
+Account (BFF) list: yes (census row only; the capture has no key dump for it).
+
+## H618A
+
+Developer API type `devices.types.light`; LAN API reachable in at least one capture; seen in #57, #281.
+
+Capabilities:
+
+- `color_setting/colorRgb` — range 0–16777215
+- `color_setting/colorTemperatureK` — range 2700–6500
+- `dynamic_scene/diyScene`
+- `dynamic_scene/lightScene`
+- `dynamic_scene/snapshot` — 1 user option(s)
+- `music_setting/musicMode` — field musicMode options Energic=1, Rhythm=2, Spectrum=3, Rolling=4, Separation=5, Hopping=6, PianoKeys=7, Fountain=8, DayAndNight=9, Sprouting=10, Shiny=11; field sensitivity range 0–100; field autoColor options on=1, off=0; field rgb range 0–16777215
+- `on_off/powerSwitch` — options on=1, off=0
+- `range/brightness` — range 1–100; unit.percent
+- `segment_color_setting/segmentedBrightness` — field segment size 1–15 elementRange 0–14; field brightness range 0–100
+- `segment_color_setting/segmentedColorRgb` — field segment size 1–15 elementRange 0–14; field rgb range 0–16777215
+- `toggle/gradientToggle` — options on=1, off=0
+
+State readback: `brightness`=100, `colorRgb`=16711680/2895103/9109759, `colorTemperatureK`=0, `online`=true, `powerSwitch`=0/1; returns `""` for `diyScene`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top); `lastDeviceData` keys: `online`.
+
+AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`; `op.command` frame headers: `aa05`, `aa11`, `aa12`, `aa23`, `aa41`, `aaa5`.
+
+Segments (integration's resolution): api 15, size.max 15, no override → 15.
 
 ## H618E
 
-Developer API type `devices.types.light`; seen in #134.
+Developer API type `devices.types.light`; seen in #134, #281.
 
 Capabilities:
 
@@ -1038,9 +1382,13 @@ State readback: `brightness`=100, `colorRgb`=0/16744192/255, `colorTemperatureK`
 
 Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `pactCode`, `pactType`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
 
+AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`; `op.command` frame headers: `aa05`, `aa11`, `aa12`, `aa23`, `aa41`, `aaa5`.
+
+Segments (integration's resolution): api 15, size.max 15, no override → 15.
+
 ## H618F
 
-Developer API type `devices.types.light`; seen in #131.
+Developer API type `devices.types.light`; seen in #131, #281.
 
 Capabilities:
 
@@ -1060,9 +1408,13 @@ State readback: `brightness`=100, `colorRgb`=16711680, `colorTemperatureK`=0, `o
 
 Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `pactCode`, `pactType`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
 
+AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`; `op.command` frame headers: `aa05`, `aa11`, `aa12`, `aa23`.
+
+Segments (integration's resolution): api 15, size.max 15, no override → 15.
+
 ## H6199
 
-Developer API type `devices.types.light`; seen in #60.
+Developer API type `devices.types.light`; seen in #60, #198.
 
 Capabilities:
 
@@ -1078,11 +1430,15 @@ Capabilities:
 - `toggle/dreamViewToggle` — options on=1, off=0
 - `toggle/gradientToggle` — options on=1, off=0
 
-Account (BFF) list: not seen (captures without account login, or not listed).
+State readback: `brightness`=100, `colorRgb`=16777215, `colorTemperatureK`=6667, `online`=true, `powerSwitch`=0; returns `""` for `diyScene`, `dreamViewToggle`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedColorRgb`, `snapshot`.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top); `lastDeviceData` keys: `online`.
+
+AWS IoT push `state` keys: `bleHardVersion`, `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `wifiHardVersion`; `op.command` frame headers: `aa05`, `aa11`, `aa12`, `aa23`, `aa55`, `aaa5`, `aaa9`, `aaae`.
 
 ## H619A
 
-Developer API type `devices.types.light`; seen in #104.
+Developer API type `devices.types.light`; LAN API reachable in at least one capture; seen in #57, #104, #306.
 
 Capabilities:
 
@@ -1100,11 +1456,21 @@ Capabilities:
 
 State readback: `brightness`=22, `colorRgb`=16713057, `colorTemperatureK`=0, `online`=true, `powerSwitch`=0; returns `""` for `diyScene`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
 
-Account (BFF) list: not seen (captures without account login, or not listed).
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top); `lastDeviceData` keys: `online`.
+
+AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`; `op.command` frame headers: `aa05`, `aa11`, `aa12`, `aa23`, `aa41`, `aaa5`.
+
+Segments (integration's resolution): api 15, size.max 15, no override → 15.
+
+## H619C
+
+Developer API presence unknown (seen only in the account list; the capture holds only the devices the integration created); seen in #203, #236.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top); `lastDeviceData` keys: `online`.
 
 ## H61A0
 
-Developer API type `devices.types.light`; seen in #104.
+Developer API type `devices.types.light`; seen in #104, #246.
 
 Capabilities:
 
@@ -1122,7 +1488,7 @@ Capabilities:
 
 State readback: `brightness`=100, `colorRgb`=0, `colorTemperatureK`=2700, `online`=true, `powerSwitch`=0; returns `""` for `diyScene`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
 
-Account (BFF) list: not seen (captures without account login, or not listed).
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top); `lastDeviceData` keys: `online`.
 
 ## H61A2
 
@@ -1148,9 +1514,35 @@ Account (BFF) list: not seen (captures without account login, or not listed).
 
 ## H61B5
 
-Not returned by the Developer API; seen in #128.
+Developer API type `devices.types.light` in the 2026-05 → 2026-11 captures (the earlier capture in #128 did not return it); seen in #128, #241.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportBleBroadV3`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Capabilities:
+
+- `color_setting/colorRgb` — range 0–16777215
+- `color_setting/colorTemperatureK` — range 2000–9000
+- `dynamic_scene/diyScene`
+- `dynamic_scene/lightScene`
+- `dynamic_scene/snapshot`
+- `music_setting/musicMode` — field musicMode options Energic=1, Rhythm=2, Spectrum=3, Rolling=4, Separation=5, Hopping=6, PianoKeys=7, Fountain=8, DayAndNight=9, Sprouting=10, Shiny=11; field sensitivity range 0–100; field autoColor options on=1, off=0; field rgb range 0–16777215
+- `on_off/powerSwitch` — options on=1, off=0
+- `range/brightness` — range 1–100; unit.percent
+- `segment_color_setting/segmentedBrightness` — field segment size 1–15 elementRange 0–14; field brightness range 0–100
+- `segment_color_setting/segmentedColorRgb` — field segment size 1–15 elementRange 0–14; field rgb range 0–16777215
+- `toggle/gradientToggle` — options on=1, off=0
+
+State readback: `brightness`=100, `colorRgb`=0, `colorTemperatureK`=2304, `online`=true, `powerSwitch`=0; returns `""` for `diyScene`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top) plus `ic_sub_1`, `ic_sub_2`; `lastDeviceData` keys: `online`.
+
+AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`, `wifiFuncList`; `op.command` frame headers: `aa05`, `aa11`, `aa12`, `aa23`, `aa40`, `aa41`, `aaa5`.
+
+Segments (integration's resolution): api 15, size.max 15, no override → 15.
+
+## H61BA
+
+Developer API presence unknown (seen only in the account list; the capture holds only the devices the integration created); seen in #203.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top); `lastDeviceData` keys: `online`.
 
 ## H61BE
 
@@ -1172,7 +1564,13 @@ Capabilities:
 
 State readback: `brightness`=100, `colorRgb`=0, `colorTemperatureK`=3300, `online`=false, `powerSwitch`=1; returns `""` for `diyScene`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
 
-Account (BFF) list: not seen (captures without account login, or not listed).
+Account (BFF) list: yes (census row only; the capture has no key dump for it).
+
+## H61D5
+
+Developer API presence unknown (seen only in the account list; the capture holds only the devices the integration created); seen in #236.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top); `lastDeviceData` keys: `online`.
 
 ## H61E1
 
@@ -1195,7 +1593,7 @@ Capabilities:
 
 State readback: `brightness`=100, `colorRgb`=0, `colorTemperatureK`=3700, `online`=true, `powerSwitch`=0; returns `""` for `diyScene`, `dreamViewToggle`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
 
-Account (BFF) list: not seen (captures without account login, or not listed).
+Account (BFF) list: yes (census row only; the capture has no key dump for it).
 
 ## H61F2
 
@@ -1217,13 +1615,13 @@ Capabilities:
 
 State readback: `brightness`=100, `colorRgb`=16777215, `colorTemperatureK`=0, `online`=true, `powerSwitch`=0/1; returns `""` for `diyScene`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `dspVersionSoft`.
 
 AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`.
 
 ## H6604
 
-Developer API type `devices.types.light`; seen in #131.
+Developer API type `devices.types.light`; LAN API reachable in at least one capture; seen in #57, #131.
 
 Capabilities:
 
@@ -1243,11 +1641,39 @@ Capabilities:
 
 State readback: `brightness`=100, `colorRgb`=16711680, `colorTemperatureK`=0, `hdmiSource`=1, `online`=true, `powerSwitch`=1; returns `""` for `diyScene`, `dreamViewToggle`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `dspVersionSoft`.
+
+## H66A0
+
+Developer API type `devices.types.light`; seen in #213.
+
+Capabilities:
+
+- `color_setting/colorRgb` — range 0–16777215
+- `color_setting/colorTemperatureK` — range 2200–6500
+- `dynamic_scene/diyScene`
+- `dynamic_scene/lightScene`
+- `dynamic_scene/snapshot`
+- `movie_setting/movieMode` — field movieMode options Game=0
+- `music_setting/musicMode` — field musicMode options Energic=0, Rhythm=1, Spectrum=2, Rolling=3, Separation=4, Hopping=5, Piano Keys=6, Fountain=7, Day and Night=8, Sprouting=9, Splash=10, Spring=11, Color Painting=12, Beat=13, Windmill=14, Flowing Light=15; field sensitivity range 0–100; field autoColor options on=1, off=0; field rgb range 0–16777215
+- `on_off/powerSwitch` — options on=1, off=0
+- `range/brightness` — range 1–100; unit.percent
+- `segment_color_setting/segmentedBrightness` — field segment size 1–14 elementRange 0–13; field brightness range 0–100
+- `segment_color_setting/segmentedColorRgb` — field segment size 1–14 elementRange 0–13; field rgb range 0–16777215
+- `toggle/dreamViewToggle` — options on=1, off=0
+- `toggle/gradientToggle` — options on=1, off=0
+
+State readback: `brightness`=98, `colorRgb`=16777215, `colorTemperatureK`=0, `online`=true, `powerSwitch`=1; returns `""` for `diyScene`, `dreamViewToggle`, `gradientToggle`, `lightScene`, `movieMode`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top) plus `subDevices`; `lastDeviceData` keys: `online`.
+
+AWS IoT push `state` keys: `bleHardVersion`, `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `wifiHardVersion`; `op.command` frame headers: `aa05`, `aa11`, `aa12`, `aa23`, `aa41`, `aaa9`, `aaae`, `ee30`.
+
+Segments (integration's resolution): api 14, size.max 14, no override → 14.
 
 ## H66A1
 
-Developer API type `devices.types.light`; seen in #104.
+Developer API type `devices.types.light`; seen in #104, #203.
 
 Capabilities:
 
@@ -1267,11 +1693,17 @@ Capabilities:
 
 State readback: `brightness`=100, `colorRgb`=0, `colorTemperatureK`=2700, `online`=true, `powerSwitch`=1; returns `""` for `diyScene`, `dreamViewToggle`, `gradientToggle`, `lightScene`, `movieMode`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
 
-Account (BFF) list: not seen (captures without account login, or not listed).
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top) plus `subDevices`; `lastDeviceData` keys: `online`.
+
+## H6810
+
+Developer API presence unknown (seen only in the account list; the capture holds only the devices the integration created); seen in #86.
+
+Account (BFF) list: yes (census row only; the capture has no key dump for it).
 
 ## H6811
 
-Developer API type `devices.types.light`; seen in #85.
+Developer API type `devices.types.light`; seen in #85, #86.
 
 Capabilities:
 
@@ -1286,11 +1718,11 @@ Capabilities:
 - `toggle/dreamViewToggle` — options on=1, off=0
 - `toggle/gradientToggle` — options on=1, off=0
 
-Account (BFF) list: not seen (captures without account login, or not listed).
+Account (BFF) list: yes (census row only; the capture has no key dump for it).
 
 ## H6840
 
-Developer API type `devices.types.light`; seen in #60.
+Developer API type `devices.types.light`; seen in #60, #86, #198.
 
 Capabilities:
 
@@ -1304,11 +1736,38 @@ Capabilities:
 - `range/brightness` — range 1–100; unit.percent
 - `toggle/dreamViewToggle` — options on=1, off=0
 
-Account (BFF) list: not seen (captures without account login, or not listed).
+State readback: `brightness`=100, `colorRgb`=0, `colorTemperatureK`=2000, `online`=true, `powerSwitch`=1; returns `""` for `diyScene`, `dreamViewToggle`, `lightScene`, `musicMode`, `snapshot`.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top); `lastDeviceData` keys: `online`.
+
+## H6871
+
+Developer API type `devices.types.light`; seen in #306.
+
+Capabilities:
+
+- `color_setting/colorRgb` — range 0–16777215
+- `color_setting/colorTemperatureK` — range 2000–9000
+- `dynamic_scene/diyScene`
+- `dynamic_scene/lightScene`
+- `dynamic_scene/snapshot`
+- `music_setting/musicMode` — field musicMode options Energic=0, Rhythm=1, Separation=2, Hopping=3, Piano Keys=4, Fountain=5, Day and Night=6, Flow=7, Spin=8, Blend=9, Spring=10, Ripple=11; field sensitivity range 0–100; field autoColor options on=1, off=0; field rgb range 0–16777215
+- `on_off/powerSwitch` — options on=1, off=0
+- `range/brightness` — range 1–100; unit.percent
+- `segment_color_setting/segmentedBrightness` — field segment size 1–15 elementRange 0–14; field brightness range 0–100
+- `segment_color_setting/segmentedColorRgb` — field segment size 1–15 elementRange 0–14; field rgb range 0–16777215
+- `toggle/dreamViewToggle` — options on=1, off=0
+- `toggle/gradientToggle` — options on=1, off=0
+
+State readback: `brightness`=100, `colorRgb`=0, `colorTemperatureK`=2000, `online`=true, `powerSwitch`=1; returns `""` for `diyScene`, `dreamViewToggle`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top); `lastDeviceData` keys: `online`.
+
+Segments (integration's resolution): api 15, size.max 15, no override → 15.
 
 ## H7020
 
-Developer API type `devices.types.light`; seen in #131.
+Developer API type `devices.types.light`; LAN API reachable in at least one capture; seen in #131.
 
 Capabilities:
 
@@ -1325,7 +1784,35 @@ Capabilities:
 
 State readback: `brightness`=100, `colorRgb`=16712960, `colorTemperatureK`=0, `online`=false/true, `powerSwitch`=0/1; returns `""` for `diyScene`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `pactCode`, `pactType`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `pactCode`, `pactType`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `segmentCount`.
+
+LAN status keys: `devStatus:brightness`, `devStatus:color`, `devStatus:colorTemInKelvin`, `devStatus:onOff`, `status:brightness`, `status:onOff`, `status:pt`.
+
+## H702B
+
+Developer API type `devices.types.light`; seen in #281.
+
+Capabilities:
+
+- `color_setting/colorRgb` — range 0–16777215
+- `color_setting/colorTemperatureK` — range 2700–6500
+- `dynamic_scene/diyScene`
+- `dynamic_scene/lightScene`
+- `dynamic_scene/snapshot` — 3 user option(s)
+- `music_setting/musicMode` — field musicMode options Rhythm=0, Sway=1, Flow=2, Star=3, Twinkle=4, Hopping=5, Rolling=6, Day and Night=7, Piano Keys=8, Separation=9; field sensitivity range 0–100; field autoColor options on=1, off=0; field rgb range 0–16777215
+- `on_off/powerSwitch` — options on=1, off=0
+- `range/brightness` — range 1–100; unit.percent
+- `segment_color_setting/segmentedBrightness` — field segment size 1–30 elementRange 0–29; field brightness range 0–100
+- `segment_color_setting/segmentedColorRgb` — field segment size 1–30 elementRange 0–29; field rgb range 0–16777215
+- `toggle/gradientToggle` — options on=1, off=0
+
+State readback: `brightness`=100, `colorRgb`=255, `colorTemperatureK`=0, `online`=true, `powerSwitch`=1; returns `""` for `diyScene`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top) plus `segmentCount`; `lastDeviceData` keys: `online`.
+
+AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`; `op.command` frame headers: `aa05`, `aa11`, `aa12`, `aa23`, `aa40`, `aa41`.
+
+Segments (integration's resolution): api 30, size.max 30, no override → 30.
 
 ## H7037
 
@@ -1367,13 +1854,37 @@ Capabilities:
 
 State readback: `brightness`=100, `colorRgb`=16711680, `colorTemperatureK`=0, `online`=true, `powerSwitch`=0; returns `""` for `diyScene`, `dreamViewToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `pactCode`, `pactType`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `pactCode`, `pactType`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `segmentCount`.
+
+## H7045
+
+Developer API type `devices.types.light`; LAN API reachable in at least one capture; seen in #239.
+
+Capabilities:
+
+- `color_setting/colorRgb` — range 0–16777215
+- `color_setting/colorTemperatureK` — range 2700–6500
+- `dynamic_scene/diyScene`
+- `dynamic_scene/lightScene`
+- `dynamic_scene/snapshot` — 4 user option(s)
+- `music_setting/musicMode` — field musicMode options Cover=0, Flowing Light=1, Color Painting=2, Fire=3, Light Waves=4, Smudge=5, Rhythm=6, Sway=7, Hopping=8, Flow=9, Separation=10, Luminous=11; field sensitivity range 0–100; field autoColor options on=1, off=0; field rgb range 0–16777215
+- `on_off/powerSwitch` — options on=1, off=0
+- `range/brightness` — range 1–100; unit.percent
+- `segment_color_setting/segmentedBrightness` — field segment size 1–15 elementRange 0–14; field brightness range 0–100
+- `segment_color_setting/segmentedColorRgb` — field segment size 1–15 elementRange 0–14; field rgb range 0–16777215
+- `toggle/dreamViewToggle` — options on=1, off=0
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top) plus `segmentCount`, `spec`; `lastDeviceData` keys: `online`.
+
+AWS IoT push `state` keys: `result`; `op.command` frame headers: `3305`, `a358`.
+
+Segments (integration's resolution): api 15, size.max 15, no override → 15.
 
 ## H7057
 
-Not returned by the Developer API; seen in #114.
+Not returned by the Developer API; seen in #102, #114.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportBleBroadV3`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportBleBroadV3`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `spec`.
 
 ## H705A
 
@@ -1435,7 +1946,7 @@ Account (BFF) list: not seen (captures without account login, or not listed).
 
 ## H7068
 
-Developer API type `devices.types.light`; seen in #85, #114.
+Developer API type `devices.types.light`; seen in #85, #102, #114, #214.
 
 Capabilities:
 
@@ -1470,9 +1981,27 @@ State readback: `brightness`=100, `colorRgb`=0, `colorTemperatureK`=2000, `onlin
 
 Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
 
+## H7073
+
+Developer API type `devices.types.light`; seen in #240.
+
+Capabilities:
+
+- `dynamic_scene/diyScene`
+- `dynamic_scene/lightScene`
+- `dynamic_scene/snapshot`
+- `on_off/powerSwitch` — options on=1, off=0
+- `range/brightness` — range 1–100; unit.percent
+
+State readback: `brightness`=100, `online`=true, `powerSwitch`=0; returns `""` for `diyScene`, `lightScene`, `snapshot`.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top); `lastDeviceData` keys: `online`.
+
+AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`, `wifiFuncList`; `op.command` frame headers: `aa05`, `aa11`, `aa12`, `aa23`, `aa41`, `aa42`, `ac00`, `acff`.
+
 ## H7075
 
-Not returned by the Developer API; seen in #114.
+Not returned by the Developer API; seen in #102, #114, #214, #306.
 
 Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `pactCode`, `pactType`, `supportBleBroadV3`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
 
@@ -1502,7 +2031,7 @@ AWS IoT push `state` keys: `brightness`, `result`.
 
 ## H707C
 
-Developer API type `devices.types.light`; seen in #60.
+Developer API type `devices.types.light`; seen in #60, #198.
 
 Capabilities:
 
@@ -1519,11 +2048,64 @@ Capabilities:
 - `toggle/dreamViewToggle` — options on=1, off=0
 - `toggle/gradientToggle` — options on=1, off=0
 
-Account (BFF) list: not seen (captures without account login, or not listed).
+State readback: `brightness`=50, `colorRgb`=0, `colorTemperatureK`=3700, `online`=true, `powerSwitch`=0; returns `""` for `diyScene`, `dreamViewToggle`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top) plus `dspVersionSoft`, `sceneSeg`, `segmentCount`; `lastDeviceData` keys: `online`.
+
+AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`, `wifiFuncList`; `op.command` frame headers: `aa05`, `aa11`, `aa12`, `aa16`, `aa23`, `aa41`, `aa48`, `aaa5`, `ac00`, `acff`.
+
+## H7086
+
+Developer API type `devices.types.light`; LAN API reachable in at least one capture; seen in #239.
+
+Capabilities:
+
+- `color_setting/colorRgb` — range 0–16777215
+- `color_setting/colorTemperatureK` — range 2700–6500
+- `dynamic_scene/diyScene`
+- `dynamic_scene/lightScene`
+- `dynamic_scene/snapshot` — 2 user option(s)
+- `music_setting/musicMode` — field musicMode options Rhythm=0, Cover=1, Meteor shower=2, Party=3, Smudge=4, Rolling=5, Flowing Light=6, Torch=7, Energic=8; field sensitivity range 0–100; field autoColor options on=1, off=0; field rgb range 0–16777215
+- `on_off/powerSwitch` — options on=1, off=0
+- `range/brightness` — range 1–100; unit.percent
+- `segment_color_setting/segmentedBrightness` — field segment size 1–4 elementRange 0–3; field brightness range 0–100
+- `segment_color_setting/segmentedColorRgb` — field segment size 1–4 elementRange 0–3; field rgb range 0–16777215
+
+State readback: `brightness`=100, `colorRgb`=0, `colorTemperatureK`=2700, `online`=true, `powerSwitch`=0; returns `""` for `diyScene`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top) plus `discriminator`, `manualCode`; `lastDeviceData` keys: `online`.
+
+AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`, `wifiFuncList`; `op.command` frame headers: `aa05`, `aa11`, `aa12`, `aa23`, `aa41`, `aaa5`.
+
+Segments (integration's resolution): api 4, size.max 4, no override → 4.
+
+LAN status keys: `devStatus:brightness`, `devStatus:color`, `devStatus:colorTemInKelvin`, `devStatus:onOff`, `status:brightness`, `status:onOff`, `status:pt`.
+
+## H7093
+
+Seen only in a LAN discovery excerpt (no Developer API or account data in that capture); LAN API reachable in at least one capture; seen in #57.
+
+## H7094
+
+Not returned by the Developer API; seen in #306.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top) plus `spec`; `lastDeviceData` keys: `online`.
+
+## H70A1
+
+Developer API presence unknown (seen only in the account list; the capture holds only the devices the integration created); seen in #203.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top); `lastDeviceData` keys: `online`.
+
+## H70B1
+
+Developer API presence unknown (seen only in the account list; the capture holds only the devices the integration created); seen in #86.
+
+Account (BFF) list: yes (census row only; the capture has no key dump for it).
 
 ## H70B6
 
-Developer API type `devices.types.light`; seen in #85.
+Developer API type `devices.types.light`; seen in #85, #281.
 
 Capabilities:
 
@@ -1537,7 +2119,11 @@ Capabilities:
 - `range/brightness` — range 1–100; unit.percent
 - `toggle/dreamViewToggle` — options on=1, off=0
 
-Account (BFF) list: not seen (captures without account login, or not listed).
+State readback: `brightness`=100, `colorRgb`=0, `colorTemperatureK`=2000, `online`=false/true, `powerSwitch`=1; returns `""` for `diyScene`, `dreamViewToggle`, `lightScene`, `musicMode`, `snapshot`.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top); `lastDeviceData` keys: `online`.
+
+AWS IoT push `state` keys: `bleHardVersion`, `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`, `wifiFuncList`, `wifiHardVersion`; `op.command` frame headers: `aa05`, `aa11`, `aa12`, `aa23`, `aa25`, `aa7d`, `aa7e`, `ab00`.
 
 ## H70C2
 
@@ -1560,7 +2146,7 @@ Capabilities:
 
 State readback: `brightness`=100, `colorRgb`=0, `colorTemperatureK`=2700, `online`=false, `powerSwitch`=0; returns `""` for `diyScene`, `dreamViewToggle`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `pactCode`, `pactType`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `pactCode`, `pactType`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `dspVersionSoft`.
 
 ## H70C4
 
@@ -1587,7 +2173,7 @@ Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `devi
 
 ## H70C5
 
-Developer API type `devices.types.light`; seen in #83, #114, #150.
+Developer API type `devices.types.light`; seen in #83, #102, #114, #150, #203, #214.
 
 Capabilities:
 
@@ -1606,7 +2192,7 @@ Capabilities:
 
 State readback: `brightness`=100/50, `colorRgb`=0/16711680/255, `colorTemperatureK`=0/2000, `online`=false/true, `powerSwitch`=0/1; returns `""` for `diyScene`, `dreamViewToggle`, `gradientToggle`, `lightScene`, `musicMode`, `segmentedBrightness`, `segmentedColorRgb`, `snapshot`.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportBleBroadV3`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportBleBroadV3`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `discriminator`, `manualCode`.
 
 ## H70C9
 
@@ -1643,6 +2229,12 @@ Capabilities:
 
 Account (BFF) list: not seen (captures without account login, or not listed).
 
+## H7105
+
+Not returned by the Developer API; seen in #209.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top) plus `discriminator`, `manualCode`, `mcuHardVersion`, `mcuSoftVersion`, `subDevices`, `temCali`; `lastDeviceData` keys: `online`.
+
 ## H7107
 
 Developer API type `devices.types.fan`; seen in #121.
@@ -1659,7 +2251,7 @@ Account (BFF) list: not seen (captures without account login, or not listed).
 
 ## H7124
 
-Developer API type `devices.types.air_purifier`; seen in #114, #150.
+Developer API type `devices.types.air_purifier`; seen in #102, #114, #150, #209, #214.
 
 Capabilities:
 
@@ -1672,13 +2264,15 @@ Capabilities:
 - `toggle/nightlightToggle` — options on=1, off=0
 - `work_mode/workMode` — field workMode options gearMode=1, Sleep=5, Auto=3, Turbo=7; field modeValue options gearMode=None, Sleep=None, Auto=None, Turbo=None
 
-State readback: `airQuality`=1, `brightness`=11/50, `colorRgb`=""/16777215, `filterLifeTime`=100/89/92, `nightlightScene`=""/5, `nightlightToggle`=0/1, `online`=true, `powerSwitch`=1, `workMode`={"workMode": 3, "modeValue": 0}/{"workMode": 5, "modeValue": 0}.
+State readback: `airQuality`=1, `brightness`=11/50, `colorRgb`=""/16777215, `filterLifeTime`=100/89/92, `nightlightScene`=""/5, `nightlightToggle`=0/1, `online`=true, `powerSwitch`=1, `workMode`={"workMode": 3, "modeValue": 0}/{"workMode": 5, "modeValue": 0}; returns `""` for `colorRgb`, `nightlightScene`.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportBleBroadV3`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportBleBroadV3`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `discriminator`, `filterExpireOnOff`, `manualCode`, `mcuHardVersion`, `mcuSoftVersion`.
+
+AWS IoT push `state` keys: `onOff`, `result`, `sta`; `op.command` frame headers: `aa05`, `aa08`, `aa16`, `aa17`, `aa19`, `aa1b`, `aa26`, `ac00`.
 
 ## H7126
 
-Developer API type `devices.types.air_purifier`; seen in #114, #150.
+Developer API type `devices.types.air_purifier`; seen in #102, #114, #150, #214.
 
 Capabilities:
 
@@ -1689,7 +2283,7 @@ Capabilities:
 
 State readback: `airQuality`=1, `filterLifeTime`=22/86, `online`=true, `powerSwitch`=0/1; returns `""` for `workMode`.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportBleBroadV3`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportBleBroadV3`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `discriminator`, `filterExpireOnOff`, `manualCode`, `mcuHardVersion`, `mcuSoftVersion`.
 
 AWS IoT push `state` keys: `result`.
 
@@ -1710,9 +2304,30 @@ Capabilities:
 
 State readback: `airQuality`=1, `brightness`=50, `filterLifeTime`=40/43/89, `nightlightToggle`=0, `online`=true, `powerSwitch`=1, `workMode`={"workMode": 1, "modeValue": 1}/{"workMode": 5, "modeValue": 0}; returns `""` for `colorRgb`, `nightlightScene`.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `discriminator`, `filterExpireOnOff`, `manualCode`, `mcuHardVersion`, `mcuSoftVersion`.
 
 AWS IoT push `state` keys: `onOff`, `result`, `sta`.
+
+## H7130
+
+Developer API type `devices.types.heater`; seen in #265.
+
+Capabilities:
+
+- `on_off/powerSwitch` — options on=1, off=0
+- `property/sensorTemperature`
+- `temperature_setting/targetTemperature` — field autoStop options Auto Stop=1, Maintain=0; field temperature range 5–30; field unit options Celsius=Celsius, Fahrenheit=Fahrenheit
+- `toggle/oscillationToggle` — options on=1, off=0
+- `toggle/thermostatToggle` — options on=1, off=0
+- `work_mode/workMode` — field workMode options Low=1, Medium=2, High=3; field modeValue options Low=None, Medium=None, High=None
+
+State readback: `online`=true, `oscillationToggle`=1, `powerSwitch`=1, `sensorTemperature`=68.0, `targetTemperature`={targetTemperature,unit}, `workMode`={modeValue,workMode}; returns `""` for `thermostatToggle`.
+
+Account (BFF) list: not seen (captures without account login, or not listed).
+
+## H7131
+
+Developer API presence unknown (seen only in the account list; the capture holds only the devices the integration created); seen in #265.
 
 ## H7135
 
@@ -1727,7 +2342,32 @@ Capabilities:
 
 State readback: `online`=true, `powerSwitch`=0, `sensorTemperature`=73.0, `targetTemperature`={"unit": "Fahrenheit", "targetTemperature": 79}, `workMode`={"workMode": 1, "modeValue": 3}.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `fahOpen`, `ic`, `pactCode`, `pactType`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `fahOpen`, `ic`, `pactCode`, `pactType`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `dumpOnOff`, `mcuHardVersion`, `mcuSoftVersion`.
+
+## H713B
+
+Developer API presence unknown (seen only in the account list; the capture holds only the devices the integration created); seen in #246.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top) plus `dumpOnOff`, `mcuHardVersion`, `mcuSoftVersion`, `subDevices`, `temCali`; `lastDeviceData` keys: `online`.
+
+## H7140
+
+Developer API type `devices.types.humidifier`; seen in #209.
+
+Capabilities:
+
+- `color_setting/colorRgb` — range 0–16777215
+- `event/lackWaterEvent`
+- `mode/nightlightScene` — options Forest=1, Ocean=2, Wetland=3, Leisurely=4, Sleep=5
+- `on_off/powerSwitch` — options on=1, off=0
+- `range/brightness` — range 1–100
+- `range/humidity` — range 40–80; unit.percent
+- `toggle/nightlightToggle` — options on=1, off=0
+- `work_mode/workMode` — field workMode options Manual=1, Custom=2, Auto=3; field modeValue options Manual=None, Custom=None, Auto=None
+
+State readback: `brightness`=10, `colorRgb`=9109759, `nightlightScene`=5, `nightlightToggle`=0, `online`=false, `powerSwitch`=0, `workMode`={modeValue,workMode}; returns `""` for `humidity`.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top) plus `mcuHardVersion`, `mcuSoftVersion`, `waterShortageOnOff`; `lastDeviceData` keys: `online`.
 
 ## H7141
 
@@ -1742,7 +2382,7 @@ Capabilities:
 
 State readback: `online`=false, `powerSwitch`=0, `workMode`={"workMode": 4, "modeValue": 3}; returns `""` for `humidity`.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `pactCode`, `pactType`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `pactCode`, `pactType`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `mcuHardVersion`, `mcuSoftVersion`, `waterShortageOnOff`.
 
 ## H7142
 
@@ -1757,7 +2397,7 @@ Capabilities:
 
 State readback: `online`=false, `powerSwitch`=0/1, `workMode`={"workMode": 3, "modeValue": 1}/{"workMode": 3, "modeValue": 5}/{"workMode": 3, "modeValue": 9}; returns `""` for `humidity`.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `pactCode`, `pactType`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `pactCode`, `pactType`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `mcuHardVersion`, `mcuSoftVersion`, `waterShortageOnOff`.
 
 ## H714E
 
@@ -1779,7 +2419,7 @@ Account (BFF) list: not seen (captures without account login, or not listed).
 
 ## H7152
 
-Developer API type `devices.types.dehumidifier`; seen in #114.
+Developer API type `devices.types.dehumidifier`; seen in #102, #114, #214.
 
 Capabilities:
 
@@ -1790,7 +2430,7 @@ Capabilities:
 
 State readback: `humidity`=50/60, `online`=true, `powerSwitch`=1, `workMode`={"workMode": 3, "modeValue": 0}.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `pactCode`, `pactType`, `subDevices`, `supportBleBroadV3`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `pactCode`, `pactType`, `subDevices`, `supportBleBroadV3`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `humCali`, `mcuHardVersion`, `mcuSoftVersion`, `temCali`, `thermometerUnit`, `waterFull`.
 
 AWS IoT push `state` keys: `onOff`, `result`, `sta`.
 
@@ -1812,7 +2452,13 @@ Account (BFF) list: not seen (captures without account login, or not listed).
 
 Not returned by the Developer API; seen in #181.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `pactCode`, `pactType`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
+Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `pactCode`, `pactType`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `mcuHardVersion`, `mcuSoftVersion`, `waterShortageOnOff`.
+
+## H7170
+
+Developer API presence unknown (seen only in the account list; the capture holds only the devices the integration created); seen in #105.
+
+Account (BFF) list: yes (census row only; the capture has no key dump for it).
 
 ## H7175
 
@@ -1840,9 +2486,14 @@ Capabilities:
 
 Account (BFF) list: not seen (captures without account login, or not listed).
 
+## H8057
+
+Not returned by the Developer API; seen in #306.
+
+Account (BFF) list: yes — `deviceSettings` carries the common Wi-Fi key set (see the note at the top) plus `spec`; `lastDeviceData` keys: `online`.
+
 ## H805C
 
-Not returned by the Developer API; seen in #114.
+Not returned by the Developer API; seen in #102, #114, #214.
 
-Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportBleBroadV3`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`.
-
+Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportBleBroadV3`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `sceneSeg`, `segmentCount`.
