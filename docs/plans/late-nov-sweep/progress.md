@@ -15,3 +15,6 @@ Ruling: parallel via worktrees for wave 1 despite unset baseRef; origin/HEAD == 
 ## 2026-11-24T04:08:45Z verify T-010 ok=true
 Ruling: defer; #241 reply asks for a second diagnostics (video mode off) instead of a ptReal frame, the off frame is not derivable from the one aa05 sample (T-010)
 ## 2026-11-24T04:08:45Z build T-006 start (attempt 1)
+## 2026-11-24T04:14:51Z verify T-004 ok=true
+Ruling: T-004 new-HA path checked by hand on HA 2026.11.2 (scratchpad venv): supports_via_device_id()=True, leak DeviceInfo dataclass carries via_device_id, via_device UNDEFINED; pytest cannot load there (phcc 0.13.375 pins 2026.10.4, httpx alias RuntimeError) (T-004)
+## 2026-11-24T04:15:03Z build T-008 start (attempt 1)

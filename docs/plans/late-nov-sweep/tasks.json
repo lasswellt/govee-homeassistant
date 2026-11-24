@@ -1,7 +1,7 @@
 {
   "$schema": "blitz-tasks/1.0",
   "plan": "late-nov-sweep",
-  "updated": "2026-11-24T04:08:45Z",
+  "updated": "2026-11-24T04:15:03Z",
   "tasks": [
     {
       "id": "T-001",
@@ -257,11 +257,46 @@
           "timeout": 300
         }
       ],
-      "passes": false,
-      "status": "in_progress",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-24T04:14:51Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "! grep -nE 'via_device=\\(|\\[\"via_device\"\\]' custom_components/govee/models/device.py custom_components/govee/entity.py",
+            "exit": 0,
+            "duration_ms": 10,
+            "tail": "",
+            "recorded_at": "2026-11-24T04:14:37Z"
+          },
+          {
+            "cmd": "grep -rq 'hub_link_info' custom_components/govee/entity.py && grep -rqE 'hub_link_info' custom_components/govee/models/device.py custom_components/govee/sensor.py custom_components/govee/binary_sensor.py custom_components/govee/event.py",
+            "exit": 0,
+            "duration_ms": 17,
+            "tail": "",
+            "recorded_at": "2026-11-24T04:14:37Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/mypy custom_components/govee",
+            "exit": 0,
+            "duration_ms": 3436,
+            "tail": "Success: no issues found in 59 source files",
+            "recorded_at": "2026-11-24T04:14:41Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_cov_binary_sensor_event.py tests/test_cov_sensor.py tests/test_thermometer.py tests/test_cov_models.py tests/test_cov_button_entity.py tests/test_registry.py",
+            "exit": 0,
+            "duration_ms": 9652,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 24%]\n........................................................................ [ 49%]\n........................................................................ [ 74%]\n........................................................................ [ 99%]\n.                                                                        [100%]\n289 passed in 3.96s",
+            "recorded_at": "2026-11-24T04:14:51Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "Call sites: models/device.py:1606 (leak_sensor_device_info, used by sensor/binary_sensor/event; it has no hass today, so either pass hass in or apply the helper at the three platform call sites) and entity.py:69. models/ must stay I/O-free and must not import registry at module level if that creates a cycle. Hubs are already registered before children (sensor.py:226-227, binary_sensor.py:135, event.py:40). Update the tests that assert via_device (test_cov_binary_sensor_event.py:363,398,516; test_cov_sensor.py:635,658,702; test_thermometer.py:592-598; test_cov_models.py:313; test_cov_button_entity.py:179,183) and the stale comments (coordinator.py:660,3105,3146; entity.py:66; diagnostics.py:614). More than 3 files because the same assertion lives in five test files; one behaviour. Commit subject references (#305)."
     },
@@ -444,7 +479,7 @@
         }
       ],
       "passes": false,
-      "status": "open",
+      "status": "in_progress",
       "blocked_reason": null,
       "attempts": 0,
       "last_verify": null,
