@@ -1,7 +1,7 @@
 {
   "$schema": "blitz-tasks/1.0",
   "plan": "late-nov-sweep",
-  "updated": "2026-11-24T04:19:05Z",
+  "updated": "2026-11-24T04:20:04Z",
   "tasks": [
     {
       "id": "T-001",
@@ -520,11 +520,53 @@
           "timeout": 300
         }
       ],
-      "passes": false,
-      "status": "in_progress",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-24T04:20:04Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "grep -qE 'param_id: int \\| None = None' custom_components/govee/models/commands.py",
+            "exit": 0,
+            "duration_ms": 8,
+            "tail": "",
+            "recorded_at": "2026-11-24T04:19:54Z"
+          },
+          {
+            "cmd": "grep -q '\"paramId\"' custom_components/govee/models/commands.py",
+            "exit": 0,
+            "duration_ms": 10,
+            "tail": "",
+            "recorded_at": "2026-11-24T04:19:54Z"
+          },
+          {
+            "cmd": "grep -q 'param_id' custom_components/govee/select.py && grep -q 'param_id' custom_components/govee/light.py",
+            "exit": 0,
+            "duration_ms": 14,
+            "tail": "",
+            "recorded_at": "2026-11-24T04:19:54Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/mypy custom_components/govee",
+            "exit": 0,
+            "duration_ms": 2439,
+            "tail": "Success: no issues found in 59 source files",
+            "recorded_at": "2026-11-24T04:19:56Z"
+          },
+          {
+            "cmd": "grep -rlq 'param_id' tests && .cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_cov_select.py tests/test_cov_light.py tests/test_light.py tests/test_cov_models.py",
+            "exit": 0,
+            "duration_ms": 7679,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 24%]\n........................................................................ [ 49%]\n........................................................................ [ 73%]\n........................................................................ [ 98%]\n.....                                                                    [100%]\n293 passed in 3.63s",
+            "recorded_at": "2026-11-24T04:20:04Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "Research Q3 + §#309: scene list returns {'name', 'value': {'paramId', 'id'}} (docs/govee-protocol-reference.md:557-563); SceneCommand.get_value (models/commands.py:177-197) sends {'id','name'} and the light ignores it (reporter verified by eye on H70B1 and H61A0). SceneCommand gains param_id; get_value returns {'paramId': p, 'id': i} when param_id is set, else today's payload (scene lists without paramId must keep working). Scene maps become name -> (id, param_id, name): select.py:310,382-385,424-425,505 and light.py:234,423-455. Reverse maps _scene_id_to_option (select.py:325) and _scene_id_to_effect (light.py:452) are keyed by str(id) and collapse -A/-B variants: key them by the same scene key T-009 stores. Tests: payload with and without paramId; two options sharing an id (H61A0 'Adventure Game-A'/'-B', id 399) send different paramIds and display distinctly. This changes every scene command on every device: keep the diff minimal. Commit subject references (#309)."
     },
