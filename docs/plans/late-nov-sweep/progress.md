@@ -27,3 +27,5 @@ Ruling: scope+select.py,light.py for T-009 to swap T-008 getattr(state, "active_
 ## 2026-11-24T04:21:46Z verify T-007 ok=true
 ## 2026-11-24T04:24:04Z verify T-009 ok=true (concern: added last_scene_param_id; out-of-scope 4-line test edit in test_cov_coordinator_events.py accepted as Tier 1)
 ## 2026-11-24T04:24:04Z build T-011 start (attempt 1)
+## 2026-11-24T04:30:41Z verify T-011 ok=true (4721 tests, 99.73%; brightness.py guard test added; six CI checks green on feb2e31; HA 2026.11.2 hand check recorded under T-004)
+Ruling: defer; T-012/T-013 wait for the v2026.11.1 release at 2026-11-25T02:00Z (T-012 verify[0]); resume with /blitz:build late-nov-sweep after it exists (T-012)

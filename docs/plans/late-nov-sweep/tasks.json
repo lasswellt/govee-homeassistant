@@ -1,7 +1,7 @@
 {
   "$schema": "blitz-tasks/1.0",
   "plan": "late-nov-sweep",
-  "updated": "2026-11-24T04:24:04Z",
+  "updated": "2026-11-24T04:30:25Z",
   "tasks": [
     {
       "id": "T-001",
@@ -758,11 +758,46 @@
           "timeout": 120
         }
       ],
-      "passes": false,
-      "status": "in_progress",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-24T04:30:25Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "set -o pipefail; .cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= --cov=custom_components.govee --cov-report=term --cov-fail-under=95 2>&1 | tail -3",
+            "exit": 0,
+            "duration_ms": 64657,
+            "tail": "\nRequired test coverage of 95% reached. Total coverage: 99.74%\n4722 passed in 60.53s (0:01:00)",
+            "recorded_at": "2026-11-24T04:30:21Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/flake8 custom_components tests && .cc-sessions/venv312/bin/black --check -q . && .cc-sessions/venv312/bin/mypy custom_components/govee",
+            "exit": 0,
+            "duration_ms": 2521,
+            "tail": "Success: no issues found in 59 source files",
+            "recorded_at": "2026-11-24T04:30:23Z"
+          },
+          {
+            "cmd": "grep -q 'download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093' .github/workflows/daily-release.yml",
+            "exit": 0,
+            "duration_ms": 13,
+            "tail": "",
+            "recorded_at": "2026-11-24T04:30:23Z"
+          },
+          {
+            "cmd": "git fetch -q origin && test \"$(git rev-parse HEAD)\" = \"$(git rev-parse origin/main)\" && test -z \"$(gh api repos/{owner}/{repo}/commits/$(git rev-parse HEAD)/check-runs --jq '.check_runs[]|select(.name|test(\"^(test \\\\(3\\\\.1[23]\\\\)|mypy|HACS Action|Home Assistant Validation|Check style formatting)$\"))|select(.conclusion!=\"success\")|.name')\"",
+            "exit": 0,
+            "duration_ms": 1192,
+            "tail": "",
+            "recorded_at": "2026-11-24T04:30:25Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "test-only: gate task, changes no product code. Do not bump manifest.json (the bump commit 64b9038 for 2026.11.1 is already on main; the workflow skips re-committing it). Check per-module coverage >=96 % and config_flow.py 100 % from the term report. The download-artifact v4 pin check proves the dependabot bumps did not land before the release. Must finish before 2026-11-25T02:00Z. If time allows, build an HA 2026.11 venv in the scratchpad and run tests/test_registry.py plus the leak-sensor tests there, since #305 only shows on new HA; record the result in progress.md either way. Maintainer asked for #309 in tonight's release (decision 2026-11-24), overriding the own-day default."
     },
