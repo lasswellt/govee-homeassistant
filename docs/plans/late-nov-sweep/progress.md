@@ -24,3 +24,4 @@ Ruling: T-004 new-HA path checked by hand on HA 2026.11.2 (scratchpad venv): sup
 ## 2026-11-24T04:20:04Z verify T-008 ok=true
 ## 2026-11-24T04:20:04Z build T-009 start (attempt 1)
 Ruling: scope+select.py,light.py for T-009 to swap T-008 getattr(state, "active_scene_param_id") for the attribute (T-009)
+## 2026-11-24T04:21:46Z verify T-007 ok=true
