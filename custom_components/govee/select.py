@@ -420,7 +420,7 @@ class GoveeSceneSelectEntity(_GoveeSceneListSelectBase):
         state = self.coordinator.get_state(self._device_id)
         if state and state.active_scene:
             # Look up option name from scene ID
-            option = self._option_for_scene(state.active_scene, getattr(state, "active_scene_param_id", None))
+            option = self._option_for_scene(state.active_scene, state.active_scene_param_id)
             if option:
                 return option
         return SCENE_NONE

@@ -710,6 +710,8 @@ class TestFetchDeviceStatePreservation:
         existing.last_color_temp_kelvin = 3000
         existing.last_scene_id = "7"
         existing.last_scene_name = "Sunset"
+        existing.active_scene_param_id = 1002
+        existing.last_scene_param_id = 1002
         fresh = GoveeDeviceState.create_empty(DEV)
         fresh.power_state = True
         fresh.color = RGBColor(0, 0, 0)
@@ -725,6 +727,8 @@ class TestFetchDeviceStatePreservation:
         assert result.last_color_temp_kelvin == 3000
         assert result.last_scene_id == "7"
         assert result.last_scene_name == "Sunset"
+        assert result.active_scene_param_id == 1002
+        assert result.last_scene_param_id == 1002
 
     @pytest.mark.asyncio
     async def test_heater_sensor_battery_and_event_fields_survive_an_empty_poll(self):
