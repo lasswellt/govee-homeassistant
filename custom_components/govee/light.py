@@ -347,7 +347,7 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
         if not state.active_scene:
             return None
         # Look up display name from scene ID mapping
-        effect_name = self._effect_for_scene(state.active_scene, getattr(state, "active_scene_param_id", None))
+        effect_name = self._effect_for_scene(state.active_scene, state.active_scene_param_id)
         if effect_name:
             return effect_name
         # Fall back to stored scene name if ID not in mapping

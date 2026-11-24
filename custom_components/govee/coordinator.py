@@ -5199,6 +5199,8 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                     state.active_scene = existing_state.active_scene
                 if existing_state.active_scene_name:
                     state.active_scene_name = existing_state.active_scene_name
+                if existing_state.active_scene_param_id is not None:
+                    state.active_scene_param_id = existing_state.active_scene_param_id
                 # DIY scenes also persist across power cycles
                 if existing_state.active_diy_scene:
                     state.active_diy_scene = existing_state.active_diy_scene
@@ -5224,6 +5226,8 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                     state.last_scene_id = existing_state.last_scene_id
                 if existing_state.last_scene_name is not None:
                     state.last_scene_name = existing_state.last_scene_name
+                if existing_state.last_scene_param_id is not None:
+                    state.last_scene_param_id = existing_state.last_scene_param_id
 
                 # Heater state: keep the last known value only when the poll
                 # omits it (the API doesn't reliably return these); a polled
@@ -6397,7 +6401,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             if report.mode in ("tv", "music", "scene", "diy", "color_temp"):
                 updates.update(color=None, color_temp_kelvin=None)
             if report.mode not in ("scene", "diy"):
-                updates.update(active_scene=None, active_scene_name=None, active_diy_scene=None)
+                updates.update(
+                    active_scene=None, active_scene_name=None, active_scene_param_id=None, active_diy_scene=None
+                )
             if report.mode == "music":
                 api_mode = (
                     {0: 5, 1: 6, 2: 4, 3: 3}.get(report.music_effect) if report.music_effect is not None else None
@@ -6767,9 +6773,11 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
         # Try restoring last active scene
         if last_scene_id and last_scene_name:
+            last_state = self._states.get(device_id)
             command = SceneCommand(
                 scene_id=int(last_scene_id),
                 scene_name=last_scene_name,
+                param_id=last_state.last_scene_param_id if last_state else None,
             )
             success = await self.async_control_device(device_id, command)
             if success:
@@ -7150,7 +7158,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         elif isinstance(command, ColorTempCommand):
             state.apply_optimistic_color_temp(command.kelvin)
         elif isinstance(command, SceneCommand):
-            state.apply_optimistic_scene(str(command.scene_id), command.scene_name)
+            state.apply_optimistic_scene(str(command.scene_id), command.scene_name, command.param_id)
         elif isinstance(command, DIYSceneCommand):
             state.apply_optimistic_diy_scene(str(command.scene_id))
         elif isinstance(command, ModeCommand):
@@ -7344,6 +7352,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         if state:
             state.active_scene = None
             state.active_scene_name = None
+            state.active_scene_param_id = None
             state.source = "optimistic"
 
     def clear_diy_scene(self, device_id: str) -> None:

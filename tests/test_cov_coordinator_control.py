@@ -1071,6 +1071,18 @@ class TestRestDisableMusicMode:
         assert state.active_scene == "7"
 
     @pytest.mark.asyncio
+    async def test_restore_sends_the_remembered_param_id(self):
+        coord = _coordinator()
+        state = _add(coord, _device())
+        state.last_scene_param_id = 1002
+        state.music_mode_enabled = True
+
+        assert await coord._rest_disable_music_mode(DEV, "7", "Sunset") is True
+
+        assert _sent(coord) == [SceneCommand(scene_id=7, scene_name="Sunset", param_id=1002)]
+        assert state.active_scene_param_id == 1002
+
+    @pytest.mark.asyncio
     async def test_failed_scene_restore_falls_back_to_brightness(self):
         coord = _coordinator()
         state = _add(coord, _device())
@@ -1515,6 +1527,15 @@ class TestApplyOptimisticUpdate:
         assert state.active_scene == "7"
         assert state.active_scene_name == "Sunset"
         assert state.last_color == RGBColor(255, 0, 0)
+        assert state.active_scene_param_id is None
+
+        coord._apply_optimistic_update(DEV, SceneCommand(scene_id=399, scene_name="Game-B", param_id=1002))
+        assert state.active_scene_param_id == 1002
+        assert state.last_scene_param_id == 1002
+
+        coord._apply_optimistic_update(DEV, ColorCommand(color=RGBColor(1, 2, 3)))
+        assert state.active_scene_param_id is None
+        assert state.last_scene_param_id == 1002
 
         coord._apply_optimistic_update(DEV, DIYSceneCommand(scene_id=9, scene_name="Waves"))
         assert state.active_diy_scene == "9"
