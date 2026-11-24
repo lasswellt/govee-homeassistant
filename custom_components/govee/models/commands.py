@@ -179,6 +179,7 @@ class SceneCommand(DeviceCommand):
 
     scene_id: int
     scene_name: str = ""
+    param_id: int | None = None
 
     @property
     def capability_type(self) -> str:
@@ -189,6 +190,8 @@ class SceneCommand(DeviceCommand):
         return INSTANCE_SCENE
 
     def get_value(self) -> dict[str, Any]:
+        if self.param_id is not None:
+            return {"paramId": self.param_id, "id": self.scene_id}
         return {
             "id": self.scene_id,
             "name": self.scene_name,

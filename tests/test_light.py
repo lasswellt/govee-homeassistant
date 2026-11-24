@@ -61,6 +61,12 @@ def mock_coordinator_no_scenes(mock_light_device, mock_device_state):
     return coordinator
 
 
+_VARIANT_SCENES = [
+    {"name": "Adventure Game-A", "value": {"paramId": 1001, "id": 399}},
+    {"name": "Adventure Game-B", "value": {"paramId": 1002, "id": 399}},
+]
+
+
 class TestLightEffectSupport:
     """Test effect support on the light entity."""
 
@@ -96,9 +102,9 @@ class TestLightEffectSupport:
         entity._build_effect_mapping(mock_scenes)
 
         assert entity.effect_list == ["Sunrise", "Sunset", "Party", "Movie"]
-        assert entity._effect_to_scene["Sunrise"] == (1, "Sunrise")
-        assert entity._scene_id_to_effect["1"] == "Sunrise"
-        assert entity._scene_id_to_effect["4"] == "Movie"
+        assert entity._effect_to_scene["Sunrise"] == (1, None, "Sunrise")
+        assert entity._scene_id_to_effect[("1", None)] == "Sunrise"
+        assert entity._scene_id_to_effect[("4", None)] == "Movie"
 
     def test_build_effect_mapping_handles_duplicates(self, mock_coordinator, mock_light_device):
         """Test duplicate scene names get deduped with counter."""
@@ -111,9 +117,9 @@ class TestLightEffectSupport:
         entity._build_effect_mapping(scenes)
 
         assert entity.effect_list == ["Rainbow", "Rainbow (1)", "Rainbow (2)"]
-        assert entity._effect_to_scene["Rainbow"] == (1, "Rainbow")
-        assert entity._effect_to_scene["Rainbow (1)"] == (2, "Rainbow")
-        assert entity._effect_to_scene["Rainbow (2)"] == (3, "Rainbow")
+        assert entity._effect_to_scene["Rainbow"] == (1, None, "Rainbow")
+        assert entity._effect_to_scene["Rainbow (1)"] == (2, None, "Rainbow")
+        assert entity._effect_to_scene["Rainbow (2)"] == (3, None, "Rainbow")
 
     def test_effect_returns_active_scene_name(
         self, mock_coordinator, mock_light_device, mock_scenes, mock_device_state
@@ -184,6 +190,31 @@ class TestLightEffectSupport:
         assert isinstance(cmd, SceneCommand)
         assert cmd.scene_id == 1
         assert cmd.scene_name == "Sunrise"
+
+    @pytest.mark.asyncio
+    async def test_variant_effects_sharing_an_id_send_their_own_param_id(self, mock_coordinator, mock_light_device):
+        entity = GoveeLightEntity(mock_coordinator, mock_light_device, enable_scenes=True)
+        entity._build_effect_mapping(_VARIANT_SCENES)
+
+        assert entity.effect_list == ["Adventure Game-A", "Adventure Game-B"]
+        await entity.async_turn_on(effect="Adventure Game-A")
+        await entity.async_turn_on(effect="Adventure Game-B")
+
+        sent = [c[0][1] for c in mock_coordinator.async_control_device.call_args_list]
+        assert sent == [
+            SceneCommand(scene_id=399, scene_name="Adventure Game-A", param_id=1001),
+            SceneCommand(scene_id=399, scene_name="Adventure Game-B", param_id=1002),
+        ]
+
+    def test_effect_picks_the_variant_by_param_id_else_the_first(self, mock_coordinator, mock_light_device):
+        entity = GoveeLightEntity(mock_coordinator, mock_light_device, enable_scenes=True)
+        entity._build_effect_mapping(_VARIANT_SCENES)
+        state = MagicMock(active_diy_scene=None, active_scene="399", active_scene_param_id=1002)
+
+        with patch.object(type(entity), "device_state", new_callable=lambda: property(lambda self: state)):
+            assert entity.effect == "Adventure Game-B"
+            state.active_scene_param_id = None
+            assert entity.effect == "Adventure Game-A"
 
     @pytest.mark.asyncio
     async def test_turn_on_with_unknown_effect_raises(self, mock_coordinator, mock_light_device, mock_scenes):
@@ -512,7 +543,7 @@ class TestLightDIYEffects:
             f"{DIY_EFFECT_PREFIX}Glow (1)",
             f"{DIY_EFFECT_PREFIX}Glow (2)",
         ]
-        assert entity._effect_to_scene[f"{DIY_EFFECT_PREFIX}Glow"] == (1, f"{DIY_EFFECT_PREFIX}Glow")
+        assert entity._effect_to_scene[f"{DIY_EFFECT_PREFIX}Glow"] == (1, None, f"{DIY_EFFECT_PREFIX}Glow")
         assert entity._effect_to_diy_scene[f"{DIY_EFFECT_PREFIX}Glow (1)"] == (201, "Glow")
         assert entity._effect_to_diy_scene[f"{DIY_EFFECT_PREFIX}Glow (2)"] == (202, "Glow")
 
