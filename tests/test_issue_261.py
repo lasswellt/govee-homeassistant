@@ -21,14 +21,20 @@ _RED = RGBColor(255, 0, 0)
 def test_h1a42_is_ptreal_only_for_segments() -> None:
     assert "H1A42" in PTREAL_SEGMENT_SKUS
     assert "H1A42" not in PTREAL_MAIN_PANEL_BIT
-    assert "H1A42" not in SKU_SEGMENT_OVERRIDES
+    assert SKU_SEGMENT_OVERRIDES["H1A42"] == 5
 
 
 def test_reporter_frames_match_builder() -> None:
     first = [0x33, 0x05, 0x15, 0x01, 0x00, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00]
     all_15 = first[:12] + [0xFF, 0x7F, 0x00]
+    all_5 = first[:12] + [0x1F, 0x00, 0x00]
     assert build_segment_color_ptreal(RGBColor(0, 255, 0), 0x000001) == first
     assert build_segment_color_ptreal(RGBColor(0, 255, 0), 0x7FFF) == all_15
+    assert build_segment_color_ptreal(RGBColor(0, 255, 0), 0x1F) == all_5
+
+
+def test_segment_count_is_five() -> None:
+    assert _device(sku="H1A42", caps=(_POWER, _RGB, _SEGMENTS_15)).segment_count == 5
 
 
 @pytest.mark.asyncio
@@ -36,11 +42,11 @@ async def test_routes_over_ptreal_with_passthrough() -> None:
     coord = _coordinator()
     _add(coord, _device(sku="H1A42", caps=(_POWER, _RGB, _SEGMENTS_15)))
     coord._ble_manager = _ble_manager()
-    command = SegmentColorCommand(segment_indices=tuple(range(15)), color=_RED)
+    command = SegmentColorCommand(segment_indices=tuple(range(5)), color=_RED)
 
     assert await coord.async_control_device(DEV, command) is True
 
-    expected = encode_packet_base64(build_packet(build_segment_color_ptreal(_RED, 0x7FFF)))
+    expected = encode_packet_base64(build_packet(build_segment_color_ptreal(_RED, 0x1F)))
     coord._ble_manager.async_send_ble_packet.assert_awaited_once_with(DEV, "H1A42", expected)
     coord._api_client.control_device.assert_not_awaited()
 
