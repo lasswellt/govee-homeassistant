@@ -27,6 +27,7 @@ from custom_components.govee.api.exceptions import (
     GoveeRateLimitError,
 )
 from custom_components.govee.const import CONF_EMAIL, DOMAIN, KEY_IOT_CREDENTIALS, KEY_IOT_LOGIN_FAILED
+from custom_components.govee.brightness import normalize_reported_brightness
 from custom_components.govee.coordinator import GoveeCoordinator
 from custom_components.govee.models import GoveeCapability, GoveeDevice, GoveeDeviceState, RGBColor
 from custom_components.govee.models.device import (
@@ -921,3 +922,84 @@ class TestShutdown:
 
         bff_task.cancel.assert_not_called()
         assert coord._bff_poll_task is bff_task
+
+
+_H6054_VECTORS = [(1, 20), (5, 30), (11, 44), (20, 65), (30, 89), (50, 136), (70, 184), (90, 231), (100, 254)]
+
+
+def _brightness_light(sku: str) -> GoveeDevice:
+    cap = GoveeCapability(
+        type="devices.capabilities.range",
+        instance="brightness",
+        parameters={"range": {"min": 1, "max": 100}},
+    )
+    return _light(sku=sku, caps=(_POWER, cap))
+
+
+class TestNormalizeReportedBrightness:
+    @pytest.mark.parametrize(("native", "reported"), _H6054_VECTORS)
+    def test_h6054_vectors_round_trip(self, native: int, reported: int):
+        assert normalize_reported_brightness("H6054", reported, (1, 100)) == native
+
+    def test_clamps_outside_the_reported_scale(self):
+        assert normalize_reported_brightness("H6054", 5, (1, 100)) == 1
+        assert normalize_reported_brightness("H6054", 300, (1, 100)) == 100
+
+    def test_other_sku_unchanged(self):
+        assert normalize_reported_brightness("H6072", 136, (1, 100)) == 136
+
+    def test_sku_is_case_insensitive(self):
+        assert normalize_reported_brightness("h6054", 136, (1, 100)) == 50
+
+
+class TestReportedBrightnessInState:
+    @pytest.mark.asyncio
+    async def test_rest_poll_maps_h6054(self):
+        coord = _coordinator()
+        _add(coord, _brightness_light("H6054"))
+        fresh = GoveeDeviceState.create_empty(DEV)
+        fresh.brightness = 136
+        coord._api_client.get_device_state = AsyncMock(return_value=fresh)
+
+        result = await coord._fetch_device_state(DEV, coord._devices[DEV])
+
+        assert result.brightness == 50
+
+    @pytest.mark.asyncio
+    async def test_rest_poll_leaves_other_sku(self):
+        coord = _coordinator()
+        _add(coord, _brightness_light("H6072"))
+        fresh = GoveeDeviceState.create_empty(DEV)
+        fresh.brightness = 136
+        coord._api_client.get_device_state = AsyncMock(return_value=fresh)
+
+        result = await coord._fetch_device_state(DEV, coord._devices[DEV])
+
+        assert result.brightness == 136
+
+    def test_mqtt_push_maps_h6054(self):
+        coord = _coordinator()
+        coord._devices[DEV] = _brightness_light("H6054")
+
+        coord._on_mqtt_state_update(DEV, {"onOff": 1, "brightness": 231})
+
+        assert coord._states[DEV].brightness == 90
+
+    def test_mqtt_push_without_brightness_is_not_remapped(self):
+        coord = _coordinator()
+        coord._devices[DEV] = _brightness_light("H6054")
+        state = GoveeDeviceState.create_empty(DEV)
+        state.brightness = 50
+        coord._states[DEV] = state
+
+        coord._on_mqtt_state_update(DEV, {"onOff": 1})
+
+        assert coord._states[DEV].brightness == 50
+
+    def test_mqtt_push_leaves_other_sku(self):
+        coord = _coordinator()
+        coord._devices[DEV] = _brightness_light("H6072")
+
+        coord._on_mqtt_state_update(DEV, {"onOff": 1, "brightness": 136})
+
+        assert coord._states[DEV].brightness == 136

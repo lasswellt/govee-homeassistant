@@ -127,6 +127,12 @@ MQTT_COLOR_SKUS: Final = frozenset({"H7073"})
 # and every other LAN command still go over LAN.
 LAN_POWER_OFF_EXCLUDED_SKUS: Final = frozenset({"H60A6"})
 
+# SKUs whose reported brightness (REST poll and AWS IoT push) is on a raw
+# (low, high) scale instead of the 1-100 the API advertises: the H6054 reports
+# 20-254 (set 50 -> reported 136, set 100 -> 254), so the coordinator maps the
+# report back onto the device range (issue #307).
+BRIGHTNESS_REPORT_SCALE_SKUS: Final[dict[str, tuple[int, int]]] = {"H6054": (20, 254)}
+
 FAHRENHEIT_REPORTING_SKUS: Final = frozenset(
     {
         "H5179",

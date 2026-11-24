@@ -156,7 +156,7 @@ class TestPushChangeDetection:
         coord = GoveeCoordinator.__new__(GoveeCoordinator)
         lamp = GoveeDevice(
             device_id=PLUG,
-            sku="H6054",
+            sku="H6072",
             name="Lamp",
             device_type="devices.types.light",
             capabilities=(GoveeCapability(type=CAPABILITY_ON_OFF, instance=INSTANCE_POWER, parameters={}),),

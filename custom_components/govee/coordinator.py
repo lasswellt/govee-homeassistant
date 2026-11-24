@@ -78,6 +78,7 @@ from .api.lan_client import (
     correlate_scan,
 )
 from .api.lan_control import command_to_lan, lan_brightness_to_device
+from .brightness import normalize_reported_brightness
 from .const import (
     ACCOUNT_LOGIN_RETRY_INTERVAL,
     ACCOUNT_LOGIN_RETRY_MAX_INTERVAL,
@@ -4115,6 +4116,8 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
 
         # Update state from MQTT data (also flips online back True — issue #68)
         state.update_from_mqtt(state_data, ceiling_fan=ceiling_fan)
+        if device is not None and "brightness" in state_data:
+            state.brightness = normalize_reported_brightness(device.sku, state.brightness, device.brightness_range)
         if ceiling_fan:
             state.update_ceiling_fan_from_frames(self._op_frames_from(state_data))
         # Ceiling Light Pro zones (H1252) report main panel / ring on-off only
@@ -5146,6 +5149,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         try:
             state = await self._api_client.get_device_state(device_id, device.sku)
             self._record_transport_success(device_id, "cloud_api")
+            if state.online:
+                # Fresh from the poll, so never mapped twice; the optimistic
+                # grace restore below overwrites it with an already-1-100 value.
+                state.brightness = normalize_reported_brightness(device.sku, state.brightness, device.brightness_range)
             if device.mqtt_outlet_count:
                 self._apply_outlet_mask(device, state, self._raw_power_switch_value(device_id))
 
