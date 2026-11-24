@@ -19,7 +19,7 @@ brief: Thank jhemak for confirming on their H16B0 that the Music Mode switch now
 
 ## #285
 close: no
-brief: Thank Irmark40 for the details (HA 2026.10.4, integration 2026.10.2, Lightning-A and Lightning-B listed separately, both sent with scene id 136 and both showing Lightning-C on the H619E). Ask them to update to the latest release and attach the H619E diagnostics file they offered (Settings > Devices & services > Govee > the H619E > Download diagnostics). Explain that Govee's scene list carries a second identifier (paramId) next to the id, which we currently don't send; the diagnostics will show whether Lightning-A, B and C differ only in that value, which tells us whether sending it fixes this. Don't promise a fix yet.
+brief: Thank Irmark40 for the details (HA 2026.10.4, integration 2026.10.2, Lightning-A and Lightning-B listed separately, both sent with scene id 136 and both showing Lightning-C on the H619E). Say the cause is confirmed and tracked as #309: Govee's scene list carries a paramId next to the scene id, and the integration did not send it, so scenes that share an id looked identical. The integration now sends the paramId and this is fixed in the release; cite the released version. Ask Irmark40 to update to that release and say whether Lightning-A, B and C now look different on the H619E. No diagnostics are needed. Keep the issue open until they confirm.
 
 ## #296
 close: no
@@ -35,4 +35,12 @@ brief: Thank khilzinger. Ask for the integration and Home Assistant versions, wh
 
 ## #299
 close: no
-brief: Thank khilzinger. Ask which device model (SKU) this is and for a diagnostics download of it. Explain that for most models Govee's Platform API only exposes DreamView as an on/off toggle, with no way to choose a scene; a few models (for example some TV backlights) also expose a movie-mode list, and if their device is one of them we can add a select for it.
+brief: Two parts. For khilzinger: ask which device model (SKU) this is and for a diagnostics download of it (Settings > Devices & services > Govee > the device > Download diagnostics). Explain that for most models Govee's Platform API only exposes DreamView as an on/off toggle, with no way to choose a scene; a few models (for example some TV backlights) also expose a movie-mode list, and if their device is one of them we can add a select for it. For fofomtl: Govee's API reports only powerSwitch for SameModeGroup (group) devices, so brightness and colour cannot be sent to a group through it; groups are on/off only. Say the README described group lights as supporting brightness and colour, which was wrong, and that the README was corrected. Suggest a Home Assistant light group of the member lights if they need brightness or colour across several lights.
+
+## #306
+close: no
+brief: Thank the reporter for the diagnostics. They show the Govee account lists 15 devices but the Developer API key returns only 2 (H619A and H6871), so the integration can only create entities for those two. Ask whether the API key was created in the same Govee account as the email used for the integration login, and whether the missing devices are shared to that account from another Govee account (shared devices don't appear in the Developer API of the account they are shared to). Also mention that govee2mqtt, if it is running on the same host, holds LAN port 4002, which stops LAN discovery in this integration; the diagnostics show an address-in-use error for LAN discovery. Keep the issue open until we know which of these it is.
+
+## #241
+close: no
+brief: Thank Migz93 for the diagnostics. Explain that Govee's Platform API exposes no DreamView or video capability for the H6099, so there is no switch we can build from it, but the diagnostics taken with Video Mode on show the device reporting its own mode over the account channel, which suggests state may be readable. We can't yet tell what a command to turn video mode off looks like, so ask for one more diagnostics download (Settings > Devices & services > Govee > the H6099 > Download diagnostics) taken with Video Mode switched off in the Govee app, so we can compare the two reports and work out the frame. Keep the issue open as a feature request.

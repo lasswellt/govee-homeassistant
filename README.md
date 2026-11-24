@@ -155,7 +155,7 @@ After setup, open **Settings** > **Devices & services** > **Govee Cloud Integrat
 | **Leak sensor polling interval (seconds)** | `120` | How often standalone RF water detectors (e.g. H5054) are checked for a leak (60–3600). These have no push channel, so a leak surfaces with up to this much delay — lower reacts faster but makes more account API calls. Needs account login; ignored if you have no such detectors. |
 | **MQTT status re-query interval (seconds)** | `300` | How often every device with a known AWS IoT topic is asked for its current status (60–3600, or `0` to turn it off). Devices mostly answer queries rather than push on their own — this mirrors what the Govee app does while its device list is on screen — so it is what keeps push‑only readings such as the H7152's pump state and temperature fresh without the app open. Queries go out one device per second; if AWS IoT closes the session right after the same device's query twice, that device is left out of the sweep until the next reload (a warning names it) so the other devices and real‑time updates keep working. Needs account login; ignored when MQTT is unavailable. |
 | **Temperature unit from Govee API (thermometers)** | `Auto` | Govee returns thermometer values in the device's app unit with **no** unit metadata. **Auto** (default) reads your account's own °C/°F preference where Govee exposes it, falls back to converting the models known to report Fahrenheit, and trusts the rest; pick **Fahrenheit** if a reading still looks ~1.8× too high (e.g. 74 instead of 23), or **Celsius** to never convert. |
-| **Enable group devices** | `off` | Surface the device groups you created in the Govee app as single light entities (power/brightness/color; state is best‑effort). |
+| **Enable group devices** | `off` | Surface the device groups you created in the Govee app as single light entities (on/off only; state is best‑effort). |
 | **Enable scene selector** | `on` | Create a per‑device dropdown to activate Govee scenes. |
 | **Enable DIY scene selector** | `on` | Create a per‑device dropdown for your DIY scenes. |
 | **Expose per‑device transport connectivity sensors** | `off` | Add diagnostic binary sensors showing each device's MQTT/BLE/LAN reachability. |
@@ -276,7 +276,7 @@ data:
 
 ## Device groups
 
-Enable **group devices** in options to surface Govee‑app groups as single light entities. A command to a group is sent once and fanned out to all members by Govee's cloud, which syncs better than grouping the same lights with Home Assistant helpers (those fire separate commands that arrive at slightly different times). Group state is best‑effort (groups can't be polled), and group lights support power/brightness/color only.
+Enable **group devices** in options to surface Govee‑app groups as single light entities. A command to a group is sent once and fanned out to all members by Govee's cloud, which syncs better than grouping the same lights with Home Assistant helpers (those fire separate commands that arrive at slightly different times). Group state is best‑effort (groups can't be polled), and group lights support on/off only, because Govee's API reports only `powerSwitch` for groups.
 
 ---
 
