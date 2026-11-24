@@ -1,7 +1,7 @@
 {
   "$schema": "blitz-tasks/1.0",
   "plan": "late-nov-sweep",
-  "updated": "2026-11-24T03:59:02Z",
+  "updated": "2026-11-24T04:05:18Z",
   "tasks": [
     {
       "id": "T-001",
@@ -30,11 +30,46 @@
           "timeout": 120
         }
       ],
-      "passes": false,
-      "status": "in_progress",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-24T04:04:49Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "! grep -q 'tox-gh-actions' .github/workflows/tox.yaml",
+            "exit": 0,
+            "duration_ms": 12,
+            "tail": "",
+            "recorded_at": "2026-11-24T04:04:48Z"
+          },
+          {
+            "cmd": "grep -qE 'tox -e' .github/workflows/tox.yaml",
+            "exit": 0,
+            "duration_ms": 10,
+            "tail": "",
+            "recorded_at": "2026-11-24T04:04:48Z"
+          },
+          {
+            "cmd": "! grep -q '^\\[gh-actions\\]' tox.ini",
+            "exit": 0,
+            "duration_ms": 11,
+            "tail": "",
+            "recorded_at": "2026-11-24T04:04:48Z"
+          },
+          {
+            "cmd": "git fetch -q origin && test \"$(gh run list --workflow tox.yaml --branch main --limit 1 --json conclusion --jq '.[0].conclusion')\" = success",
+            "exit": 0,
+            "duration_ms": 1065,
+            "tail": "",
+            "recorded_at": "2026-11-24T04:04:49Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "Research Q1: tox-gh-actions 3.5.0 broke on tox 4.67.14 and blocked six nightly releases; 3.5.1 fixed it and the re-run on 64b9038 is green. Remove the plugin: pip install tox; run tox -e py312 / py313 from matrix.python-version with the dot stripped. Keep the 'keep in sync with envlist' comment. Push to main and wait for Tests green on both lanes (gh run list --commit <full SHA>; gh needs the sandbox disabled). Commit subject: ci: ..."
     },
@@ -69,7 +104,7 @@
         }
       ],
       "passes": false,
-      "status": "open",
+      "status": "in_progress",
       "blocked_reason": null,
       "attempts": 0,
       "last_verify": null,
@@ -107,11 +142,53 @@
           "timeout": 300
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-24T04:04:42Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "grep -qE '^def hub_link_info' custom_components/govee/registry.py",
+            "exit": 0,
+            "duration_ms": 13,
+            "tail": "",
+            "recorded_at": "2026-11-24T04:04:35Z"
+          },
+          {
+            "cmd": "grep -q 'via_device_id' custom_components/govee/registry.py",
+            "exit": 0,
+            "duration_ms": 17,
+            "tail": "",
+            "recorded_at": "2026-11-24T04:04:35Z"
+          },
+          {
+            "cmd": "! grep -nE 'TODO|NotImplemented' custom_components/govee/registry.py",
+            "exit": 0,
+            "duration_ms": 21,
+            "tail": "",
+            "recorded_at": "2026-11-24T04:04:35Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/mypy custom_components/govee/registry.py",
+            "exit": 0,
+            "duration_ms": 786,
+            "tail": "Success: no issues found in 1 source file",
+            "recorded_at": "2026-11-24T04:04:36Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_registry.py",
+            "exit": 0,
+            "duration_ms": 5878,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n.........                                                                [100%]\n9 passed in 0.28s",
+            "recorded_at": "2026-11-24T04:04:42Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "Research Q2 + §#305: HA 2026.11.2 device_registry.py deprecates via_device (removal 2027.8.0) for via_device_id; a user reports RuntimeError and unavailable H5058 sensors. Add hub_link_info(hass, hub_identifier) -> dict[str, Any]: when this HA's DeviceInfo accepts via_device_id, look the hub up with get_registry_device and return {'via_device_id': hub.id} (empty dict when the hub is not registered yet); on older HA (hacs.json minimum 2024.11.0; CI lane is 2025.1.4) return {'via_device': hub_identifier} so behaviour there is unchanged. FIRST read how DeviceInfo is defined in HA 2026.11.2 (raw file at github.com/home-assistant/core/blob/2026.11.2/homeassistant/helpers/device_registry.py, class DeviceInfo ~line 290) and pick a feature check that is true there and false on 2025.1.4; do not guess __annotations__. Tests cover both branches by monkeypatching the feature check, plus hub-missing."
     },
