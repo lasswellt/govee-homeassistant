@@ -46,10 +46,20 @@ def _music_params(rgb_required: bool = True) -> dict:
     return {
         "dataType": "STRUCT",
         "fields": [
-            {"fieldName": "musicMode", "dataType": "ENUM", "options": [{"name": "Rhythm", "value": 0}], "required": True},
+            {
+                "fieldName": "musicMode",
+                "dataType": "ENUM",
+                "options": [{"name": "Rhythm", "value": 0}],
+                "required": True,
+            },
             {"fieldName": "sensitivity", "dataType": "INTEGER", "range": {"min": 0, "max": 100}, "required": True},
             {"fieldName": "autoColor", "dataType": "INTEGER", "range": {"min": 0, "max": 1}, "required": True},
-            {"fieldName": "rgb", "dataType": "INTEGER", "range": {"min": 0, "max": 16777215}, "required": rgb_required},
+            {
+                "fieldName": "rgb",
+                "dataType": "INTEGER",
+                "range": {"min": 0, "max": 16777215},
+                "required": rgb_required,
+            },
         ],
     }
 
@@ -135,7 +145,9 @@ class TestH2800MusicMode:
         assert value == {"musicMode": 0, "sensitivity": 50, "autoColor": 1, "rgb": 0xFFFFFF}
 
     def test_required_rgb_keeps_a_given_color(self):
-        value = MusicModeCommand(music_mode=0, sensitivity=50, auto_color=0, rgb=0x00FF00, rgb_required=True).get_value()
+        value = MusicModeCommand(
+            music_mode=0, sensitivity=50, auto_color=0, rgb=0x00FF00, rgb_required=True
+        ).get_value()
         assert value["rgb"] == 0x00FF00
 
     def test_default_behavior_unchanged(self):
