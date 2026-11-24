@@ -304,7 +304,7 @@ class TestLeakSensorDeviceInfo:
         )
 
     def test_links_the_sensor_to_its_hub(self):
-        info = leak_sensor_device_info(self._sensor(), "govee")
+        info = leak_sensor_device_info(self._sensor(), "govee", {"via_device": ("govee", "09:C2:60:74:F4:64:AB:FA")})
         assert info == {
             "identifiers": {("govee", "01:32:7A:C4:06:03:0D:0C")},
             "name": "Kitchen sink",
@@ -313,12 +313,22 @@ class TestLeakSensorDeviceInfo:
             "via_device": ("govee", "09:C2:60:74:F4:64:AB:FA"),
         }
 
+    def test_links_by_registry_id_on_new_ha(self):
+        info = leak_sensor_device_info(self._sensor(), "govee", {"via_device_id": "hub-id"})
+        assert info["via_device_id"] == "hub-id"
+        assert "via_device" not in info
+
+    def test_no_link_when_the_hub_is_unregistered(self):
+        info = leak_sensor_device_info(self._sensor(), "govee", {})
+        assert "via_device" not in info
+        assert "via_device_id" not in info
+
     def test_versions_are_only_present_when_known(self):
-        info = leak_sensor_device_info(self._sensor(hw_version="1.00.01", sw_version="2.03.00"), "govee")
+        info = leak_sensor_device_info(self._sensor(hw_version="1.00.01", sw_version="2.03.00"), "govee", {})
         assert info["hw_version"] == "1.00.01"
         assert info["sw_version"] == "2.03.00"
 
-        only_sw = leak_sensor_device_info(self._sensor(sw_version="2.03.00"), "govee")
+        only_sw = leak_sensor_device_info(self._sensor(sw_version="2.03.00"), "govee", {})
         assert "hw_version" not in only_sw
         assert only_sw["sw_version"] == "2.03.00"
 

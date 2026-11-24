@@ -657,8 +657,8 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         # list we can't read.
         self._display_fahrenheit: dict[str, bool] = {}
         # Gateway hubs (e.g. H5044) bridging BFF thermo-hygrometers, keyed by
-        # hub_device_id -> {"sku"}. Registered as HA devices so via_device on
-        # the thermo entities resolves (#86).
+        # hub_device_id -> {"sku"}. Registered as HA devices so the hub link
+        # (``hub_link_info``) on the thermo entities resolves (#86).
         self._bff_thermo_hubs: dict[str, dict[str, str]] = {}
         # When a device's temp/humidity reading last *changed* — backs the
         # "Last Reading" diagnostic timestamp sensor (#83). Cloud batches
@@ -3102,7 +3102,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
     def register_leak_hubs(self) -> None:
         """Register each leak sensor's hub as a device.
 
-        Leak sensors set ``via_device=(DOMAIN, hub_device_id)``; HA requires
+        Leak sensors link to the hub through ``hub_link_info``; HA requires
         the referenced device to exist before the child entity is added,
         otherwise HA logs a deprecation warning (will error in 2025.12).
 
@@ -3143,7 +3143,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
     def register_thermo_hubs(self) -> None:
         """Register gateway hubs bridging BFF thermo-hygrometers (#86).
 
-        Thermo entities set ``via_device=(DOMAIN, hub_device_id)`` (e.g. H5310
+        Thermo entities link to the hub through ``hub_link_info`` (e.g. H5310
         via H5044); HA requires the referenced hub device to exist first.
         Called from the sensor platform ``async_setup_entry`` after orphan
         cleanup. Idempotent via ``async_get_or_create``.

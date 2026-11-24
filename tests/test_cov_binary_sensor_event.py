@@ -10,6 +10,7 @@ connectivity, button press) that ride the ``<domain>_leak_update`` signal.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -363,6 +364,22 @@ class TestLeakBinarySensor:
         assert entity.device_info["via_device"] == (DOMAIN, HUB_A)
         assert entity.device_info["hw_version"] == "1.00.01"
 
+    def test_device_info_links_by_registry_id_on_new_ha(self, monkeypatch):
+        from custom_components.govee import registry
+
+        monkeypatch.setattr(registry, "supports_via_device_id", lambda: True)
+        fake = MagicMock(spec=["async_get_device_by_identifier"])
+        fake.async_get_device_by_identifier.return_value = SimpleNamespace(id="hub-id")
+        monkeypatch.setattr(registry.dr, "async_get", lambda hass: fake)
+        sensor = _leak_sensor()
+        entity = GoveeLeakBinarySensor(_leak_coordinator(sensor, GoveeLeakSensorState()), sensor)
+        entity.hass = MagicMock()
+
+        info = entity.device_info
+
+        assert info["via_device_id"] == "hub-id"
+        assert "via_device" not in info
+
     def test_dry(self):
         sensor = _leak_sensor()
         assert GoveeLeakBinarySensor(_leak_coordinator(sensor, GoveeLeakSensorState()), sensor).is_on is False
@@ -515,6 +532,21 @@ class TestLeakButtonEvent:
         assert entity.device_info["identifiers"] == {(DOMAIN, LEAK_A1)}
         assert entity.device_info["via_device"] == (DOMAIN, HUB_A)
         assert entity.device_info["hw_version"] == "1.00.01"
+
+    def test_device_info_links_by_registry_id_on_new_ha(self, monkeypatch):
+        from custom_components.govee import registry
+
+        monkeypatch.setattr(registry, "supports_via_device_id", lambda: True)
+        fake = MagicMock(spec=["async_get_device_by_identifier"])
+        fake.async_get_device_by_identifier.return_value = SimpleNamespace(id="hub-id")
+        monkeypatch.setattr(registry.dr, "async_get", lambda hass: fake)
+        entity = self._entity(pending=False)
+        entity.hass = MagicMock()
+
+        info = entity.device_info
+
+        assert info["via_device_id"] == "hub-id"
+        assert "via_device" not in info
 
     def test_press_is_fired_when_a_press_was_queued(self):
         entity = self._entity(pending=True)

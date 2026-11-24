@@ -627,6 +627,22 @@ class TestLeakBatterySensor:
         sensor = _leak_sensor()
         assert GoveeLeakBatterySensor(_leak_coordinator(sensor, None), sensor).native_value is None
 
+    def test_device_info_links_by_registry_id_on_new_ha(self, monkeypatch):
+        from custom_components.govee import registry
+
+        monkeypatch.setattr(registry, "supports_via_device_id", lambda: True)
+        fake = MagicMock(spec=["async_get_device_by_identifier"])
+        fake.async_get_device_by_identifier.return_value = SimpleNamespace(id="hub-id")
+        monkeypatch.setattr(registry.dr, "async_get", lambda hass: fake)
+        sensor = _leak_sensor()
+        entity = GoveeLeakBatterySensor(_leak_coordinator(sensor, None), sensor)
+        entity.hass = MagicMock()
+
+        info = entity.device_info
+
+        assert info["via_device_id"] == "hub-id"
+        assert "via_device" not in info
+
     def test_device_info_links_the_sensor_to_its_hub(self):
         sensor = _leak_sensor(hw_version="1.00.01", sw_version="2.03.00")
         info = GoveeLeakBatterySensor(_leak_coordinator(sensor, None), sensor).device_info
@@ -692,7 +708,7 @@ class TestLeakAlertStatusSensor:
 class TestAddressSensors:
     def test_leak_device_address_is_the_ieee_id(self):
         sensor = _leak_sensor()
-        entity = GoveeLeakDeviceAddressSensor(sensor)
+        entity = GoveeLeakDeviceAddressSensor(_leak_coordinator(sensor, None), sensor)
 
         assert entity.native_value == sensor.device_id
         assert entity.unique_id == f"{sensor.device_id}_address"

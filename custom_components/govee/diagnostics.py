@@ -611,7 +611,7 @@ async def async_get_device_diagnostics(
                 raw_mqtt,
             )
         # A device entry may be a leak sensor itself, or a hub that other leak
-        # sensors link to via_device — include both.
+        # sensors link to the hub — include both.
         for leak_id, sensor in coordinator.leak_sensors.items():
             if leak_id == govee_id or sensor.hub_device_id == govee_id:
                 state = coordinator.leak_states.get(leak_id)

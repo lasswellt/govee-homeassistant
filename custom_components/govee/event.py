@@ -18,6 +18,7 @@ from .const import DOMAIN
 from .coordinator import GoveeConfigEntry, GoveeCoordinator
 from .kettle.entities import kettle_events
 from .models.device import GoveeLeakSensor, leak_sensor_device_info
+from .registry import hub_link_info
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -74,7 +75,11 @@ class GoveeLeakButtonEvent(EventEntity):
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information for device registry."""
-        return leak_sensor_device_info(self._sensor, DOMAIN)
+        return leak_sensor_device_info(
+            self._sensor,
+            DOMAIN,
+            hub_link_info(self.hass, (DOMAIN, self._sensor.hub_device_id), self._coordinator._config_entry.entry_id),
+        )
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to leak-specific dispatcher signal."""
