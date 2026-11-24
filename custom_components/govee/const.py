@@ -230,6 +230,10 @@ SKU_SEGMENT_OVERRIDES: Final = {
     # masked ptReal frames in api/ble_packet.py (issue #223, reporter-verified
     # with send_raw_ptreal).
     "H1232": 16,
+    # H1A42: API reports 15 (elementRange.max=14), but only indices 0-4 light
+    # anything (LEDs 1-18, 19-30, 31-42, 43-54, 55-72); 5-14 are accepted and do
+    # nothing (issue #261).
+    "H1A42": 5,
 }
 
 # SKUs whose segment count follows the installed length, so no static count is
