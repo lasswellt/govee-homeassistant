@@ -1,7 +1,7 @@
 {
   "$schema": "blitz-tasks/1.0",
   "plan": "late-nov-sweep",
-  "updated": "2026-11-24T03:55:51Z",
+  "updated": "2026-11-24T03:59:02Z",
   "tasks": [
     {
       "id": "T-001",
@@ -31,7 +31,7 @@
         }
       ],
       "passes": false,
-      "status": "open",
+      "status": "in_progress",
       "blocked_reason": null,
       "attempts": 0,
       "last_verify": null,
