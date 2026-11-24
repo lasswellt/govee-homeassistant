@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from homeassistant.exceptions import ConfigEntryAuthFailed
 
+import custom_components.govee.brightness as brightness_mod
 import custom_components.govee.coordinator as coord_mod
 from custom_components.govee.api.auth import GoveeIotCredentials
 from custom_components.govee.api.exceptions import (
@@ -954,6 +955,10 @@ class TestNormalizeReportedBrightness:
 
     def test_sku_is_case_insensitive(self):
         assert normalize_reported_brightness("h6054", 136, (1, 100)) == 50
+
+    def test_degenerate_scale_leaves_the_value_alone(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setitem(brightness_mod.BRIGHTNESS_REPORT_SCALE_SKUS, "H9999", (50, 50))
+        assert normalize_reported_brightness("H9999", 136, (1, 100)) == 136
 
 
 def _raw_brightness(value: Any, *, with_cap: bool = True) -> dict[str, Any]:
