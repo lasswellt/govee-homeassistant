@@ -59,6 +59,19 @@ class TestCommandToLanPower:
         assert command_to_lan(PowerCommand(power_on=True), sku, RANGE_0_100) is None
         assert command_to_lan(PowerCommand(power_on=False), sku, RANGE_0_100) is None
 
+    def test_h60a6_power_off_falls_back_to_cloud(self):
+        # H60A6 reboots and comes back on after a LAN turn 0 (#308).
+        assert command_to_lan(PowerCommand(power_on=False), "H60A6", RANGE_0_100) is None
+
+    def test_h60a6_power_off_case_insensitive(self):
+        assert command_to_lan(PowerCommand(power_on=False), "h60a6", RANGE_0_100) is None
+
+    def test_h60a6_power_on_stays_on_lan(self):
+        assert command_to_lan(PowerCommand(power_on=True), "H60A6", RANGE_0_100) == ("turn", {"value": 1})
+
+    def test_other_sku_power_off_unchanged(self):
+        assert command_to_lan(PowerCommand(power_on=False), "H6159", RANGE_0_100) == ("turn", {"value": 0})
+
     def test_quirk_skus_match_mqtt_control(self):
         # Mirror exactly the SKUs mqtt_control special-cases — no drift.
         assert POWER_QUIRK_SKUS == frozenset({"H5080", "H5083"})

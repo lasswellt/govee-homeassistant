@@ -122,6 +122,11 @@ CONF_API_TEMPERATURE_UNIT: Final = "api_temperature_unit"
 # coordinator synthesises the capability and sends colour over AWS IoT.
 MQTT_COLOR_SKUS: Final = frozenset({"H7073"})
 
+# SKUs that must never receive a LAN power-off (#308, H60A6: firmware 1.00.48
+# reboots on LAN ``turn`` value 0 and comes back on; cloud off works). Power-on
+# and every other LAN command still go over LAN.
+LAN_POWER_OFF_EXCLUDED_SKUS: Final = frozenset({"H60A6"})
+
 FAHRENHEIT_REPORTING_SKUS: Final = frozenset(
     {
         "H5179",

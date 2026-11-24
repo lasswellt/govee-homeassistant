@@ -35,6 +35,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..const import LAN_POWER_OFF_EXCLUDED_SKUS
 from ..models.commands import (
     BrightnessCommand,
     ColorCommand,
@@ -116,7 +117,8 @@ def command_to_lan(
     work modes, toggles), signalling the caller to fall back to the REST
     control path. ``None`` is also returned for the H5080/H5083 power-quirk
     SKUs so their 17/16 power encoding (honoured only by the REST/MQTT path)
-    is preserved.
+    is preserved. Power-off is likewise ``None`` for
+    ``LAN_POWER_OFF_EXCLUDED_SKUS`` (H60A6 reboots on LAN off, #308).
 
     Colour and colour temperature share the one ``colorwc`` command. The
     protocol expects the unused half zeroed: an RGB write sends
@@ -135,6 +137,8 @@ def command_to_lan(
     """
     if isinstance(command, PowerCommand):
         if sku in POWER_QUIRK_SKUS:
+            return None
+        if not command.power_on and sku.upper() in LAN_POWER_OFF_EXCLUDED_SKUS:
             return None
         return ("turn", {"value": 1 if command.power_on else 0})
     if isinstance(command, BrightnessCommand):
