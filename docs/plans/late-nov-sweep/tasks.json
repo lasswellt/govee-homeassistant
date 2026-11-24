@@ -1,7 +1,7 @@
 {
   "$schema": "blitz-tasks/1.0",
   "plan": "late-nov-sweep",
-  "updated": "2026-11-24T04:21:46Z",
+  "updated": "2026-11-24T04:24:04Z",
   "tasks": [
     {
       "id": "T-001",
@@ -622,11 +622,46 @@
           "timeout": 300
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-24T04:24:04Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "grep -q 'param_id' custom_components/govee/models/state.py && grep -q 'param_id' custom_components/govee/coordinator.py",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-24T04:23:59Z"
+          },
+          {
+            "cmd": "! grep -nE 'TODO|NotImplemented' custom_components/govee/models/state.py",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-24T04:23:59Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/mypy custom_components/govee",
+            "exit": 0,
+            "duration_ms": 1058,
+            "tail": "Success: no issues found in 59 source files",
+            "recorded_at": "2026-11-24T04:24:00Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_cov_coordinator_control.py tests/test_cov_select.py tests/test_cov_light.py tests/test_light.py tests/test_cov_models.py",
+            "exit": 0,
+            "duration_ms": 4578,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 15%]\n........................................................................ [ 30%]\n........................................................................ [ 45%]\n........................................................................ [ 60%]\n........................................................................ [ 75%]\n........................................................................ [ 91%]\n..........................................                               [100%]\n474 passed in 2.77s",
+            "recorded_at": "2026-11-24T04:24:04Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "active_scene is the id string only (models/state.py:207-208, 981-982; preserved on poll at coordinator.py:5191; optimistic at :7117-7118). _rest_disable_music_mode (coordinator.py:6735) rebuilds SceneCommand from that id alone, so it would still send no paramId. Store the paramId next to the id (a separate active_scene_param_id field is the least disruptive; diagnostics and the state dump pick it up) and pass it at :6735. Backward compatibility: state restored or preserved from before this change has no paramId; select/light must still show that scene (match on id when param_id is None) and the restore command falls back to the old payload. Test both. Commit subject references (#309)."
     },
@@ -724,7 +759,7 @@
         }
       ],
       "passes": false,
-      "status": "open",
+      "status": "in_progress",
       "blocked_reason": null,
       "attempts": 0,
       "last_verify": null,
