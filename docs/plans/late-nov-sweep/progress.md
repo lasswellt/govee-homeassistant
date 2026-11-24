@@ -18,3 +18,6 @@ Ruling: defer; #241 reply asks for a second diagnostics (video mode off) instead
 ## 2026-11-24T04:14:51Z verify T-004 ok=true
 Ruling: T-004 new-HA path checked by hand on HA 2026.11.2 (scratchpad venv): supports_via_device_id()=True, leak DeviceInfo dataclass carries via_device_id, via_device UNDEFINED; pytest cannot load there (phcc 0.13.375 pins 2026.10.4, httpx alias RuntimeError) (T-004)
 ## 2026-11-24T04:15:03Z build T-008 start (attempt 1)
+## 2026-11-24T04:16:06Z verify T-006 ok=false failed="review" tail="REST map applied whenever online; a poll without a numeric brightness turns the 100 default into 35"
+## 2026-11-24T04:19:05Z verify T-006 ok=true (round 1: REST map gated on raw poll brightness)
+## 2026-11-24T04:19:05Z build T-007 start (attempt 1)

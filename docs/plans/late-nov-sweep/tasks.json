@@ -1,7 +1,7 @@
 {
   "$schema": "blitz-tasks/1.0",
   "plan": "late-nov-sweep",
-  "updated": "2026-11-24T04:15:03Z",
+  "updated": "2026-11-24T04:19:05Z",
   "tasks": [
     {
       "id": "T-001",
@@ -407,11 +407,53 @@
           "timeout": 300
         }
       ],
-      "passes": false,
-      "status": "in_progress",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
-      "attempts": 0,
-      "last_verify": null,
+      "attempts": 1,
+      "last_verify": {
+        "ts": "2026-11-24T04:19:05Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "grep -qE 'BRIGHTNESS_REPORT_SCALE_SKUS' custom_components/govee/const.py && grep -q '\"H6054\"' custom_components/govee/const.py",
+            "exit": 0,
+            "duration_ms": 12,
+            "tail": "",
+            "recorded_at": "2026-11-24T04:18:55Z"
+          },
+          {
+            "cmd": "grep -qE '^def normalize_reported_brightness' custom_components/govee/brightness.py",
+            "exit": 0,
+            "duration_ms": 9,
+            "tail": "",
+            "recorded_at": "2026-11-24T04:18:55Z"
+          },
+          {
+            "cmd": "grep -q 'normalize_reported_brightness' custom_components/govee/coordinator.py",
+            "exit": 0,
+            "duration_ms": 7,
+            "tail": "",
+            "recorded_at": "2026-11-24T04:18:56Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/mypy custom_components/govee/brightness.py",
+            "exit": 0,
+            "duration_ms": 2146,
+            "tail": "Success: no issues found in 1 source file",
+            "recorded_at": "2026-11-24T04:18:58Z"
+          },
+          {
+            "cmd": "grep -rlq 'normalize_reported_brightness' tests && .cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_cov_coordinator_events.py tests/test_cov_coordinator_control.py tests/test_light.py",
+            "exit": 0,
+            "duration_ms": 7450,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 23%]\n........................................................................ [ 47%]\n........................................................................ [ 70%]\n........................................................................ [ 94%]\n.................                                                        [100%]\n305 passed in 3.58s",
+            "recorded_at": "2026-11-24T04:19:05Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "Research Q5 + §#307: reporter measured 1->20, 5->30, 11->44, 20->65, 30->89, 50->136, 70->184, 90->231, 100->254 on REST poll and AWS IoT push (use these nine points as test vectors; expect exact round-trip for each). Pure helper normalize_reported_brightness(sku, value, device_range) in brightness.py: for SKUs in the table map linearly from the reported scale to device_range and clamp; other SKUs return value unchanged. Reported brightness enters state at models/state.py:435-437 (REST) and :629-632 (MQTT), which have no SKU, so apply at the coordinator call sites of update_from_api / update_from_mqtt (or pass a normaliser in). Optimistic writes already store 1-100 and must not be mapped. Evidence is one unit: do not widen to other SKUs. Add the helper's tests to an existing tests/test_cov_*.py file. Commit subject references (#307)."
     },
@@ -437,7 +479,7 @@
         }
       ],
       "passes": false,
-      "status": "open",
+      "status": "in_progress",
       "blocked_reason": null,
       "attempts": 0,
       "last_verify": null,
