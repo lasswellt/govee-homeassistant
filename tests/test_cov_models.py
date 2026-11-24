@@ -463,6 +463,13 @@ class TestCommandPayloads:
             "value": {"id": 3853, "name": "Sunrise"},
         }
 
+    def test_scene_command_with_param_id_sends_param_id_and_id(self):
+        assert SceneCommand(scene_id=399, scene_name="Adventure Game-A", param_id=1001).to_api_payload() == {
+            "type": CAPABILITY_DYNAMIC_SCENE,
+            "instance": INSTANCE_SCENE,
+            "value": {"paramId": 1001, "id": 399},
+        }
+
     def test_diy_scene_command_sends_the_bare_id(self):
         assert DIYSceneCommand(scene_id=100, scene_name="Rainbow").to_api_payload() == {
             "type": CAPABILITY_DYNAMIC_SCENE,

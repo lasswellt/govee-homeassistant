@@ -231,8 +231,8 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
             self._attr_supported_features = LightEntityFeature.EFFECT
 
         # Scene-to-effect mappings (populated in async_added_to_hass)
-        self._effect_to_scene: dict[str, tuple[int, str]] = {}
-        self._scene_id_to_effect: dict[str, str] = {}
+        self._effect_to_scene: dict[str, tuple[int, int | None, str]] = {}
+        self._scene_id_to_effect: dict[tuple[str, int | None], str] = {}
         self._effect_names: list[str] = []
         # DIY scenes get their own maps: their IDs are a separate namespace
         # from catalog scene IDs and they are activated by a different command.
@@ -347,11 +347,18 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
         if not state.active_scene:
             return None
         # Look up display name from scene ID mapping
-        effect_name = self._scene_id_to_effect.get(state.active_scene)
+        effect_name = self._effect_for_scene(state.active_scene, getattr(state, "active_scene_param_id", None))
         if effect_name:
             return effect_name
         # Fall back to stored scene name if ID not in mapping
         return state.active_scene_name
+
+    def _effect_for_scene(self, scene_id: str, param_id: int | None) -> str | None:
+        """Return the effect for an active scene: exact (id, paramId) match, else the first with that id."""
+        effect_name = self._scene_id_to_effect.get((scene_id, param_id))
+        if effect_name:
+            return effect_name
+        return next((name for (sid, _), name in self._scene_id_to_effect.items() if sid == scene_id), None)
 
     def _ha_to_device_brightness(self, ha_brightness: int) -> int:
         """Convert HA brightness (0-255) to device range, respecting min."""
@@ -420,8 +427,8 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
                     "device": self._device.name,
                 },
             )
-        scene_id, scene_name = scene_info
-        await self._async_send_command(SceneCommand(scene_id=scene_id, scene_name=scene_name))
+        scene_id, param_id, scene_name = scene_info
+        await self._async_send_command(SceneCommand(scene_id=scene_id, scene_name=scene_name, param_id=param_id))
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the light off."""
@@ -438,7 +445,11 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
         names: list[str] = []
 
         for scene_data in scenes:
-            scene_id = scene_data.get("value", {}).get("id", 0)
+            scene_value = scene_data.get("value", {})
+            scene_id = scene_value.get("id", 0)
+            param_id = scene_value.get("paramId")
+            if not isinstance(param_id, int) or isinstance(param_id, bool):
+                param_id = None
             scene_name = scene_data.get("name", f"Scene {scene_id}")
 
             # Handle duplicate names by appending counter
@@ -448,8 +459,8 @@ class GoveeLightEntity(GoveeEntity, LightEntity, RestoreEntity):
                 unique_name = f"{scene_name} ({counter})"
                 counter += 1
 
-            self._effect_to_scene[unique_name] = (scene_id, scene_name)
-            self._scene_id_to_effect[str(scene_id)] = unique_name
+            self._effect_to_scene[unique_name] = (scene_id, param_id, scene_name)
+            self._scene_id_to_effect[(str(scene_id), param_id)] = unique_name
             names.append(unique_name)
 
         self._effect_names = names

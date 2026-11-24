@@ -298,6 +298,17 @@ class _GoveeSceneListSelectBase(_GoveeSelectBase):
         """Return (scene id, display name) for one catalog entry."""
         raise NotImplementedError
 
+    def _scene_param_id(self, scene_data: dict[str, Any]) -> int | None:
+        """Return the scene's paramId; only regular scenes carry one."""
+        return None
+
+    def _option_for_scene(self, scene_id: str, param_id: int | None) -> str | None:
+        """Return the option for an active scene: exact (id, paramId) match, else the first with that id."""
+        option = self._scene_id_to_option.get((scene_id, param_id))
+        if option:
+            return option
+        return next((name for (sid, _), name in self._scene_id_to_option.items() if sid == scene_id), None)
+
     def _refreshed_scenes(
         self, scenes: list[dict[str, Any]], diy_scenes: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
@@ -306,13 +317,14 @@ class _GoveeSceneListSelectBase(_GoveeSelectBase):
 
     def _build_options(self, scenes: list[dict[str, Any]]) -> None:
         """Build the option list and both lookup maps from a scene catalog."""
-        # name -> (id, name), and scene_id (as string) -> option name
-        self._scene_map: dict[str, tuple[int, str]] = {}
-        self._scene_id_to_option: dict[str, str] = {}
+        # name -> (id, paramId, name), and (scene_id as string, paramId) -> option name
+        self._scene_map: dict[str, tuple[int, int | None, str]] = {}
+        self._scene_id_to_option: dict[tuple[str, int | None], str] = {}
         options = [SCENE_NONE]
 
         for scene_data in scenes:
             scene_id, scene_name = self._scene_id_and_name(scene_data)
+            param_id = self._scene_param_id(scene_data)
 
             # Handle duplicate names by appending a counter
             unique_name = scene_name
@@ -321,8 +333,8 @@ class _GoveeSceneListSelectBase(_GoveeSelectBase):
                 unique_name = f"{scene_name} ({counter})"
                 counter += 1
 
-            self._scene_map[unique_name] = (scene_id, scene_name)
-            self._scene_id_to_option[str(scene_id)] = unique_name
+            self._scene_map[unique_name] = (scene_id, param_id, scene_name)
+            self._scene_id_to_option[(str(scene_id), param_id)] = unique_name
             options.append(unique_name)
 
         self._attr_options = options
@@ -384,6 +396,11 @@ class GoveeSceneSelectEntity(_GoveeSceneListSelectBase):
         scene_id = scene_data.get("value", {}).get("id", 0)
         return scene_id, scene_data.get("name", f"Scene {scene_id}")
 
+    def _scene_param_id(self, scene_data: dict[str, Any]) -> int | None:
+        """Read the optional ``paramId`` that tells -A/-B variants of one scene id apart."""
+        param_id = scene_data.get("value", {}).get("paramId")
+        return param_id if isinstance(param_id, int) and not isinstance(param_id, bool) else None
+
     def _refreshed_scenes(
         self, scenes: list[dict[str, Any]], diy_scenes: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
@@ -403,7 +420,7 @@ class GoveeSceneSelectEntity(_GoveeSceneListSelectBase):
         state = self.coordinator.get_state(self._device_id)
         if state and state.active_scene:
             # Look up option name from scene ID
-            option = self._scene_id_to_option.get(state.active_scene)
+            option = self._option_for_scene(state.active_scene, getattr(state, "active_scene_param_id", None))
             if option:
                 return option
         return SCENE_NONE
@@ -421,8 +438,8 @@ class GoveeSceneSelectEntity(_GoveeSceneListSelectBase):
         if not scene_info:
             raise self._unknown_option(option)
 
-        scene_id, scene_name = scene_info
-        await self._async_send_command(SceneCommand(scene_id=scene_id, scene_name=scene_name))
+        scene_id, param_id, scene_name = scene_info
+        await self._async_send_command(SceneCommand(scene_id=scene_id, scene_name=scene_name, param_id=param_id))
         # State update with mutual exclusion is handled in coordinator
         self.async_write_ha_state()
         _LOGGER.debug("Activated scene '%s' on %s", scene_name, self._device.name)
@@ -488,7 +505,7 @@ class GoveeDIYSceneSelectEntity(_GoveeSceneListSelectBase):
         state = self.coordinator.get_state(self._device_id)
         if state and state.active_diy_scene:
             # Look up option name from scene ID
-            option = self._scene_id_to_option.get(state.active_diy_scene)
+            option = self._option_for_scene(state.active_diy_scene, None)
             if option:
                 return option
         return SCENE_NONE
@@ -506,7 +523,7 @@ class GoveeDIYSceneSelectEntity(_GoveeSceneListSelectBase):
         if not scene_info:
             raise self._unknown_option(option)
 
-        scene_id, scene_name = scene_info
+        scene_id, _, scene_name = scene_info
         if not await self.coordinator.async_send_diy_scene(
             self._device_id,
             scene_id=scene_id,

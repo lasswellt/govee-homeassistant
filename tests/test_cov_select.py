@@ -154,6 +154,16 @@ def scene_select(mock_light_device, mock_scenes):
     return entity
 
 
+def _variant_select(device):
+    scenes = [
+        {"name": "Adventure Game-A", "value": {"paramId": 1001, "id": 399}},
+        {"name": "Adventure Game-B", "value": {"paramId": 1002, "id": 399}},
+    ]
+    entity = GoveeSceneSelectEntity(_coordinator(device, _state(device)), device, scenes)
+    entity.async_write_ha_state = MagicMock()
+    return entity
+
+
 class TestSceneSelect:
     def test_options_and_unique_id(self, scene_select, mock_light_device):
         assert scene_select.options == [SCENE_NONE, "Sunrise", "Sunset", "Party", "Movie"]
@@ -168,15 +178,15 @@ class TestSceneSelect:
         entity = GoveeSceneSelectEntity(_coordinator(mock_light_device, None), mock_light_device, scenes)
 
         assert entity.options == [SCENE_NONE, "Rainbow", "Rainbow (1)", "Rainbow (2)"]
-        assert entity._scene_map["Rainbow (2)"] == (3, "Rainbow")
-        assert entity._scene_id_to_option["3"] == "Rainbow (2)"
+        assert entity._scene_map["Rainbow (2)"] == (3, None, "Rainbow")
+        assert entity._scene_id_to_option[("3", None)] == "Rainbow (2)"
 
     def test_missing_fields_get_defaults(self, mock_light_device):
         scenes = [{"value": {"id": 5}}, {"name": "Nameless id"}]
         entity = GoveeSceneSelectEntity(_coordinator(mock_light_device, None), mock_light_device, scenes)
 
         assert entity.options == [SCENE_NONE, "Scene 5", "Nameless id"]
-        assert entity._scene_map["Nameless id"] == (0, "Nameless id")
+        assert entity._scene_map["Nameless id"] == (0, None, "Nameless id")
 
     def test_current_option_none_without_state_or_scene(self, scene_select):
         assert scene_select.current_option == SCENE_NONE
@@ -240,6 +250,40 @@ class TestSceneSelect:
 
         assert _sent(entity.coordinator) == [SceneCommand(scene_id=2, scene_name="Rainbow")]
 
+    async def test_variants_sharing_an_id_send_their_own_param_id(self, mock_light_device):
+        entity = _variant_select(mock_light_device)
+
+        assert entity.options == [SCENE_NONE, "Adventure Game-A", "Adventure Game-B"]
+        await entity.async_select_option("Adventure Game-A")
+        await entity.async_select_option("Adventure Game-B")
+
+        assert _sent(entity.coordinator) == [
+            SceneCommand(scene_id=399, scene_name="Adventure Game-A", param_id=1001),
+            SceneCommand(scene_id=399, scene_name="Adventure Game-B", param_id=1002),
+        ]
+
+    def test_param_id_of_a_non_int_reads_none(self, mock_light_device):
+        scenes = [{"name": "Odd", "value": {"id": 5, "paramId": "x"}}, {"name": "Odd2", "value": {"id": 6}}]
+        entity = GoveeSceneSelectEntity(_coordinator(mock_light_device, None), mock_light_device, scenes)
+
+        assert entity._scene_map["Odd"] == (5, None, "Odd")
+
+    def test_current_option_picks_the_variant_by_param_id(self, mock_light_device):
+        entity = _variant_select(mock_light_device)
+        state = entity.coordinator.get_state.return_value
+        state.active_scene = "399"
+        state.active_scene_param_id = 1002
+
+        assert entity.current_option == "Adventure Game-B"
+
+    def test_current_option_without_param_id_picks_the_first_variant(self, mock_light_device):
+        entity = _variant_select(mock_light_device)
+        state = entity.coordinator.get_state.return_value
+        state.active_scene = "399"
+        state.active_scene_param_id = None
+
+        assert entity.current_option == "Adventure Game-A"
+
     async def test_select_none_clears_scene_through_coordinator(self, scene_select, mock_light_device):
         await scene_select.async_select_option(SCENE_NONE)
 
@@ -261,7 +305,7 @@ class TestSceneSelect:
 
         async_dispatcher_send(scene_select.hass, signal, [{"name": "Aurora", "value": {"id": 9}}], [])
         assert scene_select.options == [SCENE_NONE, "Aurora"]
-        assert scene_select._scene_map["Aurora"] == (9, "Aurora")
+        assert scene_select._scene_map["Aurora"] == (9, None, "Aurora")
         scene_select.async_write_ha_state.assert_called_once()
 
     async def test_select_none_rejected_raises(self, scene_select):
@@ -310,16 +354,16 @@ class TestDIYSceneSelect:
         assert diy_select.options == [SCENE_NONE, "Lava", "Waves"]
         assert diy_select.unique_id == f"{diy_device.device_id}_diy_scene_select"
         # DIY values are bare ints, not {"id": ...} dicts.
-        assert diy_select._scene_map["Waves"] == (102, "Waves")
-        assert diy_select._scene_id_to_option["102"] == "Waves"
+        assert diy_select._scene_map["Waves"] == (102, None, "Waves")
+        assert diy_select._scene_id_to_option[("102", None)] == "Waves"
 
     def test_duplicates_and_defaults(self, diy_device):
         scenes = [{"name": "Glow", "value": 1}, {"name": "Glow", "value": 2}, {"value": 3}, {"name": "No id"}]
         entity = GoveeDIYSceneSelectEntity(_coordinator(diy_device, None), diy_device, scenes)
 
         assert entity.options == [SCENE_NONE, "Glow", "Glow (1)", "DIY 3", "No id"]
-        assert entity._scene_map["Glow (1)"] == (2, "Glow")
-        assert entity._scene_map["No id"] == (0, "No id")
+        assert entity._scene_map["Glow (1)"] == (2, None, "Glow")
+        assert entity._scene_map["No id"] == (0, None, "No id")
 
     def test_available_follows_coordinator_and_device_state(self, diy_select):
         assert diy_select.available is True
@@ -397,7 +441,7 @@ class TestDIYSceneSelect:
         )
 
         assert diy_select.options == [SCENE_NONE, "Glow"]
-        assert diy_select._scene_map["Glow"] == (7, "Glow")
+        assert diy_select._scene_map["Glow"] == (7, None, "Glow")
 
     async def test_select_none_rejected_raises(self, diy_select):
         diy_select.coordinator.async_clear_scene = AsyncMock(return_value=False)
