@@ -1043,6 +1043,21 @@ class TestReportedBrightnessInState:
 
         assert coord._states[DEV].brightness == 50
 
+    @pytest.mark.parametrize(("pushed", "expected"), [(0, 1), ("231", 90)])
+    def test_mqtt_push_with_zero_or_numeric_string_is_still_mapped(self, pushed, expected):
+        # The #307 guard skips only values update_from_mqtt rejects; a real 0
+        # (below the 20-254 floor, so clamped to the range min) and a numeric
+        # string are mapped exactly once.
+        coord = _coordinator()
+        coord._devices[DEV] = _brightness_light("H6054")
+        state = GoveeDeviceState.create_empty(DEV)
+        state.brightness = 50
+        coord._states[DEV] = state
+
+        coord._on_mqtt_state_update(DEV, {"onOff": 1, "brightness": pushed})
+
+        assert coord._states[DEV].brightness == expected
+
     def test_mqtt_push_leaves_other_sku(self):
         coord = _coordinator()
         coord._devices[DEV] = _brightness_light("H6072")

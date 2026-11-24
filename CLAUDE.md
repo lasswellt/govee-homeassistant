@@ -147,7 +147,7 @@ MQTT client for real-time updates:
 
 ## Testing
 
-About 4,700 tests across 147 files (`pytest --co -q | tail -1` for the current count). Most are unit tests on entities and the coordinator built with `MagicMock`; the `tests/test_cov_<module>.py` files close each module's remaining branches. `tests/test_setup_entry*.py`, `tests/test_config_flow_manager*.py`, and `tests/test_repairs.py` drive the real config entry, flow manager, and repair flows with `MockConfigEntry`. Prefer that style for anything that touches registries, setup, or flow steps.
+About 4,700 tests across 143 files (`pytest --co -q | tail -1` for the current count). Most are unit tests on entities and the coordinator built with `MagicMock`; the `tests/test_cov_<module>.py` files close each module's remaining branches. `tests/test_setup_entry*.py`, `tests/test_config_flow_manager*.py`, and `tests/test_repairs.py` drive the real config entry, flow manager, and repair flows with `MockConfigEntry`. Prefer that style for anything that touches registries, setup, or flow steps.
 
 ## Code Style
 

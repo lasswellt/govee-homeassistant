@@ -947,7 +947,7 @@ Some devices only respond to `color`, not `colorwc`. The govee-cloud implementat
 
 | Device | Quirk |
 |--------|-------|
-| H5080, H5083 | Outgoing `turn` uses `17` (on) / `16` (off) instead of `1` / `0` (`POWER_QUIRK_SKUS` in `api/mqtt_control.py`). Whether their pushes report 16/17 is unconfirmed |
+| H5080, H5083 | Outgoing `turn` uses `17` (on) / `16` (off) instead of `1` / `0` (`POWER_QUIRK_SKUS` in `api/mqtt_control.py`); for the same reason the integration never sends them a LAN power command. Whether their pushes report 16/17 is unconfirmed |
 | H6121 | Needs `cmdVersion: 1` for status requests (community-reported; not confirmed in submitted diagnostics). The integration does not special-case it: status queries always go out with `cmdVersion: 2` |
 | Some older devices | Only respond to `color` cmd, not `colorwc` |
 
@@ -4719,14 +4719,14 @@ Capability lists below are as the Developer API `/user/devices` returned them in
 
 ### 9.8 Per-SKU workarounds in the integration
 
-Model-specific behaviour is kept in named allow-lists, all in `custom_components/govee/const.py` unless noted, compared case-insensitively against the SKU. Each entry needs an issue with a capture; most are deliberately narrow (verified models only).
+Model-specific behaviour is kept in named allow-lists, all in `custom_components/govee/const.py` unless noted, matched against the SKU exactly as the Developer API reports it (upper case). Device-class sets that decide what a device *is* rather than work around it (leak sensors and hubs, presence sensors, dehumidifier and kettle frame decoders, the BFF thermometer sets, probe counts) live in `models/device.py` and `api/probe_thermometer.py` and are not listed here. Each entry needs an issue with a capture; most are deliberately narrow (verified models only).
 
 | Constant | SKUs | What the integration does | Issue |
 |----------|------|---------------------------|-------|
 | `MQTT_COLOR_SKUS` | H7073 | The Platform API lists no `colorRgb` though the AWS IoT push reports `color`; with IoT credentials the capability is synthesised and colour is sent over AWS IoT | #240 |
 | `BRIGHTNESS_REPORT_SCALE_SKUS` | H6054 (20-254) | Reported brightness (REST poll and AWS IoT push) is on a raw 20-254 scale; it is mapped back onto the device range. A null or empty value is not re-mapped | #307 |
 | `LAN_POWER_OFF_EXCLUDED_SKUS` | H60A6 | Never sends a LAN power-off (firmware 1.00.48 reboots and comes back on); power-off goes via the cloud, every other LAN command stays on LAN | #308 |
-| `FAHRENHEIT_REPORTING_SKUS` | 20 thermometer, monitor and kettle SKUs | In `auto` unit mode, the fallback list of models whose Developer-API temperature is °F with no unit field; the account's `fahOpen` preference wins when known. See the unit caveat under §8.5 H5103/H5107/H5109 | #72, #78, #96, #115, #116, #128, #157, #173, #209 |
+| `FAHRENHEIT_REPORTING_SKUS` | 20 thermometer, monitor and kettle SKUs | In `auto` unit mode, the fallback list of models whose Developer-API temperature is °F with no unit field; the account's `fahOpen` preference wins when known. See the unit caveat under §8.5 H5103/H5107/H5109 | #72, #78, #91, #96, #115, #116, #128, #157, #173, #209 |
 | `HEATER_AUTO_STOP_STRUCT_SKUS` | H7130 | Auto Stop writes the `targetTemperature` STRUCT's `autoStop` field; `thermostatToggle` (never reported back) is its own switch | #265 |
 | `MQTT_OSCILLATION_SKUS` | H7105, H7107 | REST `oscillationToggle` is a no-op; oscillation goes as a ptReal `33 1D` frame (or its `3A 1D` multiSync twin) over AWS IoT, the ON frame copying the swing-range bytes from the fan's `aa 1d` status | PR #176 |
 | `LEAK_DUAL_PROBE_SKUS` | H5059 | Adds upper- and lower-probe binary sensors from bytes 13/14 of the hub `ee 34` frame, beside the aggregate leak sensor | #224 |
@@ -4743,7 +4743,7 @@ Model-specific behaviour is kept in named allow-lists, all in `custom_components
 | `MQTT_STATUS_QUERY_EXCLUDED_SKUS` | H5074, H5075, H5108, H5110, H5111, H5220 | Never sent an AWS IoT status query: these BLE/gateway-bridged sensors have a topic they never answer, and AWS closes the session on each query. Readings still come through the cloud poll | #195, #197, #237 |
 | `MAIN_LIGHT_TOGGLE_SKUS` | H1270 | `mainLightToggle` / `backgroundLightToggle` are inert and `powerSwitch` is whole-fixture; a dedicated main-panel light entity switches the panel through the whole-device colour channel (`GoveeMainLightEntity`, `light.py`) | #131 |
 | `MOVIE_MODE_DREAMVIEW_SKUS` | H2A41 | Screen sync is advertised as `movie_setting` / `movieMode`; it is detected as DreamView and driven by the normal DreamView path | #199 |
-| `POWER_QUIRK_SKUS` (`api/mqtt_control.py`) | H5080, H5083 | Native MQTT `turn` uses `17` / `16` instead of `1` / `0`; see §3.8 | — |
+| `POWER_QUIRK_SKUS` (`api/mqtt_control.py`) | H5080, H5083 | Native MQTT `turn` uses `17` / `16` instead of `1` / `0`, and power is never sent over LAN (`api/lan_control.py`), so on/off goes via the cloud; see §3.8 | — |
 
 **Named light toggles.** `NAMED_LIGHT_TOGGLE_SPECS` in `switch.py` lists the `*LightToggle` instances that become their own switch: `mainLightToggle`, `backgroundLightToggle`, `nebulaLightToggle`, `rippleLightToggle`, `sideLightToggle`, `bottomLightToggle`, `ambientLightToggle`, `wallWashingLightToggle`, `deskLightToggle` (H2800), `leftLightToggle`, `rightLightToggle`, `backLightToggle` (H605A/H605B) and `pillarLightToggle`, `baseLightToggle` (H607C) (#241, #306). Any other light-toggle instance is logged at debug level and skipped. These toggles are write-only: Govee reads them back as `""`.
 
