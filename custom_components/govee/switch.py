@@ -20,8 +20,10 @@ from .const import (
     CONF_ENABLE_H6104_BLE,
     DEFAULT_ENABLE_H6104_BLE,
     HEATER_AUTO_STOP_STRUCT_SKUS,
+    SUFFIX_AMBIENT_LIGHT,
     SUFFIX_BACKGROUND_LIGHT,
     SUFFIX_BOTTOM_LIGHT,
+    SUFFIX_DESK_LIGHT,
     SUFFIX_DREAMVIEW,
     SUFFIX_HEATER_AUTO_STOP,
     SUFFIX_HEATER_OSCILLATION,
@@ -35,6 +37,7 @@ from .const import (
     SUFFIX_SIDE_LIGHT,
     SUFFIX_MQTT_OUTLET,
     SUFFIX_SOCKET,
+    SUFFIX_WALL_WASHING_LIGHT,
 )
 from .coordinator import GoveeConfigEntry, GoveeCoordinator
 from .entity import GoveeEntity
@@ -71,6 +74,10 @@ NAMED_LIGHT_TOGGLE_SPECS: dict[str, tuple[str, str]] = {
     "rippleLightToggle": ("govee_ripple_light", SUFFIX_RIPPLE_LIGHT),
     "sideLightToggle": ("govee_side_light", SUFFIX_SIDE_LIGHT),
     "bottomLightToggle": ("govee_bottom_light", SUFFIX_BOTTOM_LIGHT),
+    # H2800 Monitor Light Bar: ambient / wall-washing / desk light.
+    "ambientLightToggle": ("govee_ambient_light", SUFFIX_AMBIENT_LIGHT),
+    "wallWashingLightToggle": ("govee_wall_washing_light", SUFFIX_WALL_WASHING_LIGHT),
+    "deskLightToggle": ("govee_desk_light", SUFFIX_DESK_LIGHT),
 }
 
 

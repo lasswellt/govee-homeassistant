@@ -416,6 +416,9 @@ class MusicModeCommand(DeviceCommand):
     sensitivity: int  # 0-100
     auto_color: int = 1  # 1=on (auto), 0=off (use rgb)
     rgb: int | None = None  # Packed RGB, only used when auto_color=0
+    # Devices whose capability marks ``rgb`` required (H2800) need it sent even
+    # with auto_color=1; the device ignores the value in that case.
+    rgb_required: bool = False
 
     @property
     def capability_type(self) -> str:
@@ -432,7 +435,9 @@ class MusicModeCommand(DeviceCommand):
             "sensitivity": self.sensitivity,
             "autoColor": self.auto_color,
         }
-        if self.rgb is not None and self.auto_color == 0:
+        if self.rgb_required:
+            value["rgb"] = self.rgb if self.rgb is not None else 0xFFFFFF
+        elif self.rgb is not None and self.auto_color == 0:
             value["rgb"] = self.rgb
         return value
 

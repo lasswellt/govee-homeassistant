@@ -546,7 +546,7 @@ class GoveeDevice:
         linger as orphans until deleted by hand. Release notes for the version
         that first ships a new SKU here must say so.
         """
-        pattern = re.compile(r"[a-z]+LightToggle")
+        pattern = re.compile(r"[a-z][A-Za-z]*LightToggle")
         dead_on_this_sku = (
             {INSTANCE_MAIN_LIGHT_TOGGLE, INSTANCE_BACKGROUND_LIGHT_TOGGLE}
             if self.sku.upper() in MAIN_LIGHT_TOGGLE_SKUS
@@ -1037,6 +1037,22 @@ class GoveeDevice:
                         options: list[dict[str, Any]] = f.get("options", [])
                         return options
         return []
+
+    @property
+    def music_mode_requires_rgb(self) -> bool:
+        """True when the musicMode STRUCT declares ``rgb`` as a required field.
+
+        The H2800 Monitor Light Bar marks ``rgb`` required even for
+        ``autoColor=1``, and the cloud API rejects a payload without it
+        (HTTP 400 "Missing parameter"). Other lights treat ``rgb`` as optional
+        and are left unchanged.
+        """
+        for cap in self.capabilities:
+            if cap.type == CAPABILITY_MUSIC_MODE and cap.instance == INSTANCE_MUSIC_MODE:
+                for f in cap.parameters.get("fields", []):
+                    if f.get("fieldName") == "rgb":
+                        return bool(f.get("required"))
+        return False
 
     def get_music_sensitivity_range(self) -> tuple[int, int]:
         """Extract sensitivity range from capability fields.

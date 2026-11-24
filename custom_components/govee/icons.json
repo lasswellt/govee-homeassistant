@@ -234,6 +234,15 @@
       },
       "govee_bottom_light": {
         "default": "mdi:floor-lamp"
+      },
+      "govee_ambient_light": {
+        "default": "mdi:lightbulb-on-outline"
+      },
+      "govee_wall_washing_light": {
+        "default": "mdi:wall-sconce-flat"
+      },
+      "govee_desk_light": {
+        "default": "mdi:desk-lamp"
       }
     },
     "water_heater": {

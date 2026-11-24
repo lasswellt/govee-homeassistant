@@ -329,6 +329,15 @@
       },
       "govee_bottom_light": {
         "name": "Bottom light"
+      },
+      "govee_ambient_light": {
+        "name": "Ambient light"
+      },
+      "govee_wall_washing_light": {
+        "name": "Wall washing light"
+      },
+      "govee_desk_light": {
+        "name": "Desk light"
       }
     },
     "sensor": {
