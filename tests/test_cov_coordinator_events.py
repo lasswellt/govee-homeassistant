@@ -952,7 +952,31 @@ class TestNormalizeReportedBrightness:
         assert normalize_reported_brightness("h6054", 136, (1, 100)) == 50
 
 
+def _raw_brightness(value: Any, *, with_cap: bool = True) -> dict[str, Any]:
+    caps: list[dict[str, Any]] = [
+        {"type": "devices.capabilities.online", "instance": "online", "state": {"value": True}}
+    ]
+    if with_cap:
+        caps.append({"type": "devices.capabilities.range", "instance": "brightness", "state": {"value": value}})
+    return {DEV: {"capabilities": caps}}
+
+
 class TestReportedBrightnessInState:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "raw", [_raw_brightness(0, with_cap=False), _raw_brightness(""), _raw_brightness("n/a"), {}]
+    )
+    async def test_rest_poll_without_brightness_keeps_default(self, raw: dict[str, Any]):
+        coord = _coordinator()
+        _add(coord, _brightness_light("H6054"))
+        fresh = GoveeDeviceState.create_empty(DEV)
+        coord._api_client.get_device_state = AsyncMock(return_value=fresh)
+        coord._api_client.last_raw_state = raw
+
+        result = await coord._fetch_device_state(DEV, coord._devices[DEV])
+
+        assert result.brightness == 100
+
     @pytest.mark.asyncio
     async def test_rest_poll_maps_h6054(self):
         coord = _coordinator()
@@ -960,6 +984,7 @@ class TestReportedBrightnessInState:
         fresh = GoveeDeviceState.create_empty(DEV)
         fresh.brightness = 136
         coord._api_client.get_device_state = AsyncMock(return_value=fresh)
+        coord._api_client.last_raw_state = _raw_brightness(136)
 
         result = await coord._fetch_device_state(DEV, coord._devices[DEV])
 
@@ -972,6 +997,7 @@ class TestReportedBrightnessInState:
         fresh = GoveeDeviceState.create_empty(DEV)
         fresh.brightness = 136
         coord._api_client.get_device_state = AsyncMock(return_value=fresh)
+        coord._api_client.last_raw_state = _raw_brightness(136)
 
         result = await coord._fetch_device_state(DEV, coord._devices[DEV])
 
