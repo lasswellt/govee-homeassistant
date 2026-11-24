@@ -147,7 +147,7 @@ MQTT client for real-time updates:
 
 ## Testing
 
-About 3,250 tests across 92 files (`pytest --co -q | tail -1` for the current count). Most are unit tests on entities and the coordinator built with `MagicMock`; the `tests/test_cov_<module>.py` files close each module's remaining branches. `tests/test_setup_entry*.py`, `tests/test_config_flow_manager*.py`, and `tests/test_repairs.py` drive the real config entry, flow manager, and repair flows with `MockConfigEntry`. Prefer that style for anything that touches registries, setup, or flow steps.
+About 4,700 tests across 147 files (`pytest --co -q | tail -1` for the current count). Most are unit tests on entities and the coordinator built with `MagicMock`; the `tests/test_cov_<module>.py` files close each module's remaining branches. `tests/test_setup_entry*.py`, `tests/test_config_flow_manager*.py`, and `tests/test_repairs.py` drive the real config entry, flow manager, and repair flows with `MockConfigEntry`. Prefer that style for anything that touches registries, setup, or flow steps.
 
 ## Code Style
 
@@ -260,7 +260,7 @@ RGBIC segment count is in `fields[].elementRange.max + 1`:
 segment_count = element_range["max"] + 1
 ```
 
-For SKUs the API over-reports (H7075: `elementRange.max=14`, device has 3 sections), `GoveeDevice.segment_count` clamps the parser-derived count against `fields[].size.max` first (auto safety net for unknown SKUs) and then applies `SKU_SEGMENT_OVERRIDES` in `const.py` as the authoritative override for known SKUs — both live in `custom_components/govee/models/device.py:1132+`. To add a new SKU: issue + one-line entry + test case, mirroring `FAHRENHEIT_REPORTING_SKUS` (issues #115 / #128 / #129).
+For SKUs the API over-reports (H7075: `elementRange.max=14`, device has 3 sections), `GoveeDevice.segment_count` clamps the parser-derived count against `fields[].size.max` first (auto safety net for unknown SKUs) and then applies `SKU_SEGMENT_OVERRIDES` in `const.py` as the authoritative override for known SKUs; for `BFF_SEGMENT_COUNT_SKUS` (H3A53, #301) the account list's `deviceSettings.segmentCount` ranks above both — all in `GoveeDevice.segment_count_resolution` (`custom_components/govee/models/device.py:1397+`). To add a new SKU: issue + one-line entry + test case, mirroring `FAHRENHEIT_REPORTING_SKUS` (issues #115 / #128 / #129).
 
 ## API Limitations & State Handling
 
@@ -281,7 +281,7 @@ For API values that aren't reliably returned:
 1. Use optimistic state from commands
 2. Use `RestoreEntity` to persist across HA restarts
 3. Don't overwrite with API responses
-4. Clear on appropriate events (e.g., power off for scenes)
+4. Clear on appropriate events (e.g., a different mode for scenes; power-off keeps the scene and clears only music mode, #286)
 
 ## Debug Logging Patterns
 

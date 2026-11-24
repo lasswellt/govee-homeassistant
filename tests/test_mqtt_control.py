@@ -35,7 +35,7 @@ class TestBuilders:
         assert build_turn_data(False, "H601F") == {"val": 0}
 
     def test_turn_on_h5083_quirk(self):
-        # H5080/H5083 use 17 (on) / 16 (off). Source: protocol-reference:922-928.
+        # H5080/H5083 use 17 (on) / 16 (off). Source: protocol reference, AWS IoT "Device-Specific Quirks".
         assert build_turn_data(True, "H5083") == {"val": 17}
 
     def test_turn_off_h5083_quirk(self):

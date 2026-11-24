@@ -1152,10 +1152,10 @@ class GoveeAuthClient:
                     # (H5110 via H5151), so the BFF list is the only source (#83).
                     settings = _as_dict(device_ext.get("deviceSettings"))
                     battery = settings.get("battery")
-                    # Dehumidifier (H7150/H7152) water-tank-full flag (0/1). The
-                    # developer /device/state poll never carries the
-                    # waterFullEvent value, so the BFF deviceSettings is the only
-                    # readable source (issue #118).
+                    # Dehumidifier (H7150/H7152) ``waterFull`` (0/1). Passed through
+                    # but unused: it is the app's "Full Bucket Alert" notification
+                    # setting, not live tank state. Tank-full comes from the
+                    # OpenAPI ``waterFullEvent`` instead (issue #118).
                     water_full = settings.get("waterFull")
                     tem = ld.get("tem")
                     hum = ld.get("hum")

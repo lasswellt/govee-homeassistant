@@ -338,6 +338,21 @@
       },
       "govee_desk_light": {
         "name": "Desk light"
+      },
+      "govee_left_light": {
+        "name": "Left light"
+      },
+      "govee_right_light": {
+        "name": "Right light"
+      },
+      "govee_back_light": {
+        "name": "Back light"
+      },
+      "govee_pillar_light": {
+        "name": "Pillar light"
+      },
+      "govee_base_light": {
+        "name": "Base light"
       }
     },
     "sensor": {

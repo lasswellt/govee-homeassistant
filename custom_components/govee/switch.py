@@ -32,6 +32,11 @@ from .const import (
     SUFFIX_MAIN_LIGHT,
     SUFFIX_MUSIC_MODE,
     SUFFIX_NEBULA_LIGHT,
+    SUFFIX_LEFT_LIGHT,
+    SUFFIX_RIGHT_LIGHT,
+    SUFFIX_BACK_LIGHT,
+    SUFFIX_PILLAR_LIGHT,
+    SUFFIX_BASE_LIGHT,
     SUFFIX_NIGHT_LIGHT,
     SUFFIX_RIPPLE_LIGHT,
     SUFFIX_SIDE_LIGHT,
@@ -78,6 +83,13 @@ NAMED_LIGHT_TOGGLE_SPECS: dict[str, tuple[str, str]] = {
     "ambientLightToggle": ("govee_ambient_light", SUFFIX_AMBIENT_LIGHT),
     "wallWashingLightToggle": ("govee_wall_washing_light", SUFFIX_WALL_WASHING_LIGHT),
     "deskLightToggle": ("govee_desk_light", SUFFIX_DESK_LIGHT),
+    # H605A/H605B light bars and the H607C floor lamp: seen in the 2026-11
+    # diagnostics (#241, #306); write-only like the rest (Govee returns "").
+    "leftLightToggle": ("govee_left_light", SUFFIX_LEFT_LIGHT),
+    "rightLightToggle": ("govee_right_light", SUFFIX_RIGHT_LIGHT),
+    "backLightToggle": ("govee_back_light", SUFFIX_BACK_LIGHT),
+    "pillarLightToggle": ("govee_pillar_light", SUFFIX_PILLAR_LIGHT),
+    "baseLightToggle": ("govee_base_light", SUFFIX_BASE_LIGHT),
 }
 
 

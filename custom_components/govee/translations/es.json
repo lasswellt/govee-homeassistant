@@ -253,6 +253,21 @@
       },
       "govee_desk_light": {
         "name": "Luz de escritorio"
+      },
+      "govee_left_light": {
+        "name": "Luz izquierda"
+      },
+      "govee_right_light": {
+        "name": "Luz derecha"
+      },
+      "govee_back_light": {
+        "name": "Luz trasera"
+      },
+      "govee_pillar_light": {
+        "name": "Luz de columna"
+      },
+      "govee_base_light": {
+        "name": "Luz de base"
       }
     },
     "sensor": {

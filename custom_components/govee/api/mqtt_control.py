@@ -21,7 +21,8 @@ from ..models.commands import (
 )
 
 # SKUs whose power values are 17 (on) / 16 (off) instead of 1 / 0.
-# Source: docs/govee-protocol-reference.md:922-928.
+# Source: docs/govee-protocol-reference.md, AWS IoT "Device-Specific Quirks"
+# (outgoing commands only; whether pushes carry 16/17 is unconfirmed).
 POWER_QUIRK_SKUS = frozenset({"H5080", "H5083"})
 
 
