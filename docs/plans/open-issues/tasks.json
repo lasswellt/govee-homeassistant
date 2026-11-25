@@ -1,0 +1,274 @@
+{
+  "$schema": "blitz-tasks/1.0",
+  "plan": "open-issues",
+  "updated": "2026-11-25T15:04:07Z",
+  "tasks": [
+    {
+      "id": "T-001",
+      "title": "Merge Dependabot #311/#312/#313, then #292+#291 together, and dry-run daily-release.yml",
+      "role": "infra",
+      "files": [
+        ".github/workflows/daily-release.yml",
+        ".github/workflows/hacs-hass.yaml"
+      ],
+      "depends_on": [],
+      "verify": [
+        {
+          "cmd": "for n in 311 312 313 292 291; do test \"$(gh pr view $n --json state --jq .state)\" = MERGED || exit 1; done",
+          "timeout": 60
+        },
+        {
+          "cmd": "! grep -qE 'download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093|upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02' .github/workflows/daily-release.yml",
+          "timeout": 10
+        },
+        {
+          "cmd": "! grep -q 'hassfest@86d4564712fa02543c808e3a693dd04f9d3f8361' .github/workflows/hacs-hass.yaml",
+          "timeout": 10
+        },
+        {
+          "cmd": "git fetch -q origin && R=$(gh run list --workflow daily-release.yml --event workflow_dispatch --limit 1 --json conclusion,headSha --jq \".[0]\") && test \"$(jq -r .conclusion <<<\"$R\")\" = success && git merge-base --is-ancestor \"$(gh pr view 291 --json mergeCommit --jq .mergeCommit.oid)\" \"$(jq -r .headSha <<<\"$R\")\"",
+          "timeout": 120
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "plan",
+      "notes": "Research §Q5. All five MERGEABLE CLEAN with six green checks (2026-11-25). Order: #311, #312 (hacs-hass.yaml), #313, then #292 and #291 back to back (same artifact generation; '@dependabot rebase' if a later one conflicts). We up/download by name with name/path/if-no-files-found/retention-days only (daily-release.yml:145,167,257,282,321), so download v5 by-ID path change and upload v7 archive:false do not apply; v8 digest mismatch now errors (acceptable). PR CI never runs daily-release.yml: after merging, gh workflow run daily-release.yml -f dry_run=true and wait for success BEFORE 02:00Z. Supersedes late-nov-sweep T-012 (its #302 was closed for #313). Merge only with CI green on main."
+    },
+    {
+      "id": "T-002",
+      "title": "#310 H7038: 4-byte ptReal segment mask, H7038 in PTREAL_SEGMENT_SKUS, reject indices >= 32",
+      "role": "backend",
+      "files": [
+        "custom_components/govee/const.py",
+        "custom_components/govee/api/ble_packet.py",
+        "custom_components/govee/coordinator.py",
+        "tests/test_ble_packet.py",
+        "tests/test_cov_coordinator_control.py"
+      ],
+      "depends_on": [],
+      "verify": [
+        {
+          "cmd": "grep -qE 'PTREAL_SEGMENT_SKUS.*\"H7038\"' custom_components/govee/const.py",
+          "timeout": 10
+        },
+        {
+          "cmd": "test $(grep -c 'mask >> 24' custom_components/govee/api/ble_packet.py) -ge 2",
+          "timeout": 10
+        },
+        {
+          "cmd": "grep -q 'H7038' tests/test_cov_coordinator_control.py && grep -qiE '0x3fffffff|0x3f' tests/test_ble_packet.py",
+          "timeout": 10
+        },
+        {
+          "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_ble_packet.py tests/test_cov_coordinator_control.py tests/test_ceiling_light_zones.py tests/test_issue_261.py",
+          "timeout": 300
+        },
+        {
+          "cmd": ".cc-sessions/venv312/bin/mypy custom_components/govee",
+          "timeout": 300
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "issue:310",
+      "notes": "Research §Q2. Reporter verified on hardware: 33 05 15 01 RR GG BB 00 00 00 00 00 m0 m1 m2 m3 reaches bulbs 1-30 (masks FF7F0000 / 0080FF00 / 0000003F). Append (mask >> 24) & 0xFF in build_segment_color_ptreal (ble_packet.py:~222) and build_segment_color_temp_ptreal (~284); leave build_segment_brightness_ptreal alone (segment brightness goes over REST, coordinator.py:5921-5923). Byte 15 is already the 0x00 pad, so H1232/H1252/H1A42 packets stay byte-identical: keep the goldens in tests/test_ble_packet.py:696-723 unchanged and update only the 24-bit-mask test (:733) and colour-length test (:743, 15->16). Add golden 30-bulb frames (mask 0x3FFFFFFF -> FF FF FF 3F; bit 29 only -> 00 00 00 20). coordinator.py:~5885: a segment index >= 32 returns False (no silent drop). Add a TestPtrealSegmentTier case: H7038 indices (0, 29) sends one frame with mask 01 00 00 20. Out of scope: H705E, H7026 (#208), REST fallback without MQTT. Commit subject cites #310."
+    },
+    {
+      "id": "T-003",
+      "title": "#241 H6099 video mode: DreamView switch from the aa 05 frame, ON via ptReal, OFF via colour restore",
+      "role": "backend",
+      "files": [
+        "custom_components/govee/const.py",
+        "custom_components/govee/models/device.py",
+        "tests/test_dreamview_frames.py",
+        "tests/test_cov_switch.py"
+      ],
+      "depends_on": [
+        "T-002"
+      ],
+      "verify": [
+        {
+          "cmd": "grep -qE 'FRAME_DREAMVIEW_SKUS.*\"H6099\"' custom_components/govee/const.py",
+          "timeout": 10
+        },
+        {
+          "cmd": "grep -qE 'PTREAL_DREAMVIEW_SKUS.*\"H6099\"' custom_components/govee/const.py && grep -qE 'DREAMVIEW_STATE_FROM_FRAMES_SKUS.*\"H6099\"' custom_components/govee/const.py",
+          "timeout": 10
+        },
+        {
+          "cmd": "grep -q 'FRAME_DREAMVIEW_SKUS' custom_components/govee/models/device.py && grep -q 'H6099' tests/test_cov_switch.py",
+          "timeout": 10
+        },
+        {
+          "cmd": "grep -q 'aa050000083200023200000000000000000000a5' tests/test_dreamview_frames.py",
+          "timeout": 10
+        },
+        {
+          "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_dreamview_frames.py tests/test_cov_switch.py tests/test_models.py",
+          "timeout": 300
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "issue:241",
+      "notes": "Research §Q3. Two users' video-on diagnostics carry aa050000083200023200000000000000000000a5 (XOR ok) and state.mode 0; existing H66A0 code reads dreamview_enabled = raw[2]==0x00 (models/state.py:706-733). H6099 advertises no dreamViewToggle, so supports_dreamview (models/device.py:912-925) is False and no switch is created (switch.py:179; frame gate coordinator.py:4133). Add const FRAME_DREAMVIEW_SKUS = frozenset({\"H6099\"}) (comment cites #241) and make supports_dreamview return True for it (mirror the MOVIE_MODE_DREAMVIEW_SKUS branch); add H6099 to DREAMVIEW_STATE_FROM_FRAMES_SKUS (const.py:285) and PTREAL_DREAMVIEW_SKUS (const.py:601). ON frame (33 05 00 01 00 64) unverified on H6099: user chose control anyway; frame-reported state makes a no-op visible. Tests: H6099 golden frame -> True, a valid aa05 15.. colour frame -> False, bad XOR ignored, H6099 device without the cap -> supports_dreamview True and a DreamView switch is created (test_cov_switch.py), ON sends build_dreamview_packet over ptReal, OFF restores colour. Depends on T-002 only because both edit const.py. Commit subject cites #241."
+    },
+    {
+      "id": "T-004",
+      "title": "DIY scenes: record each device's DIY fetch result in diagnostics; log when a DIY-capable device returns none",
+      "role": "backend",
+      "files": [
+        "custom_components/govee/scene_cache.py",
+        "custom_components/govee/diagnostics.py",
+        "custom_components/govee/select.py",
+        "tests/test_diagnostics.py",
+        "tests/test_scene_cache.py"
+      ],
+      "depends_on": [],
+      "verify": [
+        {
+          "cmd": "grep -q '\"diy_scenes\"' custom_components/govee/diagnostics.py",
+          "timeout": 10
+        },
+        {
+          "cmd": "grep -q 'no DIY scenes' custom_components/govee/select.py",
+          "timeout": 10
+        },
+        {
+          "cmd": "grep -q 'diy_scenes' tests/test_diagnostics.py",
+          "timeout": 10
+        },
+        {
+          "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_diagnostics.py tests/test_scene_cache.py tests/test_cov_select.py",
+          "timeout": 300
+        },
+        {
+          "cmd": ".cc-sessions/venv312/bin/mypy custom_components/govee",
+          "timeout": 300
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "issue:314",
+      "notes": "Research §Q4 (#314, #296, #298, #281). Today diagnostics only show diy_scene_cache_count (diagnostics.py:373), so an upstream empty list and a setup-time fetch error (scene_cache.py:284-293 returns [] uncached) look the same. Keep the last DIY fetch outcome per device in the scene cache (count, or the error class name; never the scene names, which are user-chosen) and emit it per device in diagnostics under key \"diy_scenes\" ({\"count\": n} or {\"error\": \"<ExceptionClass>\"}). In select.py:175-186, when a device supports diyScene but the list is empty, log one debug line containing the words 'no DIY scenes'. No behaviour change: entity creation, caching and refresh stay as they are. Privacy: no device names or scene names in diagnostics beyond what is already there."
+    },
+    {
+      "id": "T-005",
+      "title": "Protocol reference: 4-byte segment mask (#310), H6099 video mode (#241), Music DreamView 33 60 02 frames (#304)",
+      "role": "infra",
+      "files": [
+        "docs/govee-protocol-reference.md"
+      ],
+      "depends_on": [
+        "T-002",
+        "T-003"
+      ],
+      "verify": [
+        {
+          "cmd": "! grep -q '3-byte little-endian' docs/govee-protocol-reference.md",
+          "timeout": 10
+        },
+        {
+          "cmd": "grep -qE '4-byte|4B LE' docs/govee-protocol-reference.md && grep -q '#310' docs/govee-protocol-reference.md",
+          "timeout": 10
+        },
+        {
+          "cmd": "grep -q 'FRAME_DREAMVIEW_SKUS' docs/govee-protocol-reference.md",
+          "timeout": 10
+        },
+        {
+          "cmd": "grep -q '33 60 02' docs/govee-protocol-reference.md && grep -q '#304' docs/govee-protocol-reference.md",
+          "timeout": 10
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "plan",
+      "notes": "Research §Q2/Q3/Q6. Replace the '3-byte little-endian' mask wording (0x15 row ~:1496, §9.8 PTREAL_SEGMENT_SKUS row ~:4737) with the 4-byte layout (bytes 12-15 of the colour frame; brightness frame unchanged), add H7038 with #310. §9.8: add FRAME_DREAMVIEW_SKUS and H6099 to the DreamView rows with #241, marked unverified on hardware; update the H6099 model section (~:2012). Add a subsection documenting the H607C Music DreamView sync-centre frames from #304 (33 60 02 GG II 00 VV SS ... CC, XOR checksum, the 12 Lighting Show + 10 Carnival effect table, Dynamic/Soft variant byte, sensitivity byte, and the 8-colour frame) as reporter-captured, not implemented. Paraphrase the reporter's tables; no device ids. Do NOT put #304 in the commit subject (T-006 queues its reply)."
+    },
+    {
+      "id": "T-006",
+      "title": "Queue release replies for #310, #208, #241, #314, #308, #304",
+      "role": "infra",
+      "files": [
+        "docs/release-replies.md"
+      ],
+      "depends_on": [
+        "T-002",
+        "T-003",
+        "T-004"
+      ],
+      "verify": [
+        {
+          "cmd": "for n in 310 208 241 314 308 304; do grep -q \"^## #$n\\$\" docs/release-replies.md || exit 1; done",
+          "timeout": 10
+        },
+        {
+          "cmd": "test $(grep -c '^close: no' docs/release-replies.md) -ge 6",
+          "timeout": 10
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "plan",
+      "notes": "Format per docs/release-replies.md header (## #N, close:, brief:). All close: no. #310: fixed via AWS IoT for H7038, needs account login, ask to confirm all 30 bulbs; H705E left on REST. #208: ask the reporter to try 33 05 15 01 RR GG BB 00 00 00 00 00 <4-byte mask> via govee.send_raw_ptreal on indices 16-29 and report. #241: switch added, state from the device's own frame; ask to confirm HA ON enters video mode, app Video->Color flips it off, HA OFF restores colour; if ON does nothing, a diagnostics download right after pressing it. #314: ask for integration/HA version, a diagnostics download (the new per-device diy_scenes entry), whether the scenes are DIY or Snapshot in the app, and log lines mentioning DIY scenes; refresh can't create a missing selector, a reload after scenes exist can. #308: the release already avoids the LAN power-off for anyone on 1.00.48; firmware rollout is Govee's, no manual path we know of. #304: thanks, frames documented in the protocol reference, kept open as a feature request. Never cite a version the brief does not name."
+    },
+    {
+      "id": "T-007",
+      "title": "Full gates and green main CI before the 02:00Z release",
+      "role": "test",
+      "files": [
+        "custom_components/govee",
+        "tests"
+      ],
+      "depends_on": [
+        "T-001",
+        "T-002",
+        "T-003",
+        "T-004",
+        "T-005",
+        "T-006"
+      ],
+      "verify": [
+        {
+          "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= --cov=custom_components.govee --cov-fail-under=95",
+          "timeout": 600
+        },
+        {
+          "cmd": ".cc-sessions/venv312/bin/mypy custom_components/govee && .cc-sessions/venv312/bin/flake8 . && .cc-sessions/venv312/bin/black --check .",
+          "timeout": 400
+        },
+        {
+          "cmd": "S=$(git rev-parse HEAD); test \"$(git rev-parse origin/main)\" = \"$S\" && test \"$(gh run list --commit \"$S\" --json name,conclusion --jq \"[.[] | select(.name != \\\"Govee API Uptime\\\" and .name != \\\"Daily release\\\" and .conclusion == \\\"success\\\")] | length\")\" -ge 4",
+          "timeout": 60
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "plan",
+      "notes": "Full suite with coverage floor 95, mypy strict, flake8, black --check, then CI green on main HEAD (the four workflows: Tests, Type Checking, Style check, HACS/HASS Actions). Tonight's run then ships v2026.11.2 with #310 and #241."
+    }
+  ]
+}
