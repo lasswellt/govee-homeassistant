@@ -676,13 +676,14 @@ class GoveeDeviceState:
         self.clear_optimistic_window()
 
     def update_light_zones_from_frames(self, frames: Iterable[bytes]) -> bool:
-        """Apply the Ceiling Light Pro's ``aa 30 <main> <ring>`` zone frame (H1252, #223).
+        """Apply a ceiling light's ``aa 30 <main> <ring>`` zone frame (H1252 #223, H60A6).
 
         Byte 2 is ``01`` while the main panel is lit, byte 3 while the RGBIC
         ring is. The Developer API returns ``""`` for both toggles on poll,
         so this frame is the only live source. Only a full 20-byte frame
         with a valid XOR checksum counts. The device-wide ``onOff`` is left
-        alone: the zones were only verified with the fixture powered.
+        alone. The H60A6 sends ``00 00`` while the fixture is off, so both
+        zones then read off.
 
         Args:
             frames: Decoded (not base64) frames from ``op.command``.

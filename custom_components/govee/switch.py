@@ -602,8 +602,9 @@ class GoveeNamedLightSwitchEntity(GoveeEntity, SwitchEntity, RestoreEntity):
 
         Prefers the shared state when the device has reported the toggle —
         ceiling-fan combos push their lights as ``aa 42`` / ``aa 36`` frames
-        over AWS IoT (issue #181) — and falls back to the restored optimistic
-        value otherwise.
+        over AWS IoT (issue #181), the H1252 and H60A6 ceiling lights as an
+        ``aa 30`` frame — and falls back to the restored optimistic value
+        otherwise.
         """
         state = self.device_state
         if state is not None:
