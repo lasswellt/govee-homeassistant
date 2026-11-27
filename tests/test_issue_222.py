@@ -25,6 +25,7 @@ from custom_components.govee.const import (
     MQTT_SILENT_MIN_MISSED_PUSHES,
     MQTT_SILENT_MIN_QUERIES,
 )
+from custom_components.govee.models import GoveeDeviceState
 from custom_components.govee.repairs import (
     ISSUE_MQTT_SILENT,
     async_create_mqtt_silent_issue,
@@ -53,6 +54,7 @@ def issues(monkeypatch):
 
 def _silent_coord():
     coord, client = _coord()
+    coord._states = {device_id: GoveeDeviceState(device_id=device_id, online=True) for device_id in coord._devices}
     client.inbound_total = 0
     client.async_stop = AsyncMock()
     client.async_start = AsyncMock()
@@ -204,6 +206,42 @@ class TestSilence:
         coord._mqtt_client = None
         await coord._async_check_mqtt_silence()
         created.assert_not_called()
+
+
+class TestOfflineDevicesAreNotEvidence:
+    """#316: queries to offline devices cannot be answered, so they prove nothing."""
+
+    @pytest.mark.asyncio
+    async def test_all_offline_is_not_silent(self, sleeps, issues):
+        created, _deleted = issues
+        coord, client, _ = _silent_coord()
+        for state in coord._states.values():
+            state.online = False
+        for _ in range(2):
+            await coord._poll_mqtt_status()
+            await coord._async_check_mqtt_silence()
+        assert client.async_publish_status_query.await_count > 0
+        assert coord._mqtt_queries_since_connect == 0
+        client.async_stop.assert_not_awaited()
+        created.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_mixed_counts_only_online_devices(self, sleeps, issues):
+        coord, client, _ = _silent_coord()
+        coord._states["B"].online = False
+        coord._states["C"].online = False
+        await coord._poll_mqtt_status()
+        assert client.async_publish_status_query.await_count == 3
+        assert coord._mqtt_queries_since_connect == 1
+
+    @pytest.mark.asyncio
+    async def test_request_status_counts_only_online(self, sleeps, issues):
+        coord, client, _ = _silent_coord()
+        coord._states["A"].online = False
+        assert await coord.async_request_status("A", user=True) is True
+        assert coord._mqtt_queries_since_connect == 0
+        assert await coord.async_request_status("B", user=True) is True
+        assert coord._mqtt_queries_since_connect == 1
 
 
 _SESSION_START = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)

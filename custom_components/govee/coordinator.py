@@ -3890,7 +3890,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                     self._status_query_in_flight = device_id
                     try:
                         await client.async_publish_status_query(topic)
-                        self._mqtt_queries_since_connect += 1
+                        self._count_mqtt_status_query(device_id)
                         await asyncio.sleep(MQTT_STATUS_QUERY_SPACING)
                         if client.connected:
                             # The session outlived this query's window, so AWS
@@ -4230,6 +4230,21 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 name="govee_mqtt_connected_status_poll",
             )
 
+    def _count_mqtt_status_query(self, device_id: str) -> None:
+        """Count a published status query as silence evidence if the device is online.
+
+        An offline device cannot answer, so when every MQTT device is genuinely
+        offline the quiet session is expected, not broken (#316). The query is
+        still published, because a live device the cloud falsely reports
+        offline answers it and ``update_from_mqtt`` then sets it online (#242).
+        This reads ``state.online``, not ``device_reachable()``.
+
+        Args:
+            device_id: Device the status query was published for.
+        """
+        if (state := self._states.get(device_id)) is not None and state.online:
+            self._mqtt_queries_since_connect += 1
+
     def _arm_mqtt_silence_check(self) -> None:
         """Start the silent-session check for the session that just came up (#222)."""
         client = self._mqtt_client
@@ -4541,7 +4556,7 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             self._status_query_in_flight = device_id
             try:
                 await client.async_publish_status_query(self._device_topics[device_id])
-                self._mqtt_queries_since_connect += 1
+                self._count_mqtt_status_query(device_id)
                 await asyncio.sleep(MQTT_STATUS_QUERY_SPACING)
                 if client.connected:
                     # As in the sweep: the session outlived this query's window.
