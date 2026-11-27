@@ -26,3 +26,5 @@ Ruling: class=architectural tasks=12 (+5: T-008..T-012); from docs/research/2026
 
 ## 2026-11-27T22:49:48Z plan extended (2026-11-27 research)
 Ruling: class=bounded tasks=2; #322 version-safe reload helper in config_flow.py (T-013), reopen #316 + 3.14-lane final gate (T-014); no open PRs
+## 2026-11-27T22:57:04Z build T-013 start (dev, sonnet)
+## 2026-11-27T23:00:21Z verify T-013 ok=true (staged; maintainer commit pending: credential filename hook). Mutation check: old config_flow.py fails the new no-warning asserts with the #322 text
