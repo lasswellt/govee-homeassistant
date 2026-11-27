@@ -1,7 +1,7 @@
 {
   "$schema": "blitz-tasks/1.0",
   "plan": "open-issues",
-  "updated": "2026-11-27T02:54:38Z",
+  "updated": "2026-11-27T03:49:29Z",
   "tasks": [
     {
       "id": "T-001",
@@ -30,13 +30,48 @@
           "timeout": 120
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-27T03:42:17Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "for n in 311 312 313 292 291; do test \"$(gh pr view $n --json state --jq .state)\" = MERGED || exit 1; done",
+            "exit": 0,
+            "duration_ms": 1765,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:42:15Z"
+          },
+          {
+            "cmd": "! grep -qE 'download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093|upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02' .github/workflows/daily-release.yml",
+            "exit": 0,
+            "duration_ms": 14,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:42:15Z"
+          },
+          {
+            "cmd": "! grep -q 'hassfest@86d4564712fa02543c808e3a693dd04f9d3f8361' .github/workflows/hacs-hass.yaml",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:42:15Z"
+          },
+          {
+            "cmd": "git fetch -q origin && R=$(gh run list --workflow daily-release.yml --event workflow_dispatch --limit 1 --json conclusion,headSha --jq \".[0]\") && test \"$(jq -r .conclusion <<<\"$R\")\" = success && git merge-base --is-ancestor \"$(gh pr view 291 --json mergeCommit --jq .mergeCommit.oid)\" \"$(jq -r .headSha <<<\"$R\")\"",
+            "exit": 0,
+            "duration_ms": 1483,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:42:17Z"
+          }
+        ]
+      },
       "origin": "plan",
-      "notes": "Research §Q5. All five MERGEABLE CLEAN with six green checks (2026-11-25). Order: #311, #312 (hacs-hass.yaml), #313, then #292 and #291 back to back (same artifact generation; '@dependabot rebase' if a later one conflicts). We up/download by name with name/path/if-no-files-found/retention-days only (daily-release.yml:145,167,257,282,321), so download v5 by-ID path change and upload v7 archive:false do not apply; v8 digest mismatch now errors (acceptable). PR CI never runs daily-release.yml: after merging, gh workflow run daily-release.yml -f dry_run=true and wait for success BEFORE 02:00Z. Supersedes late-nov-sweep T-012 (its #302 was closed for #313). Merge only with CI green on main."
+      "notes": "Research §Q5. All five MERGEABLE CLEAN with six green checks (2026-11-25). Order: #311, #312 (hacs-hass.yaml), #313, then #292 and #291 back to back (same artifact generation; '@dependabot rebase' if a later one conflicts). We up/download by name with name/path/if-no-files-found/retention-days only (daily-release.yml:145,167,257,282,321), so download v5 by-ID path change and upload v7 archive:false do not apply; v8 digest mismatch now errors (acceptable). PR CI never runs daily-release.yml: after merging, gh workflow run daily-release.yml -f dry_run=true and wait for success BEFORE 02:00Z. Supersedes late-nov-sweep T-012 (its #302 was closed for #313). Merge only with CI green on main. [2026-11-27] Done: all five merged 03:08Z; dry run 45932473228 (gate skipped, nothing to release) and 45933037977 after #319 (gate, draft, preview all success)."
     },
     {
       "id": "T-002",
@@ -72,13 +107,55 @@
           "timeout": 300
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-27T03:44:56Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "grep -qE 'PTREAL_SEGMENT_SKUS.*\"H7038\"' custom_components/govee/const.py",
+            "exit": 0,
+            "duration_ms": 4,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:44:53Z"
+          },
+          {
+            "cmd": "test $(grep -c 'mask >> 24' custom_components/govee/api/ble_packet.py) -ge 2",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:44:53Z"
+          },
+          {
+            "cmd": "grep -q 'H7038' tests/test_cov_coordinator_control.py && grep -qiE '0x3fffffff|0x3f' tests/test_ble_packet.py",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:44:53Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_ble_packet.py tests/test_cov_coordinator_control.py tests/test_ceiling_light_zones.py tests/test_issue_261.py",
+            "exit": 0,
+            "duration_ms": 2729,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 23%]\n........................................................................ [ 46%]\n........................................................................ [ 70%]\n........................................................................ [ 93%]\n...................                                                      [100%]\n307 passed in 1.47s",
+            "recorded_at": "2026-11-27T03:44:56Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/mypy custom_components/govee",
+            "exit": 0,
+            "duration_ms": 127,
+            "tail": "Success: no issues found in 59 source files",
+            "recorded_at": "2026-11-27T03:44:56Z"
+          }
+        ]
+      },
       "origin": "issue:310",
-      "notes": "Research §Q2. Reporter verified on hardware: 33 05 15 01 RR GG BB 00 00 00 00 00 m0 m1 m2 m3 reaches bulbs 1-30 (masks FF7F0000 / 0080FF00 / 0000003F). Append (mask >> 24) & 0xFF in build_segment_color_ptreal (ble_packet.py:~222) and build_segment_color_temp_ptreal (~284); leave build_segment_brightness_ptreal alone (segment brightness goes over REST, coordinator.py:5921-5923). Byte 15 is already the 0x00 pad, so H1232/H1252/H1A42 packets stay byte-identical: keep the goldens in tests/test_ble_packet.py:696-723 unchanged and update only the 24-bit-mask test (:733) and colour-length test (:743, 15->16). Add golden 30-bulb frames (mask 0x3FFFFFFF -> FF FF FF 3F; bit 29 only -> 00 00 00 20). coordinator.py:~5885: a segment index >= 32 returns False (no silent drop). Add a TestPtrealSegmentTier case: H7038 indices (0, 29) sends one frame with mask 01 00 00 20. Out of scope: H705E, H7026 (#208), REST fallback without MQTT. Commit subject cites #310. [2026-11-26] Build after T-008 (the fork PRs also edit const.py)."
+      "notes": "Research §Q2. Reporter verified on hardware: 33 05 15 01 RR GG BB 00 00 00 00 00 m0 m1 m2 m3 reaches bulbs 1-30 (masks FF7F0000 / 0080FF00 / 0000003F). Append (mask >> 24) & 0xFF in build_segment_color_ptreal (ble_packet.py:~222) and build_segment_color_temp_ptreal (~284); leave build_segment_brightness_ptreal alone (segment brightness goes over REST, coordinator.py:5921-5923). Byte 15 is already the 0x00 pad, so H1232/H1252/H1A42 packets stay byte-identical: keep the goldens in tests/test_ble_packet.py:696-723 unchanged and update only the 24-bit-mask test (:733) and colour-length test (:743, 15->16). Add golden 30-bulb frames (mask 0x3FFFFFFF -> FF FF FF 3F; bit 29 only -> 00 00 00 20). coordinator.py:~5885: a segment index >= 32 returns False (no silent drop). Add a TestPtrealSegmentTier case: H7038 indices (0, 29) sends one frame with mask 01 00 00 20. Out of scope: H705E, H7026 (#208), REST fallback without MQTT. Commit subject cites #310. [2026-11-26] Build after T-008 (the fork PRs also edit const.py). scope+tests/test_ceiling_light_zones.py scope+tests/test_issue_261.py (raw-list goldens gain a trailing 00; build_packet bytes unchanged)"
     },
     {
       "id": "T-003",
@@ -115,11 +192,53 @@
           "timeout": 300
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-27T03:46:58Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "grep -qE 'FRAME_DREAMVIEW_SKUS.*\"H6099\"' custom_components/govee/const.py",
+            "exit": 0,
+            "duration_ms": 4,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:46:57Z"
+          },
+          {
+            "cmd": "grep -qE 'PTREAL_DREAMVIEW_SKUS.*\"H6099\"' custom_components/govee/const.py && grep -qE 'DREAMVIEW_STATE_FROM_FRAMES_SKUS.*\"H6099\"' custom_components/govee/const.py",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:46:57Z"
+          },
+          {
+            "cmd": "grep -q 'FRAME_DREAMVIEW_SKUS' custom_components/govee/models/device.py && grep -q 'H6099' tests/test_cov_switch.py",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:46:57Z"
+          },
+          {
+            "cmd": "grep -q 'aa050000083200023200000000000000000000a5' tests/test_dreamview_frames.py",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:46:57Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_dreamview_frames.py tests/test_cov_switch.py tests/test_models.py",
+            "exit": 0,
+            "duration_ms": 1869,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 25%]\n........................................................................ [ 51%]\n........................................................................ [ 76%]\n.................................................................        [100%]\n281 passed in 0.65s",
+            "recorded_at": "2026-11-27T03:46:58Z"
+          }
+        ]
+      },
       "origin": "issue:241",
       "notes": "Research §Q3. Two users' video-on diagnostics carry aa050000083200023200000000000000000000a5 (XOR ok) and state.mode 0; existing H66A0 code reads dreamview_enabled = raw[2]==0x00 (models/state.py:706-733). H6099 advertises no dreamViewToggle, so supports_dreamview (models/device.py:912-925) is False and no switch is created (switch.py:179; frame gate coordinator.py:4133). Add const FRAME_DREAMVIEW_SKUS = frozenset({\"H6099\"}) (comment cites #241) and make supports_dreamview return True for it (mirror the MOVIE_MODE_DREAMVIEW_SKUS branch); add H6099 to DREAMVIEW_STATE_FROM_FRAMES_SKUS (const.py:285) and PTREAL_DREAMVIEW_SKUS (const.py:601). ON frame (33 05 00 01 00 64) unverified on H6099: user chose control anyway; frame-reported state makes a no-op visible. Tests: H6099 golden frame -> True, a valid aa05 15.. colour frame -> False, bad XOR ignored, H6099 device without the cap -> supports_dreamview True and a DreamView switch is created (test_cov_switch.py), ON sends build_dreamview_packet over ptReal, OFF restores colour. Depends on T-002 only because both edit const.py. Commit subject cites #241. [2026-11-26] Build after T-008."
     },
@@ -298,11 +417,46 @@
           "timeout": 300
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-27T03:49:27Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "for n in 319 321 320; do test \"$(gh pr view $n --json state --jq .state)\" = MERGED || exit 1; done",
+            "exit": 0,
+            "duration_ms": 1013,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:49:25Z"
+          },
+          {
+            "cmd": "grep -q 'LIGHT_ZONE_FRAME_SKUS' custom_components/govee/const.py && grep -q 'RIPPLE_FLOW_SKUS' custom_components/govee/const.py && grep -q 'EXCLUSIVE_LIGHT_TOGGLE_MODES' custom_components/govee/const.py",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:49:25Z"
+          },
+          {
+            "cmd": "grep -q 'def supports_ripple_flow' custom_components/govee/models/device.py && grep -q 'def light_toggle_modes' custom_components/govee/models/device.py",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:49:25Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_h60a6_light_zones.py tests/test_h60b0_light_mode.py tests/test_h60b0_ripple_flow.py",
+            "exit": 0,
+            "duration_ms": 1785,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n................................................                         [100%]\n48 passed in 0.44s",
+            "recorded_at": "2026-11-27T03:49:27Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "Research 2026-11-26 §Q1. All three are fork PRs, maintainerCanModify=true, CI action_required: approve each pending run (gh run list --event pull_request --json databaseId,headBranch,conclusion; gh api -X POST repos/lasswellt/govee-homeassistant/actions/runs/<id>/approve). Local gates were green per PR and combined (4,789 passed, 99.74%). Order #319 -> #321 -> #320, squash, each only with its CI green (gh run list --commit <full sha>). After #319 merges, merge main into #321's fork branch: const.py conflict, keep LIGHT_ZONE_FRAME_SKUS block then RIPPLE_FLOW_SKUS block. After #321 merges, merge main into #320's branch: models/device.py conflict after named_light_toggle_instances, keep supports_ripple_flow then '@property' + light_toggle_modes + light_toggles_turned_off_by; docs auto-merge. Build this BEFORE T-002/T-003/T-005: they edit const.py and the protocol reference and would add conflicts to the fork branches. Optional follow-up: refresh stale H60A6 comments at const.py:257 and :592. Gh needs dangerouslyDisableSandbox."
     },
@@ -376,11 +530,46 @@
           "timeout": 300
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-27T03:49:29Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": ".cc-sessions/venv312/bin/python -c \"from custom_components.govee.const import FAHRENHEIT_REPORTING_SKUS as S; assert 'H5074' in S\"",
+            "exit": 0,
+            "duration_ms": 496,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:49:27Z"
+          },
+          {
+            "cmd": "! grep -q 'Not in FAHRENHEIT_REPORTING_SKUS: that list needs' custom_components/govee/const.py",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:49:27Z"
+          },
+          {
+            "cmd": "grep -q '\"H5074\"' tests/test_zone_light_toggles.py",
+            "exit": 0,
+            "duration_ms": 4,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:49:27Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_zone_light_toggles.py tests/test_models.py",
+            "exit": 0,
+            "duration_ms": 1842,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 40%]\n........................................................................ [ 80%]\n...................................                                      [100%]\n179 passed in 0.43s",
+            "recorded_at": "2026-11-27T03:49:29Z"
+          }
+        ]
+      },
       "origin": "issue:317",
       "notes": "Research 2026-11-26 §Q3. 63.5 F read as C = 146.3 F exactly; sibling H5075 already in the set (const.py:141-163). Add \"H5074\"; add a comment line next to the H5102/H5107 entry (~const.py:119) citing #317 (raw value F-scale, no unit; option API temperature unit remains the override); replace the 'Not in FAHRENHEIT_REPORTING_SKUS...' sentence at const.py:497-500 with a pointer to #317. Add H5074 to both TestFahrenheitAllowlist parametrize lists (tests/test_zone_light_toggles.py:105,109). Issue is closed by reporter; commit subject cites #317 so the release bot still replies."
     },
