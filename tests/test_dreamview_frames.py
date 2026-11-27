@@ -53,6 +53,37 @@ class TestDecoder:
         assert state.dreamview_enabled is False
 
 
+H6099_VIDEO_ON = "aa050000083200023200000000000000000000a5"
+
+
+class TestH6099Frames:
+    def test_golden_video_frame_is_on(self):
+        state = _state(False)
+        assert state.update_dreamview_from_frames([bytes.fromhex(H6099_VIDEO_ON)]) is True
+        assert state.dreamview_enabled is True
+
+    def test_other_mode_frame_is_off(self):
+        state = _state(True)
+        assert state.update_dreamview_from_frames([_frame(0x15)]) is True
+        assert state.dreamview_enabled is False
+
+    def test_bad_checksum_ignored(self):
+        bad = bytearray.fromhex(H6099_VIDEO_ON)
+        bad[19] ^= 0xFF
+        state = _state(False)
+        assert state.update_dreamview_from_frames([bytes(bad)]) is False
+        assert state.dreamview_enabled is False
+
+    def test_mqtt_push_reads_frame_without_capability(self):
+        coord = _coordinator()
+        device = GoveeDevice(
+            device_id=DEV, sku="H6099", name="Light", device_type="devices.types.light", capabilities=(_POWER,)
+        )
+        state = _add(coord, device, _state(False))
+        coord._on_mqtt_state_update(DEV, {"onOff": 1, "_op_frames": [H6099_VIDEO_ON]})
+        assert state.dreamview_enabled is True
+
+
 def _push(sku: str, initial: bool, frame: bytes) -> GoveeDeviceState:
     coord = _coordinator()
     device = GoveeDevice(

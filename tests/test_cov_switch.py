@@ -303,6 +303,54 @@ def _names(entities) -> list[str]:
 # --------------------------------------------------------------------------- #
 
 
+class TestH6099FrameDreamView:
+    """H6099 advertises no dreamViewToggle; the switch rides the aa 05 frame (#241)."""
+
+    def _h6099(self, *, is_group: bool = False) -> GoveeDevice:
+        return dataclasses.replace(
+            _device(
+                "AA:BB:CC:DD:EE:FF:60:99", "H6099", "TV", DEVICE_TYPE_LIGHT, _cap(CAPABILITY_ON_OFF, INSTANCE_POWER)
+            ),
+            is_group=is_group,
+        )
+
+    def test_supports_dreamview_without_capability(self):
+        assert self._h6099().supports_dreamview is True
+        assert self._h6099(is_group=True).supports_dreamview is False
+
+    async def test_switch_is_created(self):
+        coordinator = MagicMock()
+        device = self._h6099()
+        coordinator.devices = {device.device_id: device}
+        entry = MagicMock()
+        entry.runtime_data = coordinator
+        entry.options = {}
+        added: list = []
+        await switch_mod.async_setup_entry(MagicMock(), entry, added.extend)
+        assert any(isinstance(entity, GoveeDreamViewSwitchEntity) for entity in added)
+
+    async def test_on_sends_ptreal_and_off_restores_colour(self):
+        from tests.test_cov_coordinator_control import _add, _ble_manager, _coordinator, _sent
+        from custom_components.govee.models import RGBColor
+        from custom_components.govee.models.commands import ColorCommand
+
+        coord = _coordinator()
+        dev = self._h6099()
+        dev = dataclasses.replace(dev, device_id="AA:BB:CC:DD:EE:FF:00:11")
+        state = _add(coord, dev)
+        coord._ble_manager = _ble_manager()
+
+        assert await coord.async_send_dreamview(dev.device_id, True) is True
+        assert _sent(coord) == []
+        coord._ble_manager.async_send_dreamview.assert_awaited_once_with(dev.device_id, "H6099")
+        assert state.dreamview_enabled is True
+
+        state.last_color = RGBColor(10, 20, 30)
+        assert await coord.async_send_dreamview(dev.device_id, False) is True
+        assert _sent(coord) == [ColorCommand(color=RGBColor(10, 20, 30))]
+        assert state.dreamview_enabled is False
+
+
 class TestSetupEntry:
     @pytest.mark.parametrize("enabled", [False, True])
     async def test_h6104_tv_switch_requires_experimental_option(self, enabled):

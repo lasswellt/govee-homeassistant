@@ -296,7 +296,7 @@ RIPPLE_FLOW_SKUS: Final = frozenset({"H60B0"})
 # SKUs whose DreamView switch follows the light's own ``aa 05 <mode>`` report
 # (issue #213: the H66A0 kept HA's optimistic ON while the app ran another
 # mode). Add a model only once a capture confirms its report.
-DREAMVIEW_STATE_FROM_FRAMES_SKUS: Final = frozenset({"H66A0"})
+DREAMVIEW_STATE_FROM_FRAMES_SKUS: Final = frozenset({"H66A0", "H6099"})
 
 # Colour-temperature range of those zones, the fixture's whole-device
 # colorTemperatureK range. The frame builder clamps to it.
@@ -608,11 +608,17 @@ MAIN_LIGHT_TOGGLE_SKUS: Final = frozenset({"H1270"})
 # Deliberately narrow: only the H2A41 is verified against real hardware.
 MOVIE_MODE_DREAMVIEW_SKUS: Final = frozenset({"H2A41"})
 
+# SKUs with no DreamView capability in the Platform API whose video mode is
+# read from the light's own ``aa 05`` status frame (issue #241: the H6099
+# advertises no ``dreamViewToggle``). The switch is created from that alone;
+# ON/OFF go through the ptReal path. The ON frame is unverified on this model.
+FRAME_DREAMVIEW_SKUS: Final = frozenset({"H6099"})
+
 # SKUs that advertise ``dreamViewToggle`` but ignore it: Govee answers HTTP 200
 # and the light never enters screen sync (issue #213). The REST toggle is
 # skipped for them, so DreamView ON goes straight to the video-mode frame over
 # AWS IoT and OFF restores the last colour. Unverified on hardware.
-PTREAL_DREAMVIEW_SKUS: Final = frozenset({"H66A0"})
+PTREAL_DREAMVIEW_SKUS: Final = frozenset({"H66A0", "H6099"})
 
 # SKUs that accept ``dreamViewToggle`` OFF over REST (HTTP 200) but stay in
 # video mode: diagnostics for the H605B showed an MQTT op frame (``aa 05 00``)

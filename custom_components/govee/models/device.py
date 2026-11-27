@@ -17,6 +17,7 @@ from ..const import (
     BFF_SEGMENT_COUNT_SKUS,
     EXCLUSIVE_LIGHT_TOGGLE_MODES,
     MAIN_LIGHT_TOGGLE_SKUS,
+    FRAME_DREAMVIEW_SKUS,
     MOVIE_MODE_DREAMVIEW_SKUS,
     MULTI_OUTLET_MQTT_SKUS,
     RIPPLE_FLOW_SKUS,
@@ -958,6 +959,8 @@ class GoveeDevice:
         """
         if any(cap.is_dreamview for cap in self.capabilities):
             return True
+        if self.sku.upper() in FRAME_DREAMVIEW_SKUS:
+            return not self.is_group
         if self.sku.upper() in MOVIE_MODE_DREAMVIEW_SKUS:
             return any(
                 cap.type == CAPABILITY_MOVIE_SETTING and cap.instance == INSTANCE_MOVIE_MODE
