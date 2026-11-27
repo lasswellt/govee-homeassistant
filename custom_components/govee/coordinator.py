@@ -200,6 +200,7 @@ from .api.ble_packet import (
     LIGHT_ZONE_RING,
     build_light_zone_ptreal,
     build_packet,
+    build_ripple_flow_ptreal,
     build_segment_brightness_ptreal,
     build_segment_color_ptreal,
     build_segment_color_temp_ptreal,
@@ -6995,6 +6996,22 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             )
 
         return success
+
+    async def async_set_ripple_flow(self, device_id: str, speed: int) -> bool:
+        """Set the ripple light's flow speed (0-100) on a ``RIPPLE_FLOW_SKUS`` lamp.
+
+        The Platform API has no capability for it, so the app's ptReal frame
+        goes over LAN when healthy, else the AWS IoT passthrough. Nothing reads
+        the speed back.
+
+        Returns:
+            True if the frame was sent.
+        """
+        device = self._devices.get(device_id)
+        if device is None or not device.supports_ripple_flow:
+            _LOGGER.debug("Ripple flow is not supported on %s", device_id)
+            return False
+        return await self.async_send_raw_ptreal(device_id, bytes(build_ripple_flow_ptreal(speed)))
 
     async def async_send_raw_ptreal(self, device_id: str, frame: bytes | list[bytes]) -> bool:
         """Send raw ptReal BLE frame(s) to a device (developer/debug aid).

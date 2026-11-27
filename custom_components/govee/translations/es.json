@@ -161,6 +161,9 @@
       }
     },
     "number": {
+      "govee_ripple_flow": {
+        "name": "Flujo ondulante"
+      },
       "govee_music_sensitivity": {
         "name": "Sensibilidad del modo música"
       }
