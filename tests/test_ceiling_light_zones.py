@@ -112,7 +112,7 @@ class TestFrames:
 
     def test_ring_colour_temperature_matches_the_verified_capture(self):
         frame = build_segment_color_temp_ptreal(6500, RGBColor(0xFF, 0xFF, 0xFF), PTREAL_RING_MASK)
-        assert bytes(frame).hex(" ") == "33 05 15 01 ff ff ff 19 64 ff ff ff ff ff 00"
+        assert bytes(frame).hex(" ") == "33 05 15 01 ff ff ff 19 64 ff ff ff ff ff 00 00"
 
 
 class TestStateFromFrames:
@@ -252,7 +252,7 @@ class TestZoneColourTemperature:
     def test_colour_temperature_frame_matches_the_verified_capture(self):
         # Sent to a real H1252: main panel 2700 K, colour left at full white.
         frame = build_segment_color_temp_ptreal(2700, RGBColor(0xFF, 0xA6, 0x57), 1 << 16)
-        assert bytes(frame).hex(" ") == "33 05 15 01 ff ff ff 0a 8c ff a6 57 00 00 01"
+        assert bytes(frame).hex(" ") == "33 05 15 01 ff ff ff 0a 8c ff a6 57 00 00 01 00"
 
     @pytest.mark.asyncio
     async def test_main_panel_kelvin_sends_one_masked_frame(self):

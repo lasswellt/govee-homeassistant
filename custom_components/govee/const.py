@@ -260,10 +260,12 @@ BFF_SEGMENT_COUNT_SKUS: Final = frozenset({"H3A53"})
 # H1A42 (#261): the cloud segmentedColorRgb call returns 200 but does nothing;
 # the reporter confirmed the raw frames over AWS IoT ptReal (first segment
 # ``33 05 15 01 00 FF 00 00 00 00 00 00 01 00 00``, all 15 with mask ``FF 7F 00``).
-PTREAL_SEGMENT_SKUS: Final = frozenset({"H1232", "H1252", "H1A42"})
+# H7038 (#310): 30 bulbs; the reporter verified on hardware that a 4-byte mask
+# (``FF 7F 00 00`` / ``00 80 FF 00`` / ``00 00 00 3F``) reaches bulbs 1-30.
+PTREAL_SEGMENT_SKUS: Final = frozenset({"H1232", "H1252", "H1A42", "H7038"})
 
 # SKUs whose 17th internal segment is a separate main panel, not a ring
-# segment, addressed by this bit in the same 3-byte little-endian ptReal
+# segment, addressed by this bit in the same little-endian ptReal
 # segment mask (bit i = internal segment i+1). Reporter-verified on the
 # H1232 and the H1252 (#223).
 PTREAL_MAIN_PANEL_BIT: Final = {"H1232": 16, "H1252": 16}

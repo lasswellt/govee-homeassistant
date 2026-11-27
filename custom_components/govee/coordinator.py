@@ -5886,6 +5886,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             # REST equivalent and fail.
             if isinstance(command, SegmentColorCommand) and device.sku.upper() in PTREAL_SEGMENT_SKUS:
                 if self._ble_manager.available:
+                    if any(index >= 32 for index in command.segment_indices):
+                        _LOGGER.debug("Segment index >= 32 does not fit the 4-byte ptReal mask for %s", device_id)
+                        return False
                     mask = 0
                     for index in command.segment_indices:
                         mask |= 1 << index

@@ -450,6 +450,33 @@ class TestControlDeviceTiers:
 # --------------------------------------------------------------------------- #
 
 
+class TestH7038PtrealMask:
+    @pytest.mark.asyncio
+    async def test_h7038_bulbs_1_and_30_send_one_four_byte_mask_frame(self):
+        coord = _coordinator()
+        _add(coord, _device(sku="H7038", caps=(_POWER, _RGB, _SEGMENTS)))
+        coord._ble_manager = _ble_manager()
+        command = SegmentColorCommand(segment_indices=(0, 29), color=RGBColor(255, 0, 0))
+
+        assert await coord.async_control_device(DEV, command) is True
+
+        coord._ble_manager.async_send_ble_packet.assert_awaited_once()
+        frame = base64.b64decode(coord._ble_manager.async_send_ble_packet.await_args.args[2])
+        assert list(frame[12:16]) == [0x01, 0x00, 0x00, 0x20]
+
+    @pytest.mark.asyncio
+    async def test_index_32_or_more_is_refused_without_sending(self):
+        coord = _coordinator()
+        _add(coord, _device(sku="H7038", caps=(_POWER, _RGB, _SEGMENTS)))
+        coord._ble_manager = _ble_manager()
+        command = SegmentColorCommand(segment_indices=(0, 32), color=RGBColor(255, 0, 0))
+
+        assert await coord.async_control_device(DEV, command) is False
+
+        coord._ble_manager.async_send_ble_packet.assert_not_awaited()
+        coord._api_client.control_device.assert_not_awaited()
+
+
 class TestLanTierEdges:
     @pytest.mark.asyncio
     async def test_commands_without_a_lan_form_fall_through_untouched(self):

@@ -25,12 +25,16 @@ def test_h1a42_is_ptreal_only_for_segments() -> None:
 
 
 def test_reporter_frames_match_builder() -> None:
-    first = [0x33, 0x05, 0x15, 0x01, 0x00, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00]
-    all_15 = first[:12] + [0xFF, 0x7F, 0x00]
-    all_5 = first[:12] + [0x1F, 0x00, 0x00]
+    first = [0x33, 0x05, 0x15, 0x01, 0x00, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00]
+    all_15 = first[:12] + [0xFF, 0x7F, 0x00, 0x00]
+    all_5 = first[:12] + [0x1F, 0x00, 0x00, 0x00]
     assert build_segment_color_ptreal(RGBColor(0, 255, 0), 0x000001) == first
     assert build_segment_color_ptreal(RGBColor(0, 255, 0), 0x7FFF) == all_15
     assert build_segment_color_ptreal(RGBColor(0, 255, 0), 0x1F) == all_5
+    # The 4th mask byte is the old pad: the padded packets are unchanged.
+    assert build_packet(first) == build_packet(first[:15])
+    assert build_packet(all_15) == build_packet(all_15[:15])
+    assert build_packet(all_5) == build_packet(all_5[:15])
 
 
 def test_segment_count_is_five() -> None:

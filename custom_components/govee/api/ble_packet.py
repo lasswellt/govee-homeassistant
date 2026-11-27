@@ -174,7 +174,7 @@ def build_music_mode_v3_packet(effect_code: int, sensitivity: int) -> bytes:
 
 # H1232 "Ceiling Light Pro" ptReal segment frames (issue #223). The fixture has
 # 17 internal segments (1-16 = RGBIC ring, 17 = main panel) behind a single
-# 3-byte little-endian bitmask, bit i = internal segment i+1 (bits 0-15 =
+# 4-byte little-endian bitmask (the 4th byte is the old pad, #310), bit i = internal segment i+1 (bits 0-15 =
 # ring, bit 16 = main panel). Verified visually on hardware with
 # ``send_raw_ptreal``, frames before the ``build_packet`` checksum:
 #   ring + panel green:          33 05 15 01 00 FF 00 00 00 00 00 00 FF FF 01
@@ -198,8 +198,9 @@ def build_segment_color_ptreal(rgb: RGBColor, mask: int) -> list[int]:
 
     Args:
         rgb: Target colour.
-        mask: 3-byte little-endian segment bitmask, bit i = internal
-              segment i+1 (bits 0-15 = ring, bit 16 = main panel).
+        mask: 4-byte little-endian segment bitmask, bit i = internal
+              segment i+1 (bits 0-15 = ring, bit 16 = main panel; the
+              H7038 uses bits 0-29 for its 30 bulbs, #310).
 
     Returns:
         Packet data bytes (before ``build_packet`` padding/checksum).
@@ -220,6 +221,7 @@ def build_segment_color_ptreal(rgb: RGBColor, mask: int) -> list[int]:
         mask & 0xFF,
         (mask >> 8) & 0xFF,
         (mask >> 16) & 0xFF,
+        (mask >> 24) & 0xFF,
     ]
 
 
@@ -259,7 +261,7 @@ def build_segment_color_temp_ptreal(kelvin: int, white: RGBColor, mask: int) -> 
         kelvin: Colour temperature, clamped to PTREAL_ZONE_MIN_KELVIN -
                 PTREAL_ZONE_MAX_KELVIN.
         white: RGB approximation of ``kelvin``.
-        mask: 3-byte little-endian segment bitmask, as for
+        mask: 4-byte little-endian segment bitmask, as for
               ``build_segment_color_ptreal``.
 
     Returns:
@@ -282,6 +284,7 @@ def build_segment_color_temp_ptreal(kelvin: int, white: RGBColor, mask: int) -> 
         mask & 0xFF,
         (mask >> 8) & 0xFF,
         (mask >> 16) & 0xFF,
+        (mask >> 24) & 0xFF,
     ]
 
 

@@ -27,6 +27,7 @@ from custom_components.govee.api.ble_packet import (
     build_packet,
     build_segment_brightness_ptreal,
     build_segment_color_ptreal,
+    build_segment_color_temp_ptreal,
     calculate_checksum,
     encode_packet_base64,
     music_v3_effect_code,
@@ -728,12 +729,27 @@ class TestSegmentPtrealFrames:
     def test_color_mask_bit_i_is_segment_i_plus_1(self):
         """Mask bit 0 addresses internal segment 1 (platform index 0)."""
         data = build_segment_color_ptreal(RGBColor(1, 2, 3), 0b1)
-        assert data[-3:] == [0x01, 0x00, 0x00]
+        assert data[-4:] == [0x01, 0x00, 0x00, 0x00]
 
-    def test_color_mask_is_masked_to_24_bits_per_byte(self):
+    def test_color_mask_is_masked_to_32_bits_per_byte(self):
         """Each mask byte is isolated even if the caller passes a larger int."""
-        data = build_segment_color_ptreal(RGBColor(1, 2, 3), 0x1FFFFFF)
-        assert data[-3:] == [0xFF, 0xFF, 0xFF]
+        data = build_segment_color_ptreal(RGBColor(1, 2, 3), 0x1FFFFFFFF)
+        assert data[-4:] == [0xFF, 0xFF, 0xFF, 0xFF]
+
+    def test_h7038_thirty_bulbs_mask(self):
+        """H7038 (#310): mask 0x3FFFFFFF -> FF FF FF 3F, reaching all 30 bulbs."""
+        data = build_segment_color_ptreal(RGBColor(1, 2, 3), 0x3FFFFFFF)
+        assert data[-4:] == [0xFF, 0xFF, 0xFF, 0x3F]
+
+    def test_h7038_bulb_30_only_mask(self):
+        """Bit 29 only (bulb 30) -> 00 00 00 20."""
+        data = build_segment_color_ptreal(RGBColor(1, 2, 3), 1 << 29)
+        assert data[-4:] == [0x00, 0x00, 0x00, 0x20]
+
+    def test_color_temp_mask_has_fourth_byte(self):
+        """The colour-temperature frame carries the same 4-byte mask."""
+        data = build_segment_color_temp_ptreal(4000, RGBColor(255, 200, 150), 1 << 29)
+        assert data[-4:] == [0x00, 0x00, 0x00, 0x20]
 
     def test_brightness_is_clamped_to_0_100(self):
         """Out-of-range brightness percentages are clamped like the other builders."""
@@ -741,9 +757,9 @@ class TestSegmentPtrealFrames:
         assert build_segment_brightness_ptreal(-5, 0)[4] == 0
 
     def test_color_frame_length_matches_payload_before_padding(self):
-        """The colour frame is 15 data bytes before build_packet pads/checksums it."""
+        """The colour frame is 16 data bytes before build_packet pads/checksums it."""
         data = build_segment_color_ptreal(RGBColor(0, 0, 0), 0)
-        assert len(data) == 15
+        assert len(data) == 16
 
     def test_brightness_frame_length_matches_payload_before_padding(self):
         """The brightness frame is 8 data bytes before build_packet pads/checksums it."""
