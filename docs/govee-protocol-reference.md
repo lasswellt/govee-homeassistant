@@ -4750,6 +4750,8 @@ Model-specific behaviour is kept in named allow-lists, all in `custom_components
 
 **Ripple flow speed (H60B0).** The app sets the ripple lens speed with the ptReal frame `33 05 2c 01 03 <0-100>` (0 stops it). The Platform API has no capability for it and nothing reports it back. `RIPPLE_FLOW_SKUS` gates a "Ripple flow" number (`GoveeRippleFlowNumber`) that sends it through `async_set_ripple_flow`, over LAN when healthy, else the AWS IoT passthrough, and restores the last value set. The frame is from the H60B0 table posted on #211; verified on an H60B0 over LAN (2026-11): 10 slowed the ripple and 0 stopped it.
 
+**Exclusive light groups.** Some lamps never light certain parts together and switch the other parts off themselves. `EXCLUSIVE_LIGHT_TOGGLE_MODES` in `const.py` lists them by SKU: the H60B0 lights its bottom light or its ripple light, never both, and its side light with either. Because the toggles read back as `""`, the coordinator marks the other group off in `state.toggles` whenever a toggle is switched on, and a "Light mode" select (`GoveeLightModeSelectEntity`) switches on every toggle of the chosen group. Toggles in no group (the H60B0 side light) are never touched. Other SKUs, the H60B3 included, keep independent switches.
+
 
 ## 10. Scene & DIY Modes
 

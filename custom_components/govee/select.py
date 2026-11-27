@@ -14,6 +14,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
     CONF_ENABLE_DIY_SCENES,
@@ -26,6 +27,7 @@ from .const import (
     SUFFIX_DIY_SCENE_SELECT,
     SUFFIX_HDMI_SOURCE_SELECT,
     SUFFIX_HEATER_FAN_SPEED,
+    SUFFIX_LIGHT_MODE_SELECT,
     SUFFIX_MUSIC_MODE_SELECT,
     SUFFIX_NIGHTLIGHT_SCENE_SELECT,
     SUFFIX_PRESET_SCENE_SELECT,
@@ -43,6 +45,7 @@ from .models import (
     MusicModeCommand,
     SceneCommand,
     SnapshotCommand,
+    ToggleCommand,
     WorkModeCommand,
 )
 from .models.device import (
@@ -138,6 +141,16 @@ async def async_setup_entry(
                 device.name,
             )
             continue
+
+        # Light mode for lamps whose parts are mutually exclusive (H60B0:
+        # bottom or ripple; side runs with either). Not gated on scenes.
+        if device.light_toggle_modes:
+            entities.append(GoveeLightModeSelectEntity(coordinator, device))
+            _LOGGER.debug(
+                "Created light mode select for %s with modes %s",
+                device.name,
+                list(device.light_toggle_modes),
+            )
 
         # Dynamic scenes
         if enable_scenes and device.supports_scenes:
@@ -1038,3 +1051,61 @@ class GoveePresetSceneSelectEntity(_GoveeSelectBase):
         await self._async_send_command(ModeCommand(mode_instance=INSTANCE_PRESET_SCENE, value=value))
         self.async_write_ha_state()
         _LOGGER.debug("Set preset scene '%s' (value=%d) on %s", option, value, self._device.name)
+
+
+class GoveeLightModeSelectEntity(_GoveeSelectBase, RestoreEntity):
+    """Pick which of a lamp's exclusive parts is lit (H60B0: bottom or ripple).
+
+    The lamp never lights these parts together, so one dropdown is easier
+    than juggling the per-part switches. Choosing a mode switches on every
+    toggle in it; the device turns the other mode off itself, and the
+    coordinator mirrors that in the shared toggle state so the part switches
+    follow. Parts in no mode (the H60B0's side light) are left alone.
+
+    Govee returns ``""`` for these toggles on poll, so the current mode comes
+    from the shared toggle state when anything has written it, and otherwise
+    from the restored last choice.
+    """
+
+    _attr_translation_key = "govee_light_mode"
+
+    def __init__(self, coordinator: GoveeCoordinator, device: GoveeDevice) -> None:
+        """Initialize the light mode select entity."""
+        super().__init__(coordinator, device)
+        self._modes = device.light_toggle_modes
+        self._attr_options = list(self._modes)
+        self._attr_unique_id = f"{device.device_id}{SUFFIX_LIGHT_MODE_SELECT}"
+        self._restored_option: str | None = None
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the last chosen mode."""
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state in self._modes:
+            self._restored_option = last_state.state
+
+    @property
+    def current_option(self) -> str | None:
+        """Return the lit mode, or the restored choice when nothing is known."""
+        state = self.coordinator.get_state(self._device_id)
+        if state is None:
+            return self._restored_option
+        known = [(mode, state.toggles.get(t)) for mode, toggles in self._modes.items() for t in toggles]
+        for mode, value in known:
+            if value:
+                return mode
+        # Every known toggle is off (e.g. ripple switched off): no mode is lit.
+        if any(value is not None for _, value in known):
+            return None
+        return self._restored_option
+
+    async def async_select_option(self, option: str) -> None:
+        """Switch on every part of ``option``; the lamp turns the other mode off."""
+        toggles = self._modes.get(option)
+        if toggles is None:
+            raise self._unknown_option(option)
+        for toggle in toggles:
+            await self._async_send_command(ToggleCommand(toggle_instance=toggle, enabled=True))
+        self._restored_option = option
+        self.async_write_ha_state()
+        _LOGGER.debug("Set light mode '%s' on %s", option, self._device.name)

@@ -119,6 +119,13 @@
       "govee_diy_scene_select": {
         "default": "mdi:palette-advanced"
       },
+      "govee_light_mode": {
+        "default": "mdi:floor-lamp-torchiere-variant",
+        "state": {
+          "bottom": "mdi:floor-lamp",
+          "ripple": "mdi:waves"
+        }
+      },
       "govee_hdmi_source_select": {
         "default": "mdi:hdmi-port"
       },

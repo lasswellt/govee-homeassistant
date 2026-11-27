@@ -190,6 +190,13 @@
       "govee_nightlight_scene_select": {
         "name": "Escena de llum nocturna"
       },
+      "govee_light_mode": {
+        "name": "Mode de llum",
+        "state": {
+          "bottom": "Llum inferior",
+          "ripple": "Llum ondulant"
+        }
+      },
       "kettle_brew_mode": {
         "name": "Mode de preparació",
         "state": {

@@ -15,6 +15,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 
 from ..const import (
     BFF_SEGMENT_COUNT_SKUS,
+    EXCLUSIVE_LIGHT_TOGGLE_MODES,
     MAIN_LIGHT_TOGGLE_SKUS,
     MOVIE_MODE_DREAMVIEW_SKUS,
     MULTI_OUTLET_MQTT_SKUS,
@@ -572,6 +573,32 @@ class GoveeDevice:
             and self.sku.upper() in RIPPLE_FLOW_SKUS
             and "rippleLightToggle" in self.named_light_toggle_instances
         )
+
+    @property
+    def light_toggle_modes(self) -> dict[str, tuple[str, ...]]:
+        """Mutually exclusive groups of named light toggles, by mode key.
+
+        From ``EXCLUSIVE_LIGHT_TOGGLE_MODES`` (H60B0: bottom or ripple, never
+        both; side runs with either), keeping only the toggles this device
+        advertises. Empty unless at least two modes are left, since one group
+        alone has nothing to be exclusive with. Groups never have light modes.
+        """
+        if self.is_group:
+            return {}
+        advertised = set(self.named_light_toggle_instances)
+        modes = {
+            mode: tuple(t for t in toggles if t in advertised)
+            for mode, toggles in EXCLUSIVE_LIGHT_TOGGLE_MODES.get(self.sku.upper(), {}).items()
+        }
+        modes = {mode: toggles for mode, toggles in modes.items() if toggles}
+        return modes if len(modes) >= 2 else {}
+
+    def light_toggles_turned_off_by(self, instance: str) -> tuple[str, ...]:
+        """Toggles the device switches off itself when ``instance`` is switched on."""
+        modes = self.light_toggle_modes
+        if not any(instance in toggles for toggles in modes.values()):
+            return ()
+        return tuple(t for toggles in modes.values() if instance not in toggles for t in toggles)
 
     @property
     def supports_main_light_toggle(self) -> bool:
