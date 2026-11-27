@@ -18,6 +18,7 @@ from ..const import (
     MAIN_LIGHT_TOGGLE_SKUS,
     MOVIE_MODE_DREAMVIEW_SKUS,
     MULTI_OUTLET_MQTT_SKUS,
+    RIPPLE_FLOW_SKUS,
     SKU_SEGMENT_OVERRIDES,
 )
 from .state import _coerce_int
@@ -558,6 +559,19 @@ class GoveeDevice:
             if cap.type == CAPABILITY_TOGGLE and pattern.fullmatch(cap.instance)
             if cap.instance not in dead_on_this_sku
         ]
+
+    @property
+    def supports_ripple_flow(self) -> bool:
+        """Whether the ripple light's flow speed can be set (``RIPPLE_FLOW_SKUS``).
+
+        Needs the ``rippleLightToggle`` the speed belongs to; groups have no
+        ptReal channel.
+        """
+        return (
+            not self.is_group
+            and self.sku.upper() in RIPPLE_FLOW_SKUS
+            and "rippleLightToggle" in self.named_light_toggle_instances
+        )
 
     @property
     def supports_main_light_toggle(self) -> bool:

@@ -218,6 +218,9 @@
       "probe_ambient_min": {
         "name": "Probe {probe} ambient min"
       },
+      "govee_ripple_flow": {
+        "name": "Ripple flow"
+      },
       "govee_music_sensitivity": {
         "name": "Music sensitivity"
       },

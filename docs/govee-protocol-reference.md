@@ -4747,6 +4747,8 @@ Model-specific behaviour is kept in named allow-lists, all in `custom_components
 
 **Named light toggles.** `NAMED_LIGHT_TOGGLE_SPECS` in `switch.py` lists the `*LightToggle` instances that become their own switch: `mainLightToggle`, `backgroundLightToggle`, `nebulaLightToggle`, `rippleLightToggle`, `sideLightToggle`, `bottomLightToggle`, `ambientLightToggle`, `wallWashingLightToggle`, `deskLightToggle` (H2800), `leftLightToggle`, `rightLightToggle`, `backLightToggle` (H605A/H605B) and `pillarLightToggle`, `baseLightToggle` (H607C) (#241, #306). Any other light-toggle instance is logged at debug level and skipped. These toggles are write-only: Govee reads them back as `""`.
 
+**Ripple flow speed (H60B0).** The app sets the ripple lens speed with the ptReal frame `33 05 2c 01 03 <0-100>` (0 stops it). The Platform API has no capability for it and nothing reports it back. `RIPPLE_FLOW_SKUS` gates a "Ripple flow" number (`GoveeRippleFlowNumber`) that sends it through `async_set_ripple_flow`, over LAN when healthy, else the AWS IoT passthrough, and restores the last value set. The frame is from the H60B0 table posted on #211; verified on an H60B0 over LAN (2026-11): 10 slowed the ripple and 0 stopped it.
+
 
 ## 10. Scene & DIY Modes
 
