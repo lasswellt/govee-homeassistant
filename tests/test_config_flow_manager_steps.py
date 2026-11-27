@@ -208,16 +208,22 @@ async def _start_reconfigure(hass: HomeAssistant, entry: MockConfigEntry):
     return result["flow_id"]
 
 
-async def test_reconfigure_replaces_key_and_removes_account(hass: HomeAssistant) -> None:
+async def test_reconfigure_replaces_key_and_removes_account(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
     entry = _entry(
         hass,
         **{CONF_EMAIL: EMAIL, CONF_PASSWORD: PASSWORD, KEY_IOT_LOGIN_FAILED: "2FA verification required"},
     )
+    entry.add_update_listener(AsyncMock())
     flow_id = await _start_reconfigure(hass, entry)
 
-    result = await hass.config_entries.flow.async_configure(
-        flow_id, {CONF_API_KEY: NEW_KEY, CONF_EMAIL: "", CONF_PASSWORD: ""}
-    )
+    with patch.object(hass.config_entries, "async_schedule_reload") as schedule:
+        result = await hass.config_entries.flow.async_configure(
+            flow_id, {CONF_API_KEY: NEW_KEY, CONF_EMAIL: "", CONF_PASSWORD: ""}
+        )
+    schedule.assert_called_once_with(entry.entry_id)
+    assert "has an update listener" not in caplog.text
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reconfigure_successful"
@@ -250,13 +256,19 @@ async def test_reconfigure_new_email_without_password_is_rejected(hass: HomeAssi
     assert result["errors"] == {"base": "email_without_password"}
 
 
-async def test_reconfigure_with_new_account_and_two_factor(hass: HomeAssistant, auth_client) -> None:
+async def test_reconfigure_with_new_account_and_two_factor(
+    hass: HomeAssistant, auth_client, caplog: pytest.LogCaptureFixture
+) -> None:
     """Reconfigure with credentials that need 2FA routes through the code step."""
     entry = _entry(hass)
+    entry.add_update_listener(AsyncMock())
     flow_id = await _start_reconfigure(hass, entry)
-    with patch(
-        "custom_components.govee.config_flow.validate_govee_credentials",
-        AsyncMock(side_effect=[Govee2FARequiredError(), CREDS]),
+    with (
+        patch(
+            "custom_components.govee.config_flow.validate_govee_credentials",
+            AsyncMock(side_effect=[Govee2FARequiredError(), CREDS]),
+        ),
+        patch.object(hass.config_entries, "async_schedule_reload") as schedule,
     ):
         result = await hass.config_entries.flow.async_configure(
             flow_id, {CONF_API_KEY: NEW_KEY, CONF_EMAIL: EMAIL, CONF_PASSWORD: PASSWORD}
@@ -269,6 +281,8 @@ async def test_reconfigure_with_new_account_and_two_factor(hass: HomeAssistant, 
     assert entry.data[CONF_API_KEY] == NEW_KEY
     assert entry.data[CONF_EMAIL] == EMAIL
     assert entry.data[KEY_IOT_CREDENTIALS]["token"] == "tok"
+    schedule.assert_called_once_with(entry.entry_id)
+    assert "has an update listener" not in caplog.text
 
 
 async def test_reconfigure_account_login_errors(hass: HomeAssistant) -> None:

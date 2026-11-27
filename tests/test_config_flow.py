@@ -1079,7 +1079,7 @@ class TestVerificationCodeFlow:
 
         mock_creds = MagicMock()
         mock_update_result = MagicMock()
-        flow.async_update_reload_and_abort = MagicMock(return_value=mock_update_result)
+        flow.async_abort = MagicMock(return_value=mock_update_result)
 
         with patch(
             "custom_components.govee.config_flow.validate_govee_credentials",
@@ -1088,10 +1088,12 @@ class TestVerificationCodeFlow:
             result = await flow.async_step_verification_code({"verification_code": "123456"})
 
         assert result is mock_update_result
-        # Verify async_update_reload_and_abort was called with correct data
-        call_args = flow.async_update_reload_and_abort.call_args
+        # Entry data is replaced, the reload is scheduled by us, and the flow aborts
+        call_args = flow.hass.config_entries.async_update_entry.call_args
         assert call_args[0][0] is mock_entry
         data_updates = call_args[1]["data"]
+        flow.hass.config_entries.async_schedule_reload.assert_called_once_with("test_entry_id")
+        flow.async_abort.assert_called_once_with(reason="reconfigure_successful")
         assert data_updates[CONF_EMAIL] == "new@example.com"
         assert data_updates[CONF_PASSWORD] == "newpass"
         assert data_updates[CONF_API_KEY] == "new-api-key-xxxx-xxxx-xxxx-xxxx-long"

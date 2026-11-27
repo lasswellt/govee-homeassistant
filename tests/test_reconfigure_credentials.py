@@ -123,14 +123,9 @@ class TestReconfigureFlowOrdering:
         flow._get_reconfigure_entry = lambda: entry
         flow._clear_mqtt_cache = MagicMock()
 
-        captured: dict = {}
-
-        def _abort(target, data=None, **_kwargs):
-            captured["data"] = data
-            return {"type": "abort", "reason": "reconfigure_successful"}
+        flow.async_abort = MagicMock(return_value={"type": "abort", "reason": "reconfigure_successful"})
 
         with (
-            patch.object(GoveeConfigFlow, "async_update_reload_and_abort", side_effect=_abort),
             patch(
                 "custom_components.govee.config_flow.validate_api_key",
                 return_value=True,
@@ -148,7 +143,7 @@ class TestReconfigureFlowOrdering:
                 }
             )
 
-        written = captured.get("data") or {}
+        written = flow.hass.config_entries.async_update_entry.call_args.kwargs["data"]
         creds = written.get(KEY_IOT_CREDENTIALS)
         assert creds is not None, "reconfigure wrote no credentials at all"
         assert creds["token"] == "fresh-token", "reconfigure wrote the stale token back over the fresh one — #179"

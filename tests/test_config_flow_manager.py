@@ -81,19 +81,23 @@ async def test_user_flow_aborts_on_duplicate_key(hass: HomeAssistant, _valid_key
     _valid_key.assert_not_awaited()
 
 
-async def test_reauth_replaces_key(hass: HomeAssistant, _valid_key) -> None:
+async def test_reauth_replaces_key(hass: HomeAssistant, _valid_key, caplog: pytest.LogCaptureFixture) -> None:
     entry = MockConfigEntry(domain=DOMAIN, data={CONF_API_KEY: API_KEY}, version=2)
     entry.add_to_hass(hass)
+    entry.add_update_listener(AsyncMock())
 
     entry.async_start_reauth(hass)
     await hass.async_block_till_done()
     flow = next(f for f in hass.config_entries.flow.async_progress() if f["handler"] == DOMAIN)
     assert flow["step_id"] == "reauth_confirm"
 
-    result = await hass.config_entries.flow.async_configure(flow["flow_id"], {CONF_API_KEY: OTHER_KEY})
+    with patch.object(hass.config_entries, "async_schedule_reload") as schedule:
+        result = await hass.config_entries.flow.async_configure(flow["flow_id"], {CONF_API_KEY: OTHER_KEY})
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reauth_successful"
     assert entry.data[CONF_API_KEY] == OTHER_KEY
+    schedule.assert_called_once_with(entry.entry_id)
+    assert "has an update listener" not in caplog.text
 
 
 async def test_reauth_refuses_key_of_another_entry(hass: HomeAssistant, _valid_key) -> None:

@@ -20,6 +20,7 @@ else:
     import voluptuous as vol
 from homeassistant.config_entries import (
     SOURCE_BLUETOOTH,
+    SOURCE_RECONFIGURE,
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
@@ -375,7 +376,7 @@ class GoveeConfigFlow(ConfigFlow, domain=DOMAIN):
                     self._sync_cached_creds(new_data, reconfigure_entry)
                     # new_data is the complete replacement; data_updates would
                     # merge and could never drop a removed email or password.
-                    return self.async_update_reload_and_abort(
+                    return self._update_entry_reload_and_abort(
                         reconfigure_entry,
                         data=new_data,
                     )
@@ -407,13 +408,35 @@ class GoveeConfigFlow(ConfigFlow, domain=DOMAIN):
             },
         )
 
+    def _update_entry_reload_and_abort(self, entry: ConfigEntry, *, data: dict[str, Any]) -> ConfigFlowResult:
+        """Replace the entry data, schedule a reload and abort the flow.
+
+        Stands in for ``async_update_reload_and_abort``, which logs "has an
+        update listener and should use it for scheduling a reload" because this
+        integration keeps an options-only update listener (data-only token
+        writes must never reload, #132/#322). The reload is always scheduled,
+        matching HA's default.
+
+        Args:
+            entry: Config entry to update.
+            data: Complete replacement for ``entry.data``.
+
+        Returns:
+            The abort result (``reconfigure_successful`` or ``reauth_successful``).
+        """
+        self.hass.config_entries.async_update_entry(entry, data=data)
+        self.hass.config_entries.async_schedule_reload(entry.entry_id)
+        return self.async_abort(
+            reason="reconfigure_successful" if self.source == SOURCE_RECONFIGURE else "reauth_successful"
+        )
+
     @staticmethod
     def _sync_cached_creds(new_data: dict[str, Any], entry: ConfigEntry) -> None:
         """Carry freshly cached credential keys into a ``data_updates`` payload.
 
         ``_clear_mqtt_cache`` and ``_cache_iot_credentials`` write straight to
         ``entry.data``, but the payload passed to
-        ``async_update_reload_and_abort`` is snapshotted from ``entry.data``
+        ``_update_entry_reload_and_abort`` is snapshotted from ``entry.data``
         *before* those calls run, and it replaces the entry data wholesale.
         Without re-syncing, the stale token in that snapshot is written back
         over the fresh one the flow just obtained: the user sees
@@ -574,9 +597,9 @@ class GoveeConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._abort_if_key_used_elsewhere(cleaned_key, reauth_entry)
                 try:
                     await validate_api_key(cleaned_key, hass=self.hass)
-                    return self.async_update_reload_and_abort(
+                    return self._update_entry_reload_and_abort(
                         reauth_entry,
-                        data_updates={CONF_API_KEY: cleaned_key},
+                        data={**reauth_entry.data, CONF_API_KEY: cleaned_key},
                     )
 
                 except GoveeAuthError as err:
@@ -708,7 +731,7 @@ class GoveeConfigFlow(ConfigFlow, domain=DOMAIN):
                         self._sync_cached_creds(new_data, reconfigure_entry)
 
                         # Complete replacement, see async_step_reconfigure.
-                        return self.async_update_reload_and_abort(
+                        return self._update_entry_reload_and_abort(
                             reconfigure_entry,
                             data=new_data,
                         )
