@@ -187,6 +187,13 @@
       "govee_nightlight_scene_select": {
         "name": "Escena de luz nocturna"
       },
+      "govee_light_mode": {
+        "name": "Modo de luz",
+        "state": {
+          "bottom": "Luz inferior",
+          "ripple": "Luz ondulante"
+        }
+      },
       "kettle_brew_mode": {
         "name": "Modo de preparación",
         "state": {

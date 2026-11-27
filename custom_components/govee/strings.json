@@ -256,6 +256,13 @@
       "govee_nightlight_scene_select": {
         "name": "Night light scene"
       },
+      "govee_light_mode": {
+        "name": "Light mode",
+        "state": {
+          "bottom": "Bottom light",
+          "ripple": "Ripple light"
+        }
+      },
       "kettle_brew_mode": {
         "name": "Brew mode",
         "state": {

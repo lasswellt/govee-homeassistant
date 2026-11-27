@@ -4747,6 +4747,8 @@ Model-specific behaviour is kept in named allow-lists, all in `custom_components
 
 **Named light toggles.** `NAMED_LIGHT_TOGGLE_SPECS` in `switch.py` lists the `*LightToggle` instances that become their own switch: `mainLightToggle`, `backgroundLightToggle`, `nebulaLightToggle`, `rippleLightToggle`, `sideLightToggle`, `bottomLightToggle`, `ambientLightToggle`, `wallWashingLightToggle`, `deskLightToggle` (H2800), `leftLightToggle`, `rightLightToggle`, `backLightToggle` (H605A/H605B) and `pillarLightToggle`, `baseLightToggle` (H607C) (#241, #306). Any other light-toggle instance is logged at debug level and skipped. These toggles are write-only: Govee reads them back as `""`.
 
+**Exclusive light groups.** Some lamps never light certain parts together and switch the other parts off themselves. `EXCLUSIVE_LIGHT_TOGGLE_MODES` in `const.py` lists them by SKU: the H60B0 lights its bottom light or its ripple light, never both, and its side light with either. Because the toggles read back as `""`, the coordinator marks the other group off in `state.toggles` whenever a toggle is switched on, and a "Light mode" select (`GoveeLightModeSelectEntity`) switches on every toggle of the chosen group. Toggles in no group (the H60B0 side light) are never touched. Other SKUs, the H60B3 included, keep independent switches.
+
 
 ## 10. Scene & DIY Modes
 

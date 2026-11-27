@@ -7224,6 +7224,12 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
                 # entity reading state.toggles agrees with the one that wrote
                 # it, and a later push or poll can still overwrite it.
                 state.toggles[command.toggle_instance] = command.enabled
+                # Lamps that never light some parts together (H60B0: bottom
+                # vs ripple) switch the other group off themselves;
+                # mirror that so those switches do not stay "on".
+                if command.enabled and device is not None:
+                    for other in device.light_toggles_turned_off_by(command.toggle_instance):
+                        state.toggles[other] = False
 
     async def async_get_scenes(
         self,

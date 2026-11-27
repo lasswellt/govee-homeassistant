@@ -608,6 +608,23 @@ PTREAL_DREAMVIEW_SKUS: Final = frozenset({"H66A0"})
 # hardware beyond the reporter's diagnostics.
 DREAMVIEW_OFF_VIA_COLOUR_SKUS: Final = frozenset({"H605B"})
 
+# Fixtures whose named light toggles fall into groups the lamp never lights
+# together: switching on a part in one group turns every part of the other
+# groups off on the device itself. Govee returns "" for these toggles on poll,
+# so without this table the other switches would stay "on" in Home Assistant.
+# Each SKU maps a mode key (the "Light mode" select option, translated under
+# ``entity.select.govee_light_mode.state``) to the toggles that mode lights.
+# A toggle in no group (the H60B0's side light) is left alone either way.
+# The H60B0 floor lamp lights its bottom light or its ripple light, never both,
+# and the side light alongside either one (an owner's report, checked on the
+# lamp, 2026-11).
+EXCLUSIVE_LIGHT_TOGGLE_MODES: Final[dict[str, dict[str, tuple[str, ...]]]] = {
+    "H60B0": {
+        "bottom": ("bottomLightToggle",),
+        "ripple": ("rippleLightToggle",),
+    },
+}
+
 # BLE constants
 # Govee AWS/BLE advert manufacturer ID. Verified against
 # Bluetooth-Devices/govee-ble (used by H5127 and related). Additional IDs
@@ -714,6 +731,7 @@ SUFFIX_HEATER_THERMOSTAT: Final = "_heater_thermostat"
 SUFFIX_PURIFIER_MODE_SELECT: Final = "_purifier_mode_select"
 SUFFIX_PRESET_SCENE_SELECT: Final = "_preset_scene_select"
 SUFFIX_NIGHTLIGHT_SCENE_SELECT: Final = "_nightlight_scene_select"
+SUFFIX_LIGHT_MODE_SELECT: Final = "_light_mode_select"
 # H7175 kettle. The water heater is suffixed so the kettle's existing power
 # switch keeps its bare-device-id unique_id.
 SUFFIX_KETTLE: Final = "_kettle"
