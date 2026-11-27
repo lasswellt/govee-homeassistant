@@ -5,7 +5,7 @@ The H605A/H605B light bars advertise ``leftLightToggle`` / ``rightLightToggle`` 
 ``baseLightToggle`` (#241, #306). Govee returns ``""`` for all of them on poll,
 so each becomes an optimistic named light switch like the H60B3's (#126).
 
-The H5102 (#209) and H5107 (#91) return °F-scale ``sensorTemperature`` with no
+The H5102 (#209), H5107 (#91) and H5074 (#317) return °F-scale ``sensorTemperature`` with no
 unit field, so they join FAHRENHEIT_REPORTING_SKUS for the API-key-only case.
 """
 
@@ -102,10 +102,10 @@ class TestSwitches:
 
 
 class TestFahrenheitAllowlist:
-    @pytest.mark.parametrize("sku", ["H5102", "H5107"])
+    @pytest.mark.parametrize("sku", ["H5102", "H5107", "H5074"])
     def test_converts_in_auto_mode(self, sku):
         assert resolve_fahrenheit_conversion(sku, "auto") is True
 
-    @pytest.mark.parametrize("sku", ["H5102", "H5107"])
+    @pytest.mark.parametrize("sku", ["H5102", "H5107", "H5074"])
     def test_explicit_celsius_still_wins(self, sku):
         assert resolve_fahrenheit_conversion(sku, "celsius") is False

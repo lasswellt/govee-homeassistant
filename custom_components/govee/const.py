@@ -121,6 +121,10 @@ CONF_API_TEMPERATURE_UNIT: Final = "api_temperature_unit"
 #     and the H5107's 84.2 in an attic, both °F-scale with no unit field. With
 #     an account login the fahOpen preference decides; this list covers the
 #     API-key-only case.
+#   H5074 (thermo-hygrometer, #317): same class. A unit showed 146.3°F while the
+#     app showed 63°F: 63.5°F read as °C is 146.3 exactly. The raw cloud value
+#     is °F-scale with no unit field; the API temperature unit option remains
+#     the override.
 # SKUs whose Platform API listing omits colorRgb although the device reports a
 # colour over AWS IoT (#240, H7073: only powerSwitch, brightness and scenes are
 # listed, the status push carries ``color`` {r,g,b}). With IoT credentials the
@@ -160,6 +164,7 @@ FAHRENHEIT_REPORTING_SKUS: Final = frozenset(
         "H5220",
         "H5102",
         "H5107",
+        "H5074",
     }
 )
 
@@ -511,8 +516,7 @@ MQTT_STATUS_QUERY_ACCOUNT_REFUSAL_SKUS: Final = 3
 #   H5074 (thermo-hygrometer, the H5075's smaller sibling): the same class,
 #     BLE-only with a topic on the account it never answers, so a status
 #     query to it drops the session just as the H5075's did (issue #195).
-#     Not in FAHRENHEIT_REPORTING_SKUS: that list needs a reading showing
-#     which unit the model reports in.
+#     In FAHRENHEIT_REPORTING_SKUS since #317.
 #   H5108 (thermo-hygrometer): same class. Confirmed on v2026.10.0 with six
 #     units on one account: a status query to any of them closed the session
 #     within ~5s, and the two strikes apiece added up to ~35 minutes of
