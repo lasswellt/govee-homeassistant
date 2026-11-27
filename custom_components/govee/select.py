@@ -188,6 +188,8 @@ async def async_setup_entry(
         if enable_diy_scenes and device.supports_diy_scenes:
             diy_scenes = await coordinator.async_get_diy_scenes(device.device_id)
             _LOGGER.debug("Fetched %d DIY scenes for %s", len(diy_scenes), device.name)
+            if not diy_scenes:
+                _LOGGER.debug("no DIY scenes returned for %s (sku=%s)", device.device_id, device.sku)
             if diy_scenes:
                 entities.append(
                     GoveeDIYSceneSelectEntity(

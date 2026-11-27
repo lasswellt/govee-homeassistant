@@ -243,6 +243,9 @@ def _device_diag(
         # How segment_count was derived (parser, size.max clamp, SKU override),
         # so an over-reported count is diagnosable from a download alone.
         "segment_resolution": device.segment_count_resolution,
+        # Last DIY scene fetch: {"count": n} or {"error": ClassName}; None if never fetched.
+        # Tells an upstream empty list from a setup-time fetch error (#314).
+        "diy_scenes": coordinator.diy_fetch_result(device_id),
     }
     # H7175 kettles: recent distinct pushed frames, command echoes included.
     ble_client = coordinator._ble_devices.get(device_id)

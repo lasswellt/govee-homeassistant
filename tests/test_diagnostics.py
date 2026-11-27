@@ -71,6 +71,7 @@ def _coordinator_stub(**overrides):
     coordinator.api_rate_limit_reset = 0
     coordinator.scene_cache_count = 0
     coordinator.diy_scene_cache_count = 0
+    coordinator.diy_fetch_result = lambda _did: None
     coordinator.lan_active_count = 0
     coordinator.lan_unmatched_count = 0
     coordinator.mqtt_status_query_strikes = []
@@ -424,6 +425,7 @@ class TestLeakAndTransportDump:
         coordinator = _coordinator_stub(
             leak_sensors={sensor_mac: sensor},
             leak_states={sensor_mac: state},
+            diy_fetch_result=lambda _did: {"count": 0},
             get_transport_health=lambda did, kind: (health if kind == "cloud_api" else None),
             devices={
                 sensor_mac: MagicMock(
@@ -454,6 +456,7 @@ class TestLeakAndTransportDump:
         # Runtime signals present.
         assert "has_iot_credentials" in out
         assert "diy_scene_cache_count" in out
+        assert dev["diy_scenes"] == {"count": 0}
 
         # Both the sensor MAC and the hub MAC must be redacted everywhere.
         rendered = json.dumps(out, default=str)
@@ -605,6 +608,7 @@ class TestDeviceDiagnostics:
         out = await async_get_device_diagnostics(MagicMock(), _entry_stub(coordinator), device_entry)
 
         record = next(iter(out["devices"].values()))
+        assert record["diy_scenes"] is None
         assert record["segment_resolution"] == {
             "api_count": 15,
             "size_max": 15,

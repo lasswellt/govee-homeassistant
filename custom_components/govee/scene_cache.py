@@ -78,6 +78,9 @@ class SceneCacheManager:
         # DIY scene cache {device_id: (timestamp, [scenes])}
         self._diy_scene_cache: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 
+        # Last DIY fetch outcome per device: {"count": n} or {"error": "<ExceptionClassName>"}
+        self._diy_fetch_results: dict[str, dict[str, Any]] = {}
+
         # In-flight request deduplication
         self._scene_inflight: dict[str, asyncio.Task[list[dict[str, Any]]]] = {}
         self._diy_scene_inflight: dict[str, asyncio.Task[list[dict[str, Any]]]] = {}
@@ -92,6 +95,17 @@ class SceneCacheManager:
         """Return number of devices with cached DIY scenes."""
         return len(self._diy_scene_cache)
 
+    def diy_fetch_result(self, device_id: str) -> dict[str, Any] | None:
+        """Return the last DIY scene fetch outcome for a device, or None if never fetched.
+
+        Args:
+            device_id: Device identifier.
+
+        Returns:
+            ``{"count": n}`` after a successful fetch or ``{"error": "<ExceptionClassName>"}``.
+        """
+        return self._diy_fetch_results.get(device_id)
+
     def cleanup_stale(self, active_device_ids: set[str]) -> None:
         """Remove cache entries for devices no longer discovered.
 
@@ -100,9 +114,11 @@ class SceneCacheManager:
         """
         stale_ids = set(self._scene_cache) - active_device_ids
         stale_ids |= set(self._diy_scene_cache) - active_device_ids
+        stale_ids |= set(self._diy_fetch_results) - active_device_ids
         for stale_id in stale_ids:
             self._scene_cache.pop(stale_id, None)
             self._diy_scene_cache.pop(stale_id, None)
+            self._diy_fetch_results.pop(stale_id, None)
         if stale_ids:
             _LOGGER.debug("Cleaned scene cache for %d removed devices", len(stale_ids))
 
@@ -271,6 +287,7 @@ class SceneCacheManager:
         try:
             scenes = await self._api_client.get_diy_scenes(device_id, device.sku)
             self._diy_scene_cache[device_id] = (time.monotonic(), scenes)
+            self._diy_fetch_results[device_id] = {"count": len(scenes)}
             _LOGGER.debug(
                 "Fetched and cached %d DIY scenes for %s",
                 len(scenes),
@@ -280,6 +297,7 @@ class SceneCacheManager:
         except (GoveeApiError, TimeoutError) as err:
             # See _fetch_and_cache_scenes: a raw read TimeoutError here would
             # otherwise abort adding the entity (issue #146).
+            self._diy_fetch_results[device_id] = {"error": type(err).__name__}
             _LOGGER.error(
                 "%s fetching DIY scenes for %s: %s",
                 type(err).__name__,

@@ -850,6 +850,10 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
         """Return number of devices with cached DIY scenes."""
         return self._scene_cache.diy_scene_cache_count
 
+    def diy_fetch_result(self, device_id: str) -> dict[str, Any] | None:
+        """Return the last DIY scene fetch outcome for a device (diagnostics)."""
+        return self._scene_cache.diy_fetch_result(device_id)
+
     @property
     def mqtt_connected(self) -> bool:
         """Return True if MQTT client is connected."""

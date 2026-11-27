@@ -266,6 +266,39 @@ class TestErrorHandling:
         assert result == cached
 
     @pytest.mark.asyncio
+    async def test_diy_fetch_result_records_count_including_zero(
+        self, mock_api: AsyncMock, device: GoveeDevice
+    ) -> None:
+        """A successful DIY fetch records its count, an empty list included; never names."""
+        manager = SceneCacheManager(mock_api)
+        assert manager.diy_fetch_result(device.device_id) is None
+
+        await manager.async_get_diy_scenes(device.device_id, device)
+        assert manager.diy_fetch_result(device.device_id) == {"count": len(mock_api.get_diy_scenes.return_value)}
+
+        mock_api.get_diy_scenes = AsyncMock(return_value=[])
+        await manager.async_get_diy_scenes(device.device_id, device, refresh=True)
+        assert manager.diy_fetch_result(device.device_id) == {"count": 0}
+
+    @pytest.mark.asyncio
+    async def test_diy_fetch_result_records_error_class_and_is_cleaned(
+        self, mock_api: AsyncMock, device: GoveeDevice
+    ) -> None:
+        """A failed DIY fetch records the exception class name; stale devices are dropped."""
+        mock_api.get_diy_scenes = AsyncMock(side_effect=GoveeApiError("rate limited"))
+        manager = SceneCacheManager(mock_api)
+
+        assert await manager.async_get_diy_scenes(device.device_id, device) == []
+        assert manager.diy_fetch_result(device.device_id) == {"error": "GoveeApiError"}
+
+        mock_api.get_diy_scenes = AsyncMock(side_effect=TimeoutError("slow"))
+        await manager.async_get_diy_scenes(device.device_id, device, refresh=True)
+        assert manager.diy_fetch_result(device.device_id) == {"error": "TimeoutError"}
+
+        manager.cleanup_stale(set())
+        assert manager.diy_fetch_result(device.device_id) is None
+
+    @pytest.mark.asyncio
     async def test_inflight_cleaned_up_after_error(self, mock_api: AsyncMock, device: GoveeDevice) -> None:
         """In-flight task is removed even when the API call fails."""
         mock_api.get_dynamic_scenes = AsyncMock(side_effect=GoveeApiError("rate limited"))

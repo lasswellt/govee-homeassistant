@@ -801,6 +801,18 @@ class TestSelectPlatformSetup:
         added, _ = await _setup(diy_device, diy_scenes=[])
         assert added == []
 
+    async def test_empty_diy_list_logs_no_diy_scenes(self, diy_device, caplog):
+        with caplog.at_level("DEBUG", logger=select_mod.__name__):
+            await _setup(diy_device, diy_scenes=[])
+
+        assert any("no DIY scenes" in r.getMessage() and diy_device.sku in r.getMessage() for r in caplog.records)
+
+    async def test_diy_list_present_does_not_log_no_diy_scenes(self, diy_device, caplog):
+        with caplog.at_level("DEBUG", logger=select_mod.__name__):
+            await _setup(diy_device, diy_scenes=DIY_SCENES)
+
+        assert not any("no DIY scenes" in r.getMessage() for r in caplog.records)
+
     async def test_hdmi_select_created(self, mock_hdmi_device):
         added, _ = await _setup(mock_hdmi_device)
 
