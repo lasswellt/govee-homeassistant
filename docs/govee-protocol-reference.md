@@ -1493,7 +1493,7 @@ Community notes describe `AA 01 00 … 00 AB` sent every 2 seconds as a keep-ali
 | `0x06` | Microphone | Defined in `LedColorMode` (Beshelmek reference); not sent |
 | `0x0A` | DIY custom animation | `DIY_MODE_INDICATOR` |
 | `0x13` | Music mode (app's SubModeMusicV3) | `33 05 13 <effect> <sensitivity 0-100> [<style> <fixed> <R G B>]`; tail only for the four legacy effects. Sent over ptReal for `MQTT_MUSIC_MODE_SKUS`; `aa 05 13` status confirms it (#215) |
-| `0x15` | Segment colour / masked colour / colour temp / brightness | Segmented BLE colour `33 05 15 01 RR GG BB 00 00 00 00 00 FF 7F` (`SEGMENTED_MODELS`, incl. H1270); masked ptReal colour `33 05 15 01 RR GG BB 00×5 <mask 3B LE>`; colour temp `33 05 15 01 FF FF FF <K hi> <K lo> <white RGB> <mask>`; brightness `33 05 15 02 <pct> <mask 3B LE>` (#223, #261) |
+| `0x15` | Segment colour / masked colour / colour temp / brightness | Segmented BLE colour `33 05 15 01 RR GG BB 00 00 00 00 00 FF 7F` (`SEGMENTED_MODELS`, incl. H1270); masked ptReal colour `33 05 15 01 RR GG BB 00×5 <mask 4B LE>` (mask at data bytes 12-15; a 3-byte mask cannot address bulbs 25-30 of the H7038, #310); colour temp `33 05 15 01 FF FF FF <K hi> <K lo> <white RGB> <mask>`; brightness `33 05 15 02 <pct> <mask 3B LE>` (brightness keeps its 3-byte mask at data bytes 5-7) (#223, #261) |
 | `0x0B` | Segment color + color temp | Community-reported for H6199; not used by the integration |
 | `0x0C` | Music mode | Community-reported H6199 variant; not used by the integration |
 | `0x0D` | Manual color | Community-reported for H615B; deliberately not used (no primary source, see `LedColorMode` in `api/ble.py`) |
@@ -2033,6 +2033,7 @@ Camera-based TV backlight. Note: DreamView/video mode uses local camera (BLE), *
 
 Key observations:
 - Has `gradientToggle` but **not** `dreamViewToggle` — camera-based video sync is BLE-only
+- Video mode state (#241): read from the light's own `aa 05` status frame (`aa 05 00 …` = video on), not the API (`FRAME_DREAMVIEW_SKUS`, `DREAMVIEW_STATE_FROM_FRAMES_SKUS`). ON reuses the H66A0's `33 05 00 01 00 64` frame (`PTREAL_DREAMVIEW_SKUS`), unverified on the H6099; OFF restores the last colour
 - RGBIC segments: `elementRange` is 0-14 (15 indices), but submitted diagnostics show `fields[].size.max` = 14, so the integration's `size.max` clamp (`GoveeDevice.segment_count` in `models/device.py`) creates 14 segments (source `size_max`)
 - Music mode has 11 options (Rhythm, Spectrum, Rolling, Separation, Hopping, PianoKeys, Fountain, DayAndNight, Sprouting, Shiny, Energic) with sensitivity (0-100) and optional autoColor/rgb fields
 - 236 scenes available via `/device/scenes` endpoint
@@ -3256,6 +3257,34 @@ Capability lists below are as the Developer API `/user/devices` returned them in
 - Account (BFF) list: present — model-specific `deviceSettings` keys `dspVersionSoft`; `lastDeviceData` keys `online`.
 - AWS IoT push `state` keys `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `sta`; `op.command` frame headers `aa05`, `aa07`, `aa11`, `aa12`, `aa23`, `aa41`, `aaa4`, `aaa5`.
 - Seen in #241, #306.
+
+##### Music DreamView sync-centre frames (reporter-captured, issue #304; not implemented)
+
+Android HCI capture of the Govee Home app driving an H607C as the Music DreamView sync centre (multi-device group sync, not the standalone `33 05 13` music mode). Reproduced through `govee.send_raw_ptreal`; visual verification of every effect is not claimed, and the integration does not implement these frames.
+
+Effect select, 20 bytes, `CC` = XOR of the first 19:
+
+```
+33 60 02 GG II 00 VV SS 00 00 00 00 00 00 00 00 00 00 00 CC
+```
+
+| Byte | Meaning |
+|---|---|
+| `GG` | Group: `01` Lighting Show, `02` Carnival |
+| `II` | Effect id (below) |
+| `VV` | Variant: `00` Dynamic, `01` Soft, where the app offers it |
+| `SS` | Sensitivity, `64` = 100 (captured default) |
+
+| Group | Ids | Effects | Variants |
+|---|---|---|---|
+| Lighting Show | `00`-`03` | Rhythm, Sprouting, Shiny, Beat | Dynamic, Soft |
+| Lighting Show | `04`-`0B` | Waves, Spectrum, Rolling, Starlight, Piano Keys, Jumping, Luminous, Hopping | single |
+| Carnival | `20`-`29` | Brilliant, Pulsate, Dazzle, Fascination, Aspiring, Cadence, Revel, Fluctuate, Funny, Shimmer | Dynamic, Soft |
+
+12 Lighting Show + 10 Carnival effects, 36 selectable combinations. Example (Rhythm, Dynamic): `33 60 02 01 00 00 00 64 00×11 34`.
+
+Eight-colour palette: 24 bytes of RGB split over two frames, `A3 00 01 02 51 08 <13 RGB bytes> <XOR>` then `A3 FF <11 RGB bytes> 00×6 <XOR>`. Fewer than eight colours are repeated by the reporter's automation to fill the slots (not confirmed as the app's behaviour). Carnival effects may also need extra `A3 00 01 02 55 02 …` configuration frames before the select frame; the reporter has the full mapping.
+
 
 
 #### H6088 (`devices.types.light`)
@@ -4734,12 +4763,13 @@ Model-specific behaviour is kept in named allow-lists, all in `custom_components
 | `MULTI_OUTLET_MQTT_SKUS` | H5160 (3), H5161 (3) | The API lists only the master `powerSwitch`; per-outlet switches send an AWS IoT `turn` with value `((1 << i) << 4) \| ((1 << i) if on else 0)`. Account login only; optimistic | #184 |
 | `SKU_SEGMENT_OVERRIDES` | H1232, H1A42, H7026, H7075, H7076 | Pins the segment count; see §9.6 | #160, #161, #208, #223, #261 |
 | `BFF_SEGMENT_COUNT_SKUS` | H3A53 | Segment count read from BFF `deviceSettings.segmentCount`, ranked above the overrides; see §9.6 | #301 |
-| `PTREAL_SEGMENT_SKUS` | H1232, H1252, H1A42 | Segment colour and brightness go as masked `33 05 15` ptReal frames (3-byte little-endian mask), reaching segments the API cannot (H1232) or that the API accepts and ignores (H1A42) | #223, #261 |
+| `PTREAL_SEGMENT_SKUS` | H1232, H1252, H1A42, H7038 | Segment colour and brightness go as masked `33 05 15` ptReal frames, reaching segments the API cannot (H1232) or that the API accepts and ignores (H1A42). The colour and colour-temp frames carry a 4-byte LE mask (data bytes 12-15); the brightness frame keeps a 3-byte LE mask (data bytes 5-7). H7038 has 30 bulbs, verified by the reporter on hardware: masks `FF 7F 00 00` / `00 80 FF 00` / `00 00 00 3F` cover bulbs 1-15 / 16-24 / 25-30 | #223, #261, #310 |
 | `PTREAL_MAIN_PANEL_BIT` | H1232, H1252 (bit 16) | The 17th internal segment is the main panel, addressed by bit 16 of the same mask | #223 |
 | `PTREAL_LIGHT_ZONE_SKUS` | H1252 | `mainLightToggle` / `backgroundLightToggle` are accepted and ignored; zones switch with `33 30 <zone> <on>` and report as `aa 30 <main> <ring>` | #223 |
 | `LIGHT_ZONE_FRAME_SKUS` | H1252, H60A6 | The main/background light switches follow the `aa 30 <main> <ring>` frame of the AWS IoT push. The H60A6 keeps its REST toggles (they work) and reports `00 00` while powered off | #223 |
-| `DREAMVIEW_STATE_FROM_FRAMES_SKUS` | H66A0 | The DreamView switch follows the light's own `aa 05 <mode>` report instead of optimistic state | #213 |
-| `PTREAL_DREAMVIEW_SKUS` | H66A0 | REST `dreamViewToggle` is skipped; ON sends the video-mode frame over AWS IoT, OFF restores the last colour. Unverified on hardware | #213 |
+| `DREAMVIEW_STATE_FROM_FRAMES_SKUS` | H66A0, H6099 | The DreamView switch follows the light's own `aa 05 <mode>` report instead of optimistic state | #213, #241 |
+| `FRAME_DREAMVIEW_SKUS` | H6099 | Video mode is read from the light's own `aa 05` status frame (`aa 05 00 …` = video on, identical in two users' captures); the account list carries no DreamView state | #241 |
+| `PTREAL_DREAMVIEW_SKUS` | H66A0, H6099 | REST `dreamViewToggle` is skipped; ON sends the video-mode frame over AWS IoT, OFF restores the last colour. ON (the H66A0's `33 05 00 01 00 64` frame) is unverified on hardware, and on the H6099 unverified too | #213, #241 |
 | `DREAMVIEW_OFF_VIA_COLOUR_SKUS` | H605B | DreamView OFF over REST is accepted but the light stays in video mode; OFF is rerouted to the colour-restore path, ON stays on REST | #220 |
 | `MQTT_STATUS_QUERY_EXCLUDED_SKUS` | H5074, H5075, H5108, H5110, H5111, H5220 | Never sent an AWS IoT status query: these BLE/gateway-bridged sensors have a topic they never answer, and AWS closes the session on each query. Readings still come through the cloud poll | #195, #197, #237 |
 | `MAIN_LIGHT_TOGGLE_SKUS` | H1270 | `mainLightToggle` / `backgroundLightToggle` are inert and `powerSwitch` is whole-fixture; a dedicated main-panel light entity switches the panel through the whole-device colour channel (`GoveeMainLightEntity`, `light.py`) | #131 |
