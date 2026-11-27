@@ -16,6 +16,16 @@ The plan has four independent work streams. They share files in only two places:
 - **DIY (T-004):** observability only. Store the last fetch outcome (count or error class) per device in the scene cache and surface it in diagnostics. No change to when the select exists.
   - Rejected for now: lazy entity creation after a refresh. It needs a dynamic platform add and isn't justified until diagnostics show the cause.
 
+- **2026-11-26 extension:**
+  - **T-008 (community PRs):** merge in the order #319 → #321 → #320. Run it before T-002, T-003 and T-005, which edit the same `const.py` blocks and protocol-reference sections.
+    - Conflict resolution: keep both sides (proven green: 4,789 tests passed).
+    - Rejected: asking the authors to rebase. It costs a day for an adjacency conflict.
+  - **T-009 (#316):** one counting helper gated on `state.online`. The query is still sent, which keeps the #242 recovery.
+    - Rejected: dropping offline devices from the poll targets. That breaks #242.
+    - Rejected: `device_reachable()`. A device reachable only over LAN or BLE doesn't answer over MQTT.
+  - **T-010 (#317):** a one-line SKU addition, following the H5102/H5107 precedent.
+  - **T-011 / T-012:** new replies, then the final gate.
+
 ## File map
 
 | Path | Change | Task |
@@ -34,6 +44,10 @@ The plan has four independent work streams. They share files in only two places:
 | `tests/test_diagnostics.py`, `tests/test_scene_cache.py` | DIY outcome tests | T-004 |
 | `docs/govee-protocol-reference.md` | mask wording; §9.8 rows; H6099 section; Music DreamView subsection | T-005 |
 | `docs/release-replies.md` | six queued replies | T-006 |
+| `custom_components/govee/const.py`, `models/device.py`, `docs/govee-protocol-reference.md` | conflict resolution while merging PRs #319, #321 and #320 (their own files come with the merges) | T-008 |
+| `custom_components/govee/coordinator.py`, `tests/test_issue_222.py` | `_count_mqtt_status_query` used at both increment sites; offline and mixed tests | T-009 |
+| `custom_components/govee/const.py`, `tests/test_zone_light_toggles.py` | H5074 in `FAHRENHEIT_REPORTING_SKUS`; comment; parametrize | T-010 |
+| `docs/release-replies.md` | #315, #318, #298, #299, #288, #211; one #308 entry | T-011 |
 
 ## Coverage
 
@@ -46,6 +60,11 @@ The plan has four independent work streams. They share files in only two places:
 | #304 frames recorded | n/a | n/a | n/a | n/a | n/a | ✓ T-005 | ✓ T-006 |
 | #308 second user, #208 test request | n/a | n/a | n/a | n/a | n/a | n/a | ✓ T-006 |
 | Ships tonight | n/a | n/a | n/a | n/a | ✓ T-007 | n/a | n/a |
+| H60A6 zones / H60B0 mode + flow (PRs) | ✓ T-008 | ✓ T-008 (#321) | ✓ T-008 | n/a | ✓ PR tests | ✓ PR docs | ✓ T-011 (#211); the bot replies on PRs |
+| No false mqtt_silent | n/a | n/a | ✓ T-009 | n/a | ✓ T-009 | n/a | automatic (#316 in the commit subject) |
+| H5074 °F | ✓ T-010 | n/a | n/a | n/a | ✓ T-010 | n/a | automatic (#317 in the commit subject) |
+| New threads answered | n/a | n/a | n/a | n/a | n/a | n/a | ✓ T-011 |
+| Ships 2026-11-28 | n/a | n/a | n/a | n/a | ✓ T-012 | n/a | n/a |
 
 ## Risks
 
@@ -60,6 +79,13 @@ The plan has four independent work streams. They share files in only two places:
   - If the dry run fails, revert the merges before 02:00Z, or tonight's release is skipped and the fixes slip a day.
 - **Scheduling:** T-007 must pass before 02:00Z for the fixes to ship tonight. Otherwise they ship the next night.
 
+- **T-008:**
+  - Fork CI must be approved run by run. A check the local lane doesn't cover (the py3.13 test job, HACS, hassfest) may fail after approval. That PR then waits a day; the others don't.
+  - #320's side-light assumption is unconfirmed beyond the author's lamp.
+- **T-009:** detection can lag by one sweep after a device powers on, because the cloud `online` flag lags. This is harmless against the 1,800 s check.
+- **T-010:** an account that really reports H5074 in °C would now be converted wrongly. There is no report of one, and the option overrides it.
+- **Ordering:** `tasks.sh next` picks by id, so it would offer T-002 before T-008. Build T-008 first by hand; T-002, T-003 and T-005 carry notes saying so.
+
 ## Solutions consulted
 
 - `docs/solutions/`: none exists.
@@ -68,4 +94,5 @@ The plan has four independent work streams. They share files in only two places:
 
 ## Research
 
+- `docs/research/2026-11-26_issues-and-pr-merge-validation.md` (`--from-research`, 2026-11-26 extension: T-008..T-012).
 - `docs/research/2026-11-25_open-issues-and-prs.md` (`--from-research`). Agent findings are in the session scratchpad under `research/`: `codebase-ptreal.md`, `codebase-diy.md`, `h6099.md`, `library-docs.md`, `web-researcher.md`.

@@ -1,7 +1,7 @@
 {
   "$schema": "blitz-tasks/1.0",
   "plan": "open-issues",
-  "updated": "2026-11-25T15:04:07Z",
+  "updated": "2026-11-27T02:54:38Z",
   "tasks": [
     {
       "id": "T-001",
@@ -78,7 +78,7 @@
       "attempts": 0,
       "last_verify": null,
       "origin": "issue:310",
-      "notes": "Research §Q2. Reporter verified on hardware: 33 05 15 01 RR GG BB 00 00 00 00 00 m0 m1 m2 m3 reaches bulbs 1-30 (masks FF7F0000 / 0080FF00 / 0000003F). Append (mask >> 24) & 0xFF in build_segment_color_ptreal (ble_packet.py:~222) and build_segment_color_temp_ptreal (~284); leave build_segment_brightness_ptreal alone (segment brightness goes over REST, coordinator.py:5921-5923). Byte 15 is already the 0x00 pad, so H1232/H1252/H1A42 packets stay byte-identical: keep the goldens in tests/test_ble_packet.py:696-723 unchanged and update only the 24-bit-mask test (:733) and colour-length test (:743, 15->16). Add golden 30-bulb frames (mask 0x3FFFFFFF -> FF FF FF 3F; bit 29 only -> 00 00 00 20). coordinator.py:~5885: a segment index >= 32 returns False (no silent drop). Add a TestPtrealSegmentTier case: H7038 indices (0, 29) sends one frame with mask 01 00 00 20. Out of scope: H705E, H7026 (#208), REST fallback without MQTT. Commit subject cites #310."
+      "notes": "Research §Q2. Reporter verified on hardware: 33 05 15 01 RR GG BB 00 00 00 00 00 m0 m1 m2 m3 reaches bulbs 1-30 (masks FF7F0000 / 0080FF00 / 0000003F). Append (mask >> 24) & 0xFF in build_segment_color_ptreal (ble_packet.py:~222) and build_segment_color_temp_ptreal (~284); leave build_segment_brightness_ptreal alone (segment brightness goes over REST, coordinator.py:5921-5923). Byte 15 is already the 0x00 pad, so H1232/H1252/H1A42 packets stay byte-identical: keep the goldens in tests/test_ble_packet.py:696-723 unchanged and update only the 24-bit-mask test (:733) and colour-length test (:743, 15->16). Add golden 30-bulb frames (mask 0x3FFFFFFF -> FF FF FF 3F; bit 29 only -> 00 00 00 20). coordinator.py:~5885: a segment index >= 32 returns False (no silent drop). Add a TestPtrealSegmentTier case: H7038 indices (0, 29) sends one frame with mask 01 00 00 20. Out of scope: H705E, H7026 (#208), REST fallback without MQTT. Commit subject cites #310. [2026-11-26] Build after T-008 (the fork PRs also edit const.py)."
     },
     {
       "id": "T-003",
@@ -121,7 +121,7 @@
       "attempts": 0,
       "last_verify": null,
       "origin": "issue:241",
-      "notes": "Research §Q3. Two users' video-on diagnostics carry aa050000083200023200000000000000000000a5 (XOR ok) and state.mode 0; existing H66A0 code reads dreamview_enabled = raw[2]==0x00 (models/state.py:706-733). H6099 advertises no dreamViewToggle, so supports_dreamview (models/device.py:912-925) is False and no switch is created (switch.py:179; frame gate coordinator.py:4133). Add const FRAME_DREAMVIEW_SKUS = frozenset({\"H6099\"}) (comment cites #241) and make supports_dreamview return True for it (mirror the MOVIE_MODE_DREAMVIEW_SKUS branch); add H6099 to DREAMVIEW_STATE_FROM_FRAMES_SKUS (const.py:285) and PTREAL_DREAMVIEW_SKUS (const.py:601). ON frame (33 05 00 01 00 64) unverified on H6099: user chose control anyway; frame-reported state makes a no-op visible. Tests: H6099 golden frame -> True, a valid aa05 15.. colour frame -> False, bad XOR ignored, H6099 device without the cap -> supports_dreamview True and a DreamView switch is created (test_cov_switch.py), ON sends build_dreamview_packet over ptReal, OFF restores colour. Depends on T-002 only because both edit const.py. Commit subject cites #241."
+      "notes": "Research §Q3. Two users' video-on diagnostics carry aa050000083200023200000000000000000000a5 (XOR ok) and state.mode 0; existing H66A0 code reads dreamview_enabled = raw[2]==0x00 (models/state.py:706-733). H6099 advertises no dreamViewToggle, so supports_dreamview (models/device.py:912-925) is False and no switch is created (switch.py:179; frame gate coordinator.py:4133). Add const FRAME_DREAMVIEW_SKUS = frozenset({\"H6099\"}) (comment cites #241) and make supports_dreamview return True for it (mirror the MOVIE_MODE_DREAMVIEW_SKUS branch); add H6099 to DREAMVIEW_STATE_FROM_FRAMES_SKUS (const.py:285) and PTREAL_DREAMVIEW_SKUS (const.py:601). ON frame (33 05 00 01 00 64) unverified on H6099: user chose control anyway; frame-reported state makes a no-op visible. Tests: H6099 golden frame -> True, a valid aa05 15.. colour frame -> False, bad XOR ignored, H6099 device without the cap -> supports_dreamview True and a DreamView switch is created (test_cov_switch.py), ON sends build_dreamview_packet over ptReal, OFF restores colour. Depends on T-002 only because both edit const.py. Commit subject cites #241. [2026-11-26] Build after T-008."
     },
     {
       "id": "T-004",
@@ -200,7 +200,7 @@
       "attempts": 0,
       "last_verify": null,
       "origin": "plan",
-      "notes": "Research §Q2/Q3/Q6. Replace the '3-byte little-endian' mask wording (0x15 row ~:1496, §9.8 PTREAL_SEGMENT_SKUS row ~:4737) with the 4-byte layout (bytes 12-15 of the colour frame; brightness frame unchanged), add H7038 with #310. §9.8: add FRAME_DREAMVIEW_SKUS and H6099 to the DreamView rows with #241, marked unverified on hardware; update the H6099 model section (~:2012). Add a subsection documenting the H607C Music DreamView sync-centre frames from #304 (33 60 02 GG II 00 VV SS ... CC, XOR checksum, the 12 Lighting Show + 10 Carnival effect table, Dynamic/Soft variant byte, sensitivity byte, and the 8-colour frame) as reporter-captured, not implemented. Paraphrase the reporter's tables; no device ids. Do NOT put #304 in the commit subject (T-006 queues its reply)."
+      "notes": "Research §Q2/Q3/Q6. Replace the '3-byte little-endian' mask wording (0x15 row ~:1496, §9.8 PTREAL_SEGMENT_SKUS row ~:4737) with the 4-byte layout (bytes 12-15 of the colour frame; brightness frame unchanged), add H7038 with #310. §9.8: add FRAME_DREAMVIEW_SKUS and H6099 to the DreamView rows with #241, marked unverified on hardware; update the H6099 model section (~:2012). Add a subsection documenting the H607C Music DreamView sync-centre frames from #304 (33 60 02 GG II 00 VV SS ... CC, XOR checksum, the 12 Lighting Show + 10 Carnival effect table, Dynamic/Soft variant byte, sensitivity byte, and the 8-colour frame) as reporter-captured, not implemented. Paraphrase the reporter's tables; no device ids. Do NOT put #304 in the commit subject (T-006 queues its reply). [2026-11-26] Build after T-008: #319/#320/#321 all edit docs/govee-protocol-reference.md."
     },
     {
       "id": "T-006",
@@ -268,7 +268,191 @@
       "attempts": 0,
       "last_verify": null,
       "origin": "plan",
-      "notes": "Full suite with coverage floor 95, mypy strict, flake8, black --check, then CI green on main HEAD (the four workflows: Tests, Type Checking, Style check, HACS/HASS Actions). Tonight's run then ships v2026.11.2 with #310 and #241."
+      "notes": "Full suite with coverage floor 95, mypy strict, flake8, black --check, then CI green on main HEAD (the four workflows: Tests, Type Checking, Style check, HACS/HASS Actions). Tonight's run then ships v2026.11.2 with #310 and #241. [2026-11-26] No longer the final gate: T-012 runs the same gates after T-008..T-011. Release moved to 2026-11-28T02:00Z (the 2026-11-27 run skipped)."
+    },
+    {
+      "id": "T-008",
+      "title": "Merge community PRs #319 -> #321 -> #320 (H60A6 zone readback, H60B0 ripple flow, H60B0 light mode)",
+      "role": "infra",
+      "files": [
+        "custom_components/govee/const.py",
+        "custom_components/govee/models/device.py",
+        "docs/govee-protocol-reference.md"
+      ],
+      "depends_on": [],
+      "verify": [
+        {
+          "cmd": "for n in 319 321 320; do test \"$(gh pr view $n --json state --jq .state)\" = MERGED || exit 1; done",
+          "timeout": 60
+        },
+        {
+          "cmd": "grep -q 'LIGHT_ZONE_FRAME_SKUS' custom_components/govee/const.py && grep -q 'RIPPLE_FLOW_SKUS' custom_components/govee/const.py && grep -q 'EXCLUSIVE_LIGHT_TOGGLE_MODES' custom_components/govee/const.py",
+          "timeout": 10
+        },
+        {
+          "cmd": "grep -q 'def supports_ripple_flow' custom_components/govee/models/device.py && grep -q 'def light_toggle_modes' custom_components/govee/models/device.py",
+          "timeout": 10
+        },
+        {
+          "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_h60a6_light_zones.py tests/test_h60b0_light_mode.py tests/test_h60b0_ripple_flow.py",
+          "timeout": 300
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "plan",
+      "notes": "Research 2026-11-26 §Q1. All three are fork PRs, maintainerCanModify=true, CI action_required: approve each pending run (gh run list --event pull_request --json databaseId,headBranch,conclusion; gh api -X POST repos/lasswellt/govee-homeassistant/actions/runs/<id>/approve). Local gates were green per PR and combined (4,789 passed, 99.74%). Order #319 -> #321 -> #320, squash, each only with its CI green (gh run list --commit <full sha>). After #319 merges, merge main into #321's fork branch: const.py conflict, keep LIGHT_ZONE_FRAME_SKUS block then RIPPLE_FLOW_SKUS block. After #321 merges, merge main into #320's branch: models/device.py conflict after named_light_toggle_instances, keep supports_ripple_flow then '@property' + light_toggle_modes + light_toggles_turned_off_by; docs auto-merge. Build this BEFORE T-002/T-003/T-005: they edit const.py and the protocol reference and would add conflicts to the fork branches. Optional follow-up: refresh stale H60A6 comments at const.py:257 and :592. Gh needs dangerouslyDisableSandbox."
+    },
+    {
+      "id": "T-009",
+      "title": "#316: count an MQTT status query as silence evidence only when the device is online",
+      "role": "backend",
+      "files": [
+        "custom_components/govee/coordinator.py",
+        "tests/test_issue_222.py"
+      ],
+      "depends_on": [
+        "T-008"
+      ],
+      "verify": [
+        {
+          "cmd": "grep -qE 'def _count_mqtt_status_query' custom_components/govee/coordinator.py",
+          "timeout": 10
+        },
+        {
+          "cmd": "test $(grep -c '_mqtt_queries_since_connect += 1' custom_components/govee/coordinator.py) -eq 1 && test $(grep -c '_count_mqtt_status_query(' custom_components/govee/coordinator.py) -ge 3",
+          "timeout": 10
+        },
+        {
+          "cmd": "grep -qE 'online ?= ?False' tests/test_issue_222.py",
+          "timeout": 10
+        },
+        {
+          "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_issue_222.py tests/test_issue_195.py",
+          "timeout": 300
+        },
+        {
+          "cmd": ".cc-sessions/venv312/bin/mypy custom_components/govee",
+          "timeout": 300
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "issue:316",
+      "notes": "Research 2026-11-26 §Q2. Increments today at coordinator.py:3891 (_poll_mqtt_status) and :4542 (async_request_status); reset :4234; check :4256-4281. Add helper _count_mqtt_status_query(device_id) that increments _mqtt_queries_since_connect only when (state := self._states.get(device_id)) is not None and state.online; call it at both sites. Keep publishing the query to offline devices (#242 recovery: a live device answers, update_from_mqtt sets online). Use state.online, not device_reachable() (:896). Tests: _silent_coord (tests/test_issue_222.py:51) devices must carry online=True so existing TestSilence still counts; add all-offline (no reconnect, no repair after two checks) and mixed online/offline (only online counted) for both _poll_mqtt_status and async_request_status. Commit subject cites #316."
+    },
+    {
+      "id": "T-010",
+      "title": "#317: H5074 reports °F; add it to FAHRENHEIT_REPORTING_SKUS",
+      "role": "backend",
+      "files": [
+        "custom_components/govee/const.py",
+        "tests/test_zone_light_toggles.py"
+      ],
+      "depends_on": [
+        "T-008"
+      ],
+      "verify": [
+        {
+          "cmd": ".cc-sessions/venv312/bin/python -c \"from custom_components.govee.const import FAHRENHEIT_REPORTING_SKUS as S; assert 'H5074' in S\"",
+          "timeout": 60
+        },
+        {
+          "cmd": "! grep -q 'Not in FAHRENHEIT_REPORTING_SKUS: that list needs' custom_components/govee/const.py",
+          "timeout": 10
+        },
+        {
+          "cmd": "grep -q '\"H5074\"' tests/test_zone_light_toggles.py",
+          "timeout": 10
+        },
+        {
+          "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_zone_light_toggles.py tests/test_models.py",
+          "timeout": 300
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "issue:317",
+      "notes": "Research 2026-11-26 §Q3. 63.5 F read as C = 146.3 F exactly; sibling H5075 already in the set (const.py:141-163). Add \"H5074\"; add a comment line next to the H5102/H5107 entry (~const.py:119) citing #317 (raw value F-scale, no unit; option API temperature unit remains the override); replace the 'Not in FAHRENHEIT_REPORTING_SKUS...' sentence at const.py:497-500 with a pointer to #317. Add H5074 to both TestFahrenheitAllowlist parametrize lists (tests/test_zone_light_toggles.py:105,109). Issue is closed by reporter; commit subject cites #317 so the release bot still replies."
+    },
+    {
+      "id": "T-011",
+      "title": "Queue release replies for #315, #318, #298, #299, #288, #211",
+      "role": "infra",
+      "files": [
+        "docs/release-replies.md"
+      ],
+      "depends_on": [
+        "T-006",
+        "T-008"
+      ],
+      "verify": [
+        {
+          "cmd": "for n in 315 318 298 299 288 211; do grep -q \"^## #$n\\$\" docs/release-replies.md || exit 1; done",
+          "timeout": 10
+        },
+        {
+          "cmd": "grep -A1 '^## #318$' docs/release-replies.md | grep -q 'close: duplicate'",
+          "timeout": 10
+        },
+        {
+          "cmd": "test $(grep -c '^## #308$' docs/release-replies.md) -eq 1",
+          "timeout": 10
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "plan",
+      "notes": "Research 2026-11-26 §Q4. Format per docs/release-replies.md header. #315 close: no: H6022 is supported (lights, segments, scenes, music); ask HA + integration versions, whether the lamp is on the same Govee account as the API key, and a diagnostics download. #318 close: duplicate: same Marketplace ownership error as #295, point to the workaround there and home-assistant/core#190454. #298 close: no: this release adds each device's DIY fetch result to diagnostics; ask for a download and whether the scenes are DIY or Snapshot. #299 close: no: ask again for the DreamView device's SKU; DreamView modes are per-SKU ptReal work. #288 close: no: thanks for the govee2mqtt analysis; ask someone with Tap-to-Runs to test GET app2.govee.com/bff-app/v1/exec-plat/home with the integration's account token; planned only once that works. #211 close: no: H60B0 Light mode select and Ripple flow slider added (thanks m4ary, PRs #320/#321); ask owners to report if the side light ever drops when switching bottom/ripple. Extend T-006's existing #308 entry (do not add a second one) with thanks to the second owner for confirming firmware 1.00.49 fixes it."
+    },
+    {
+      "id": "T-012",
+      "title": "Final gates and green main CI before the 2026-11-28T02:00Z release",
+      "role": "test",
+      "files": [
+        "custom_components/govee",
+        "tests"
+      ],
+      "depends_on": [
+        "T-007",
+        "T-008",
+        "T-009",
+        "T-010",
+        "T-011"
+      ],
+      "verify": [
+        {
+          "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= --cov=custom_components.govee --cov-fail-under=95",
+          "timeout": 600
+        },
+        {
+          "cmd": ".cc-sessions/venv312/bin/mypy custom_components/govee && .cc-sessions/venv312/bin/flake8 . && .cc-sessions/venv312/bin/black --check .",
+          "timeout": 400
+        },
+        {
+          "cmd": "S=$(git rev-parse HEAD); test \"$(git rev-parse origin/main)\" = \"$S\" && test \"$(gh run list --commit \"$S\" --json name,conclusion --jq \"[.[] | select(.name != \\\"Govee API Uptime\\\" and .name != \\\"Daily release\\\" and .conclusion == \\\"success\\\")] | length\")\" -ge 4",
+          "timeout": 60
+        }
+      ],
+      "passes": false,
+      "status": "open",
+      "blocked_reason": null,
+      "attempts": 0,
+      "last_verify": null,
+      "origin": "plan",
+      "notes": "Final gate after the 2026-11-26 extension (T-008..T-011). Same commands as T-007; role test, its only product is the gate result (no files), hence --test-only-ok. The 2026-11-28T02:00Z run ships #310, #241, DIY diagnostics, #316, #317 and PRs #319/#320/#321."
     }
   ]
 }

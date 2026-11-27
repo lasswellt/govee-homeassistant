@@ -22,7 +22,13 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .api.probe_thermometer import probes_for_sku
-from .const import CONF_ENABLE_H6104_BLE, DEFAULT_ENABLE_H6104_BLE, SUFFIX_HEATER_TEMPERATURE, SUFFIX_MUSIC_SENSITIVITY
+from .const import (
+    CONF_ENABLE_H6104_BLE,
+    DEFAULT_ENABLE_H6104_BLE,
+    SUFFIX_HEATER_TEMPERATURE,
+    SUFFIX_MUSIC_SENSITIVITY,
+    SUFFIX_RIPPLE_FLOW,
+)
 from .coordinator import GoveeConfigEntry, GoveeCoordinator
 from .entity import GoveeEntity
 from .h6104 import GoveeTVSensitivityNumber
@@ -80,6 +86,11 @@ async def async_setup_entry(
                     device.name,
                     sensitivity_range,
                 )
+
+        # Ripple flow speed (H60B0): app-only, set over ptReal.
+        if device.supports_ripple_flow:
+            entities.append(GoveeRippleFlowNumber(coordinator, device))
+            _LOGGER.debug("Created ripple flow number entity for %s", device.name)
 
         # Heater temperature control
         if device.is_heater:
@@ -396,3 +407,39 @@ class GoveeHeaterTemperatureNumber(GoveeEntity, RestoreNumber):
             temperature,
             self._device.name,
         )
+
+
+class GoveeRippleFlowNumber(GoveeEntity, RestoreNumber):
+    """Flow speed of the H60B0's ripple light (0 stops it, 100 is fastest).
+
+    The Platform API has no capability for it; the coordinator sends the
+    app's ptReal frame. Govee never reports the speed, so the value is the
+    last one set, restored across restarts with ``RestoreNumber``.
+    """
+
+    _attr_translation_key = "govee_ripple_flow"
+    _attr_mode = NumberMode.SLIDER
+    _attr_native_min_value = 0.0
+    _attr_native_max_value = 100.0
+    _attr_native_step = 1.0
+
+    def __init__(self, coordinator: GoveeCoordinator, device: GoveeDevice) -> None:
+        """Initialize the ripple flow number entity."""
+        super().__init__(coordinator, device)
+        self._attr_unique_id = f"{device.device_id}{SUFFIX_RIPPLE_FLOW}"
+        self._attr_native_value: float | None = None
+
+    async def async_added_to_hass(self) -> None:
+        """Restore the last speed set."""
+        await super().async_added_to_hass()
+        last = await self.async_get_last_number_data()
+        if last is not None and last.native_value is not None and math.isfinite(last.native_value):
+            self._attr_native_value = min(max(float(last.native_value), 0.0), 100.0)
+
+    async def async_set_native_value(self, value: float) -> None:
+        """Send the new flow speed; raise if it could not be sent."""
+        speed = round(value)
+        if not await self.coordinator.async_set_ripple_flow(self._device_id, speed):
+            raise self._command_failed()
+        self._attr_native_value = float(speed)
+        self.async_write_ha_state()

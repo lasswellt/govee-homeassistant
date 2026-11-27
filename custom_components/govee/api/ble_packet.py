@@ -308,6 +308,21 @@ def build_light_zone_ptreal(zone: int, on: bool) -> list[int]:
     ]
 
 
+def build_ripple_flow_ptreal(speed: int) -> list[int]:
+    """Build the H60B0 ripple flow-speed frame data: ``33 05 2c 01 03 <speed>``.
+
+    From the H60B0 frame table posted on #211; verified on an H60B0 over
+    LAN ptReal (2026-11): 10 slowed the ripple lens and 0 stopped it.
+
+    Args:
+        speed: Flow speed 0-100 (0 stops the ripple); clamped to that range.
+
+    Returns:
+        Packet data bytes (before ``build_packet`` padding/checksum).
+    """
+    return [MUSIC_PACKET_PREFIX, 0x05, 0x2C, 0x01, 0x03, max(0, min(100, int(speed)))]
+
+
 def build_dreamview_packet() -> bytes:
     """Build the DreamView (video/camera sync) activation packet.
 

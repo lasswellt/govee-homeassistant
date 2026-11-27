@@ -99,6 +99,9 @@
       }
     },
     "number": {
+      "govee_ripple_flow": {
+        "default": "mdi:waves-arrow-right"
+      },
       "govee_music_sensitivity": {
         "default": "mdi:microphone"
       },

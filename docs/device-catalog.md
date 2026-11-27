@@ -1012,7 +1012,7 @@ State readback: `brightness`=100/75, `colorRgb`=0/16756308, `colorTemperatureK`=
 
 Account (BFF) list: yes — `deviceSettings` carries `address`, `bleName`, `deviceName`, `ic`, `matterId`, `pactCode`, `pactType`, `supportBleBroadV3`, `supportEnc`, `topic`, `versionHard`, `versionSoft`, `wifiFuncList`, `wifiSoftVersion`; `lastDeviceData` keys: `online`. Newer captures add `powerOffMemory`.
 
-AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `stc`.
+AWS IoT push `state` keys: `brightness`, `color`, `colorTemInKelvin`, `mode`, `onOff`, `result`, `stc`; `op.command` frame headers: `aa05`, `aa11`, `aa12`, `aa23`, `aa30`, `aa41`, `aaa5`, `aaf1`. `aa30 <main> <ring>` reports the two zones (`01 01` both lit, `00 01` main off, `01 00` ring off, `00 00` powered off; FW 1.00.49) and drives the main/background light switches (`LIGHT_ZONE_FRAME_SKUS`).
 
 Rejected or unconfirmed commands (2026-05 → 2026-11, `recent_commands`):
 
