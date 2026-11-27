@@ -1,7 +1,7 @@
 {
   "$schema": "blitz-tasks/1.0",
   "plan": "open-issues",
-  "updated": "2026-11-27T23:00:21Z",
+  "updated": "2026-11-27T23:34:35Z",
   "tasks": [
     {
       "id": "T-001",
@@ -991,11 +991,46 @@
           "timeout": 60
         }
       ],
-      "passes": false,
-      "status": "in_progress",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-27T23:34:35Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "test \"$(gh issue view 316 --json state --jq .state)\" = OPEN",
+            "exit": 0,
+            "duration_ms": 406,
+            "tail": "",
+            "recorded_at": "2026-11-27T23:33:56Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv314/bin/pytest -q -p no:cacheprovider -o addopts= --cov=custom_components.govee --cov-fail-under=95",
+            "exit": 0,
+            "duration_ms": 36402,
+            "tail": "m_components/govee/kettle/entities.py               167      0 100.00%\ncustom_components/govee/kettle/frames.py                  94      0 100.00%\ncustom_components/govee/kettle/labels.py                  37      0 100.00%\ncustom_components/govee/kettle/manager.py                240      0 100.00%\ncustom_components/govee/kettle/modes.py                   45      0 100.00%\ncustom_components/govee/light.py                         507      0 100.00%\ncustom_components/govee/models/__init__.py                 5      0 100.00%\ncustom_components/govee/models/commands.py               216      0 100.00%\ncustom_components/govee/models/energy_counter.py          68      0 100.00%\ncustom_components/govee/models/state.py                  552      0 100.00%\ncustom_components/govee/models/transport.py               33      0 100.00%\ncustom_components/govee/number.py                        192      0 100.00%\ncustom_components/govee/platforms/__init__.py              0      0 100.00%\ncustom_components/govee/platforms/grouped_segment.py      81      0 100.00%\ncustom_components/govee/platforms/segment.py              83      0 100.00%\ncustom_components/govee/registry.py                       25      0 100.00%\ncustom_components/govee/repairs.py                        79      0 100.00%\ncustom_components/govee/request_budget.py                 40      0 100.00%\ncustom_components/govee/scene_cache.py                   109      0 100.00%\ncustom_components/govee/services.py                      142      0 100.00%\ncustom_components/govee/status_burst.py                   45      0 100.00%\ncustom_components/govee/switch.py                        401      0 100.00%\ncustom_components/govee/transport_health.py               78      0 100.00%\n-------------------------------------------------------------------------------------\nTOTAL                                                  13917     43  99.69%\nRequired test coverage of 95% reached. Total coverage: 99.69%\n4809 passed, 1 skipped in 35.23s",
+            "recorded_at": "2026-11-27T23:34:33Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv314/bin/mypy custom_components/govee && .cc-sessions/venv314/bin/flake8 . && .cc-sessions/venv314/bin/black --check .",
+            "exit": 0,
+            "duration_ms": 1355,
+            "tail": "Success: no issues found in 59 source files\nAll done! ✨ 🍰 ✨\n211 files would be left unchanged.",
+            "recorded_at": "2026-11-27T23:34:34Z"
+          },
+          {
+            "cmd": "S=$(git rev-parse HEAD); test \"$(git rev-parse origin/main)\" = \"$S\" && test \"$(gh run list --commit \"$S\" --json name,conclusion --jq '[.[] | select(.name != \"Govee API Uptime\" and .name != \"Daily release\" and .conclusion == \"success\")] | length')\" -ge 4",
+            "exit": 0,
+            "duration_ms": 548,
+            "tail": "",
+            "recorded_at": "2026-11-27T23:34:35Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "Research 2026-11-27 §Q6. #316 was closed by plan commit b39c86e's body ('fix #316'); reopen with gh issue reopen 316 (no comment: the release bot replies on it after the release since 89237ab cites (#316)). Then full gates on .cc-sessions/venv314 (Python 3.14 + HA 2026.10.4, the CI lane since 7ed0e10) and green CI on main HEAD. venv312 no longer exists, so T-001..T-012 verify commands that name it fail on re-run; that is expected."
     }
