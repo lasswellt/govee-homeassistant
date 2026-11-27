@@ -13,3 +13,11 @@ Ruling: class=architectural tasks=12 (+5: T-008..T-012); from docs/research/2026
 ## 2026-11-27T03:47:21Z build T-010 start (attempt 1; dispatched while T-008 #320 CI runs, no overlapping const.py lines)
 ## 2026-11-27T03:49:35Z verify T-008 ok=true (#319 24ec65e, #321 30f5dad, #320 b4fb8e7; fork branches updated with main, conflicts resolved by keeping both blocks)
 ## 2026-11-27T03:49:35Z verify T-010 ok=true (commit 6dfa6fe)
+## 2026-11-27T03:49:45Z build T-009 start (attempt 1)
+## 2026-11-27T03:51:22Z verify T-009 ok=true (commit 89237ab)
+## 2026-11-27T03:51:22Z build T-004 start (attempt 1)
+## 2026-11-27T03:52:43Z build T-005 start (attempt 1; docs-only, concurrent with T-004)
+## 2026-11-27T03:53:44Z verify T-005 ok=true (commit f7dd483; reviewed: no device ids or usernames)
+## 2026-11-27T03:56:18Z verify T-004 ok=true (commit 588c525)
+## 2026-11-27T03:56:18Z verify T-006 ok=true; verify T-011 ok=true (12 queued briefs: #310 #208 #241 #314 #308 #304 #315 #318 #298 #299 #288 #211)
+## 2026-11-27T03:56:18Z gates: 4810 passed, cov 99.73%, config_flow 100%, mypy/flake8/black clean

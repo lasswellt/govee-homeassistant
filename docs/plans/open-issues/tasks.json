@@ -1,7 +1,7 @@
 {
   "$schema": "blitz-tasks/1.0",
   "plan": "open-issues",
-  "updated": "2026-11-27T03:49:29Z",
+  "updated": "2026-11-27T03:55:19Z",
   "tasks": [
     {
       "id": "T-001",
@@ -276,11 +276,53 @@
           "timeout": 300
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-27T03:55:11Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "grep -q '\"diy_scenes\"' custom_components/govee/diagnostics.py",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:55:08Z"
+          },
+          {
+            "cmd": "grep -q 'no DIY scenes' custom_components/govee/select.py",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:55:08Z"
+          },
+          {
+            "cmd": "grep -q 'diy_scenes' tests/test_diagnostics.py",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:55:08Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_diagnostics.py tests/test_scene_cache.py tests/test_cov_select.py",
+            "exit": 0,
+            "duration_ms": 2567,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 51%]\n....................................................................     [100%]\n140 passed in 1.34s",
+            "recorded_at": "2026-11-27T03:55:10Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/mypy custom_components/govee",
+            "exit": 0,
+            "duration_ms": 135,
+            "tail": "Success: no issues found in 59 source files",
+            "recorded_at": "2026-11-27T03:55:11Z"
+          }
+        ]
+      },
       "origin": "issue:314",
       "notes": "Research §Q4 (#314, #296, #298, #281). Today diagnostics only show diy_scene_cache_count (diagnostics.py:373), so an upstream empty list and a setup-time fetch error (scene_cache.py:284-293 returns [] uncached) look the same. Keep the last DIY fetch outcome per device in the scene cache (count, or the error class name; never the scene names, which are user-chosen) and emit it per device in diagnostics under key \"diy_scenes\" ({\"count\": n} or {\"error\": \"<ExceptionClass>\"}). In select.py:175-186, when a device supports diyScene but the list is empty, log one debug line containing the words 'no DIY scenes'. No behaviour change: entity creation, caching and refresh stay as they are. Privacy: no device names or scene names in diagnostics beyond what is already there."
     },
@@ -313,11 +355,46 @@
           "timeout": 10
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-27T03:53:44Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "! grep -q '3-byte little-endian' docs/govee-protocol-reference.md",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:53:44Z"
+          },
+          {
+            "cmd": "grep -qE '4-byte|4B LE' docs/govee-protocol-reference.md && grep -q '#310' docs/govee-protocol-reference.md",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:53:44Z"
+          },
+          {
+            "cmd": "grep -q 'FRAME_DREAMVIEW_SKUS' docs/govee-protocol-reference.md",
+            "exit": 0,
+            "duration_ms": 4,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:53:44Z"
+          },
+          {
+            "cmd": "grep -q '33 60 02' docs/govee-protocol-reference.md && grep -q '#304' docs/govee-protocol-reference.md",
+            "exit": 0,
+            "duration_ms": 6,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:53:44Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "Research §Q2/Q3/Q6. Replace the '3-byte little-endian' mask wording (0x15 row ~:1496, §9.8 PTREAL_SEGMENT_SKUS row ~:4737) with the 4-byte layout (bytes 12-15 of the colour frame; brightness frame unchanged), add H7038 with #310. §9.8: add FRAME_DREAMVIEW_SKUS and H6099 to the DreamView rows with #241, marked unverified on hardware; update the H6099 model section (~:2012). Add a subsection documenting the H607C Music DreamView sync-centre frames from #304 (33 60 02 GG II 00 VV SS ... CC, XOR checksum, the 12 Lighting Show + 10 Carnival effect table, Dynamic/Soft variant byte, sensitivity byte, and the 8-colour frame) as reporter-captured, not implemented. Paraphrase the reporter's tables; no device ids. Do NOT put #304 in the commit subject (T-006 queues its reply). [2026-11-26] Build after T-008: #319/#320/#321 all edit docs/govee-protocol-reference.md."
     },
@@ -343,11 +420,32 @@
           "timeout": 10
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-27T03:55:19Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "for n in 310 208 241 314 308 304; do grep -q \"^## #$n\\$\" docs/release-replies.md || exit 1; done",
+            "exit": 0,
+            "duration_ms": 9,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:55:19Z"
+          },
+          {
+            "cmd": "test $(grep -c '^close: no' docs/release-replies.md) -ge 6",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:55:19Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "Format per docs/release-replies.md header (## #N, close:, brief:). All close: no. #310: fixed via AWS IoT for H7038, needs account login, ask to confirm all 30 bulbs; H705E left on REST. #208: ask the reporter to try 33 05 15 01 RR GG BB 00 00 00 00 00 <4-byte mask> via govee.send_raw_ptreal on indices 16-29 and report. #241: switch added, state from the device's own frame; ask to confirm HA ON enters video mode, app Video->Color flips it off, HA OFF restores colour; if ON does nothing, a diagnostics download right after pressing it. #314: ask for integration/HA version, a diagnostics download (the new per-device diy_scenes entry), whether the scenes are DIY or Snapshot in the app, and log lines mentioning DIY scenes; refresh can't create a missing selector, a reload after scenes exist can. #308: the release already avoids the LAN power-off for anyone on 1.00.48; firmware rollout is Govee's, no manual path we know of. #304: thanks, frames documented in the protocol reference, kept open as a feature request. Never cite a version the brief does not name."
     },
@@ -493,11 +591,53 @@
           "timeout": 300
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-27T03:51:17Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "grep -qE 'def _count_mqtt_status_query' custom_components/govee/coordinator.py",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:51:15Z"
+          },
+          {
+            "cmd": "test $(grep -c '_mqtt_queries_since_connect += 1' custom_components/govee/coordinator.py) -eq 1 && test $(grep -c '_count_mqtt_status_query(' custom_components/govee/coordinator.py) -ge 3",
+            "exit": 0,
+            "duration_ms": 7,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:51:15Z"
+          },
+          {
+            "cmd": "grep -qE 'online ?= ?False' tests/test_issue_222.py",
+            "exit": 0,
+            "duration_ms": 4,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:51:15Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_issue_222.py tests/test_issue_195.py",
+            "exit": 0,
+            "duration_ms": 1554,
+            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n......................................................................   [100%]\n70 passed in 0.33s",
+            "recorded_at": "2026-11-27T03:51:17Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/mypy custom_components/govee",
+            "exit": 0,
+            "duration_ms": 135,
+            "tail": "Success: no issues found in 59 source files",
+            "recorded_at": "2026-11-27T03:51:17Z"
+          }
+        ]
+      },
       "origin": "issue:316",
       "notes": "Research 2026-11-26 §Q2. Increments today at coordinator.py:3891 (_poll_mqtt_status) and :4542 (async_request_status); reset :4234; check :4256-4281. Add helper _count_mqtt_status_query(device_id) that increments _mqtt_queries_since_connect only when (state := self._states.get(device_id)) is not None and state.online; call it at both sites. Keep publishing the query to offline devices (#242 recovery: a live device answers, update_from_mqtt sets online). Use state.online, not device_reachable() (:896). Tests: _silent_coord (tests/test_issue_222.py:51) devices must carry online=True so existing TestSilence still counts; add all-offline (no reconnect, no repair after two checks) and mixed online/offline (only online counted) for both _poll_mqtt_status and async_request_status. Commit subject cites #316."
     },
@@ -598,11 +738,39 @@
           "timeout": 10
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-27T03:55:19Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": "for n in 315 318 298 299 288 211; do grep -q \"^## #$n\\$\" docs/release-replies.md || exit 1; done",
+            "exit": 0,
+            "duration_ms": 8,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:55:19Z"
+          },
+          {
+            "cmd": "grep -A1 '^## #318$' docs/release-replies.md | grep -q 'close: duplicate'",
+            "exit": 0,
+            "duration_ms": 5,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:55:19Z"
+          },
+          {
+            "cmd": "test $(grep -c '^## #308$' docs/release-replies.md) -eq 1",
+            "exit": 0,
+            "duration_ms": 4,
+            "tail": "",
+            "recorded_at": "2026-11-27T03:55:19Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "Research 2026-11-26 §Q4. Format per docs/release-replies.md header. #315 close: no: H6022 is supported (lights, segments, scenes, music); ask HA + integration versions, whether the lamp is on the same Govee account as the API key, and a diagnostics download. #318 close: duplicate: same Marketplace ownership error as #295, point to the workaround there and home-assistant/core#190454. #298 close: no: this release adds each device's DIY fetch result to diagnostics; ask for a download and whether the scenes are DIY or Snapshot. #299 close: no: ask again for the DreamView device's SKU; DreamView modes are per-SKU ptReal work. #288 close: no: thanks for the govee2mqtt analysis; ask someone with Tap-to-Runs to test GET app2.govee.com/bff-app/v1/exec-plat/home with the integration's account token; planned only once that works. #211 close: no: H60B0 Light mode select and Ripple flow slider added (thanks m4ary, PRs #320/#321); ask owners to report if the side light ever drops when switching bottom/ripple. Extend T-006's existing #308 entry (do not add a second one) with thanks to the second owner for confirming firmware 1.00.49 fixes it."
     },
