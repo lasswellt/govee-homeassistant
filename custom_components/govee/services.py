@@ -18,8 +18,14 @@ automations written against the Govee ID keep working.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
-import voluptuous as vol
+if TYPE_CHECKING:
+    # HA 2026.10 validates with probatio and aliases ``voluptuous`` to it at startup;
+    # older HA ships voluptuous itself. Type against probatio, import voluptuous.
+    import probatio as vol
+else:
+    import voluptuous as vol
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError

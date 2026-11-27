@@ -17,6 +17,10 @@ jobs:
       - run: python3 -m pip install black==26.5.1
       # --check fails the job on unformatted files; --diff shows what to fix.
       - run: black --check --diff .
+      # Tests only run on the newest Home Assistant (Python 3.14), but hacs.json still
+      # supports HA 2024.11 on Python 3.12: fail if the integration stops compiling there.
+      - name: Compile on Python 3.12
+        run: python3 -m compileall -q custom_components
       # Repo Claude settings must never ride in via a PR (release job ignores them).
       - name: Forbid committed Claude settings
         run: |

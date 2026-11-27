@@ -9,10 +9,7 @@ import asyncio
 import logging
 from typing import Any
 
-# mypy --strict: HA's `light` module re-exports without __all__, so
-# `--no-implicit-reexport` raises attr-defined for each member. The
-# suppression is upstream-stub-bound, not a real type error here.
-from homeassistant.components.light import (  # type: ignore[attr-defined]
+from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
     ATTR_RGB_COLOR,
     ColorMode,

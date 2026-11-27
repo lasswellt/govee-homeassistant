@@ -51,7 +51,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  REQUIRED_CHECKS: "test (3.12)|test (3.13)|mypy|HACS Action|Home Assistant Validation|Check style formatting"
+  REQUIRED_CHECKS: "test (3.14)|mypy|HACS Action|Home Assistant Validation|Check style formatting"
   DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
 
 jobs:

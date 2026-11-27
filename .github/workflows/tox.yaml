@@ -11,8 +11,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # NOTE: keep this in sync with envlist in tox.ini
-        python-version: ["3.12", "3.13"]
+        # NOTE: keep this in sync with envlist in tox.ini. Tests run against the newest
+        # Home Assistant that pytest-homeassistant-custom-component supports, which needs 3.14.
+        python-version: ["3.14"]
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -33,7 +34,7 @@ jobs:
         run: tox -e "py${PYTHON_VERSION//./}"
 
       - name: Upload coverage to Codecov
-        if: matrix.python-version == '3.12'
+        if: matrix.python-version == '3.14'
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: ./coverage.xml

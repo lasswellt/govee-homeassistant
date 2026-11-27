@@ -19,13 +19,18 @@ An invalid API key is not a repair issue here: the coordinator raises
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import voluptuous as vol
+if TYPE_CHECKING:
+    # HA 2026.10 validates with probatio and aliases ``voluptuous`` to it at startup;
+    # older HA ships voluptuous itself. Type against probatio, import voluptuous.
+    import probatio as vol
+    from homeassistant.components.repairs import RepairsFlowResult
+else:
+    import voluptuous as vol
 from homeassistant.components.repairs import RepairsFlow
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import issue_registry as ir
 
 from .const import (
@@ -192,14 +197,14 @@ class _GoveeRepairFlow(RepairsFlow):
     async def async_step_init(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> FlowResult:
+    ) -> RepairsFlowResult:
         """Handle the initial step of the repair flow."""
         return await self.async_step_confirm()
 
     async def async_step_confirm(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> FlowResult:
+    ) -> RepairsFlowResult:
         """Show the proposed fix and apply it on submit (subclasses implement)."""
         raise NotImplementedError
 
@@ -210,7 +215,7 @@ class RateLimitRepairFlow(_GoveeRepairFlow):
     async def async_step_confirm(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> FlowResult:
+    ) -> RepairsFlowResult:
         """Show the proposed interval; apply it on submit."""
         entry = self._entry()
         if entry is None:
@@ -248,7 +253,7 @@ class MqttReconnectRepairFlow(_GoveeRepairFlow):
     async def async_step_confirm(
         self,
         user_input: dict[str, Any] | None = None,
-    ) -> FlowResult:
+    ) -> RepairsFlowResult:
         """Explain the retry; on submit clear the failure marker and reload."""
         entry = self._entry()
         if entry is None:
