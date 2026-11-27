@@ -21,3 +21,5 @@ Ruling: class=architectural tasks=12 (+5: T-008..T-012); from docs/research/2026
 ## 2026-11-27T03:56:18Z verify T-004 ok=true (commit 588c525)
 ## 2026-11-27T03:56:18Z verify T-006 ok=true; verify T-011 ok=true (12 queued briefs: #310 #208 #241 #314 #308 #304 #315 #318 #298 #299 #288 #211)
 ## 2026-11-27T03:56:18Z gates: 4810 passed, cov 99.73%, config_flow 100%, mypy/flake8/black clean
+## 2026-11-27T04:01:13Z verify T-007 ok=true; verify T-012 ok=true (main 28c0df2: Tests, Type Checking, Style check, HACS/HASS green)
+## 2026-11-27T04:01:13Z build open-issues 12/12 done

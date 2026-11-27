@@ -1,7 +1,7 @@
 {
   "$schema": "blitz-tasks/1.0",
   "plan": "open-issues",
-  "updated": "2026-11-27T03:55:19Z",
+  "updated": "2026-11-27T04:01:04Z",
   "tasks": [
     {
       "id": "T-001",
@@ -479,11 +479,39 @@
           "timeout": 60
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-27T04:00:14Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= --cov=custom_components.govee --cov-fail-under=95",
+            "exit": 0,
+            "duration_ms": 48580,
+            "tail": ".00%\ncustom_components/govee/kettle/entities.py               167      0 100.00%\ncustom_components/govee/kettle/frames.py                  94      0 100.00%\ncustom_components/govee/kettle/labels.py                  37      0 100.00%\ncustom_components/govee/kettle/manager.py                240      0 100.00%\ncustom_components/govee/kettle/modes.py                   45      0 100.00%\ncustom_components/govee/light.py                         507      0 100.00%\ncustom_components/govee/models/__init__.py                 5      0 100.00%\ncustom_components/govee/models/commands.py               216      0 100.00%\ncustom_components/govee/models/energy_counter.py          68      0 100.00%\ncustom_components/govee/models/state.py                  552      0 100.00%\ncustom_components/govee/models/transport.py               33      0 100.00%\ncustom_components/govee/number.py                        192      0 100.00%\ncustom_components/govee/platforms/__init__.py              0      0 100.00%\ncustom_components/govee/platforms/grouped_segment.py      81      0 100.00%\ncustom_components/govee/platforms/segment.py              83      0 100.00%\ncustom_components/govee/registry.py                       25      0 100.00%\ncustom_components/govee/repairs.py                        80      0 100.00%\ncustom_components/govee/request_budget.py                 40      0 100.00%\ncustom_components/govee/scene_cache.py                   109      0 100.00%\ncustom_components/govee/services.py                      141      0 100.00%\ncustom_components/govee/status_burst.py                   45      0 100.00%\ncustom_components/govee/switch.py                        401      0 100.00%\ncustom_components/govee/transport_health.py               78      0 100.00%\n-------------------------------------------------------------------------------------\nTOTAL                                                  13913     37  99.73%\n\nRequired test coverage of 95% reached. Total coverage: 99.73%\n4810 passed in 46.67s",
+            "recorded_at": "2026-11-27T04:00:13Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/mypy custom_components/govee && .cc-sessions/venv312/bin/flake8 . && .cc-sessions/venv312/bin/black --check .",
+            "exit": 0,
+            "duration_ms": 935,
+            "tail": "Success: no issues found in 59 source files\nAll done! ✨ 🍰 ✨\n211 files would be left unchanged.",
+            "recorded_at": "2026-11-27T04:00:14Z"
+          },
+          {
+            "cmd": "S=$(git rev-parse HEAD); test \"$(git rev-parse origin/main)\" = \"$S\" && test \"$(gh run list --commit \"$S\" --json name,conclusion --jq \"[.[] | select(.name != \\\"Govee API Uptime\\\" and .name != \\\"Daily release\\\" and .conclusion == \\\"success\\\")] | length\")\" -ge 4",
+            "exit": 0,
+            "duration_ms": 647,
+            "tail": "",
+            "recorded_at": "2026-11-27T04:00:14Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "Full suite with coverage floor 95, mypy strict, flake8, black --check, then CI green on main HEAD (the four workflows: Tests, Type Checking, Style check, HACS/HASS Actions). Tonight's run then ships v2026.11.2 with #310 and #241. [2026-11-26] No longer the final gate: T-012 runs the same gates after T-008..T-011. Release moved to 2026-11-28T02:00Z (the 2026-11-27 run skipped)."
     },
@@ -803,11 +831,39 @@
           "timeout": 60
         }
       ],
-      "passes": false,
-      "status": "open",
+      "passes": true,
+      "status": "done",
       "blocked_reason": null,
       "attempts": 0,
-      "last_verify": null,
+      "last_verify": {
+        "ts": "2026-11-27T04:01:04Z",
+        "ok": true,
+        "failed": "",
+        "tail": "",
+        "runs": [
+          {
+            "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= --cov=custom_components.govee --cov-fail-under=95",
+            "exit": 0,
+            "duration_ms": 48306,
+            "tail": ".00%\ncustom_components/govee/kettle/entities.py               167      0 100.00%\ncustom_components/govee/kettle/frames.py                  94      0 100.00%\ncustom_components/govee/kettle/labels.py                  37      0 100.00%\ncustom_components/govee/kettle/manager.py                240      0 100.00%\ncustom_components/govee/kettle/modes.py                   45      0 100.00%\ncustom_components/govee/light.py                         507      0 100.00%\ncustom_components/govee/models/__init__.py                 5      0 100.00%\ncustom_components/govee/models/commands.py               216      0 100.00%\ncustom_components/govee/models/energy_counter.py          68      0 100.00%\ncustom_components/govee/models/state.py                  552      0 100.00%\ncustom_components/govee/models/transport.py               33      0 100.00%\ncustom_components/govee/number.py                        192      0 100.00%\ncustom_components/govee/platforms/__init__.py              0      0 100.00%\ncustom_components/govee/platforms/grouped_segment.py      81      0 100.00%\ncustom_components/govee/platforms/segment.py              83      0 100.00%\ncustom_components/govee/registry.py                       25      0 100.00%\ncustom_components/govee/repairs.py                        80      0 100.00%\ncustom_components/govee/request_budget.py                 40      0 100.00%\ncustom_components/govee/scene_cache.py                   109      0 100.00%\ncustom_components/govee/services.py                      141      0 100.00%\ncustom_components/govee/status_burst.py                   45      0 100.00%\ncustom_components/govee/switch.py                        401      0 100.00%\ncustom_components/govee/transport_health.py               78      0 100.00%\n-------------------------------------------------------------------------------------\nTOTAL                                                  13913     37  99.73%\n\nRequired test coverage of 95% reached. Total coverage: 99.73%\n4810 passed in 46.45s",
+            "recorded_at": "2026-11-27T04:01:03Z"
+          },
+          {
+            "cmd": ".cc-sessions/venv312/bin/mypy custom_components/govee && .cc-sessions/venv312/bin/flake8 . && .cc-sessions/venv312/bin/black --check .",
+            "exit": 0,
+            "duration_ms": 914,
+            "tail": "Success: no issues found in 59 source files\nAll done! ✨ 🍰 ✨\n211 files would be left unchanged.",
+            "recorded_at": "2026-11-27T04:01:04Z"
+          },
+          {
+            "cmd": "S=$(git rev-parse HEAD); test \"$(git rev-parse origin/main)\" = \"$S\" && test \"$(gh run list --commit \"$S\" --json name,conclusion --jq \"[.[] | select(.name != \\\"Govee API Uptime\\\" and .name != \\\"Daily release\\\" and .conclusion == \\\"success\\\")] | length\")\" -ge 4",
+            "exit": 0,
+            "duration_ms": 633,
+            "tail": "",
+            "recorded_at": "2026-11-27T04:01:04Z"
+          }
+        ]
+      },
       "origin": "plan",
       "notes": "Final gate after the 2026-11-26 extension (T-008..T-011). Same commands as T-007; role test, its only product is the gate result (no files), hence --test-only-ok. The 2026-11-28T02:00Z run ships #310, #241, DIY diagnostics, #316, #317 and PRs #319/#320/#321."
     }
