@@ -1,0 +1,58 @@
+{
+  "$schema": "blitz-check-report/1.0",
+  "result": "CONDITIONAL",
+  "ts": "2026-11-27T23:47:27Z",
+  "ref": "cf870fb9b346136d89846da491bd50f9dcda6b18",
+  "scope": "plan",
+  "plan": "open-issues",
+  "stacks": [
+    "python"
+  ],
+  "lanes": {
+    "deterministic": {
+      "selected": 19,
+      "ran": 17,
+      "pass": 16,
+      "finding": 1,
+      "error": 0,
+      "note": "det-17/det-18 are operational signals (no command); rows adapted src/->custom_components/; det-10 hit is intended (group devices)"
+    },
+    "semantic": {
+      "selected": 3,
+      "ran": 3,
+      "pass": 3,
+      "finding": 0,
+      "error": 0
+    }
+  },
+  "findings": [
+    {
+      "id": "verify-stale-venv",
+      "severity": "P3",
+      "where": "docs/plans/open-issues/tasks.json T-001..T-012",
+      "what": "verify[] names removed .cc-sessions/venv312; re-run with venv314: all pass"
+    },
+    {
+      "id": "sec-startup-validate",
+      "severity": "P3",
+      "where": ".cc-sessions/cov.json, .cc-sessions/typecheck-baseline.json",
+      "what": "startup-validate --strict schema findings (missing session_id/status); no injection"
+    }
+  ],
+  "cannot_verify": [
+    {
+      "what": "H6099 ON frame and H7038 bulbs 16-30 on hardware",
+      "needs": "reporter confirmation after release (#241, #310)"
+    }
+  ],
+  "critic": {
+    "mode": "reject",
+    "verdict": "LGTM",
+    "held_out_ok": 14,
+    "held_out_total": 14
+  },
+  "tasks": {
+    "verified": 14,
+    "failed": 0
+  }
+}

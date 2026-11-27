@@ -1,7 +1,7 @@
 {
   "$schema": "blitz-tasks/1.0",
   "plan": "open-issues",
-  "updated": "2026-11-27T23:34:35Z",
+  "updated": "2026-11-27T23:46:37Z",
   "tasks": [
     {
       "id": "T-001",
@@ -910,7 +910,7 @@
       "blocked_reason": null,
       "attempts": 0,
       "last_verify": {
-        "ts": "2026-11-27T23:00:13Z",
+        "ts": "2026-11-27T23:46:37Z",
         "ok": true,
         "failed": "",
         "tail": "",
@@ -920,42 +920,42 @@
             "exit": 0,
             "duration_ms": 5,
             "tail": "",
-            "recorded_at": "2026-11-27T22:59:33Z"
+            "recorded_at": "2026-11-27T23:45:56Z"
           },
           {
             "cmd": "grep -qE 'def _update_entry_reload_and_abort' custom_components/govee/config_flow.py && test $(grep -c '_update_entry_reload_and_abort(' custom_components/govee/config_flow.py) -ge 4",
             "exit": 0,
             "duration_ms": 6,
             "tail": "",
-            "recorded_at": "2026-11-27T22:59:33Z"
+            "recorded_at": "2026-11-27T23:45:56Z"
           },
           {
             "cmd": "grep -q 'async_schedule_reload' tests/test_config_flow_manager_steps.py && grep -q 'has an update listener' tests/test_config_flow_manager_steps.py",
             "exit": 0,
-            "duration_ms": 4,
+            "duration_ms": 6,
             "tail": "",
-            "recorded_at": "2026-11-27T22:59:33Z"
+            "recorded_at": "2026-11-27T23:45:56Z"
           },
           {
             "cmd": ".cc-sessions/venv314/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_config_flow.py tests/test_reconfigure_credentials.py tests/test_config_flow_manager.py tests/test_config_flow_manager_steps.py tests/test_update_listener.py",
             "exit": 0,
-            "duration_ms": 2316,
-            "tail": "........................................................................ [ 48%]\n...................................................................INFO:homeassistant.loader:Loaded network from homeassistant.components.network\n..... [ 97%]\n....                                                                     [100%]\n148 passed in 1.28s",
-            "recorded_at": "2026-11-27T22:59:35Z"
+            "duration_ms": 2295,
+            "tail": "........................................................................ [ 48%]\n........................................................................ [ 97%]\n....                                                                     [100%]\n148 passed in 1.24s",
+            "recorded_at": "2026-11-27T23:45:59Z"
           },
           {
             "cmd": "set -o pipefail; .cc-sessions/venv314/bin/pytest -q -p no:cacheprovider -o addopts= --cov=custom_components.govee --cov-report=term-missing tests | grep -qE 'config_flow\\.py +[0-9]+ +0 +100\\.00%'",
             "exit": 0,
-            "duration_ms": 36222,
-            "tail": "",
-            "recorded_at": "2026-11-27T23:00:11Z"
+            "duration_ms": 36876,
+            "tail": "INFO:homeassistant.loader:Loaded bluetooth_adapters from homeassistant.components.bluetooth_adapters",
+            "recorded_at": "2026-11-27T23:46:36Z"
           },
           {
             "cmd": ".cc-sessions/venv314/bin/mypy custom_components/govee && .cc-sessions/venv314/bin/flake8 custom_components tests && .cc-sessions/venv314/bin/black --check custom_components tests",
             "exit": 0,
-            "duration_ms": 1291,
+            "duration_ms": 1271,
             "tail": "Success: no issues found in 59 source files\nAll done! ✨ 🍰 ✨\n209 files would be left unchanged.",
-            "recorded_at": "2026-11-27T23:00:13Z"
+            "recorded_at": "2026-11-27T23:46:37Z"
           }
         ]
       },

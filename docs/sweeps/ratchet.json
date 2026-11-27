@@ -7,8 +7,8 @@
   "metrics": {
     "test_count": {
       "baseline": 3514,
-      "current": 3514,
-      "min_allowed": 3514,
+      "current": 4810,
+      "min_allowed": 4810,
       "direction": "up"
     },
     "type_errors": {
@@ -20,8 +20,8 @@
     },
     "as_any_count": {
       "baseline": 10,
-      "current": 10,
-      "max_allowed": 10,
+      "current": 7,
+      "max_allowed": 7,
       "direction": "down"
     },
     "lint_violations": {
@@ -67,6 +67,21 @@
         "todo_count": 0,
         "stale_worktree_branch_count": 0
       }
+    },
+    {
+      "ref": "cf870fb9b346136d89846da491bd50f9dcda6b18",
+      "plan": "open-issues",
+      "ts": "2026-11-27T23:39:38Z",
+      "metrics": {
+        "test_count": 4810,
+        "type_errors": 0,
+        "as_any_count": 7,
+        "lint_violations": 0,
+        "mocks_in_src": 0,
+        "todo_count": 0,
+        "stale_worktree_branch_count": 0
+      },
+      "note": "python equivalents: test_count=pytest --co; as_any_count=type: ignore in custom_components/govee; type_errors=mypy; lint=flake8"
     }
   ]
 }

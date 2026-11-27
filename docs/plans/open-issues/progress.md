@@ -30,3 +30,6 @@ Ruling: class=bounded tasks=2; #322 version-safe reload helper in config_flow.py
 ## 2026-11-27T23:00:21Z verify T-013 ok=true (staged; maintainer commit pending: credential filename hook). Mutation check: old config_flow.py fails the new no-warning asserts with the #322 text
 ## 2026-11-27T23:34:43Z verify T-014 ok=true (#316 reopened; 4809 passed, cov 99.69%; main 1e40975: Tests, Type Checking, Style check, HACS/HASS green)
 ## 2026-11-27T23:34:43Z build open-issues 14/14 done
+## 2026-11-27T23:48:30Z check CONDITIONAL check-report.md
+Ruling: cannot-verify; H6099 ON frame and H7038 bulbs 16-30 (needs reporter hardware confirmation after the 2026-11-28T02:00Z release, #241 #310)
+Ruling: spec-defect; T-001..T-012 verify[] pin .cc-sessions/venv312, removed 2026-11-27 (system Python 3.14 only); re-run with venv314 55/57 rc=0, the 2 rc=1 were CI-still-running and passed after; tasks.sh cannot edit verify[], accepted as historical (check)
