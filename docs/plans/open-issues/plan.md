@@ -26,6 +26,13 @@ The plan has four independent work streams. They share files in only two places:
   - **T-010 (#317):** a one-line SKU addition, following the H5102/H5107 precedent.
   - **T-011 / T-012:** new replies, then the final gate.
 
+- **2026-11-27 extension:**
+  - **T-013 (#322):** one `GoveeConfigFlow._update_entry_reload_and_abort` helper (`async_update_entry`, `async_schedule_reload`, `async_abort` with the HA default reason by `self.source`) replaces the three `async_update_reload_and_abort` calls. Every API it uses exists in HA 2024.11, 2026.10.4 and 2026.12.0b2 (research §Q3). The listener stays, and its options-snapshot filter (`__init__.py:716-733`) keeps it to one reload with no reload on token writes (#132).
+    - Rejected: `async_update_and_abort`. It is absent in HA 2024.11.
+    - Rejected: `OptionsFlowWithReload` without the listener. It raises the minimum past 2025.8 and breaks the repair flow's options-driven reload.
+    - Rejected: overriding `async_update_reload_and_abort` in the flow class. It would hide HA's check instead of meeting it.
+  - **T-014:** reopen #316, then the final gate on the 3.14 lane.
+
 ## File map
 
 | Path | Change | Task |
@@ -48,6 +55,10 @@ The plan has four independent work streams. They share files in only two places:
 | `custom_components/govee/coordinator.py`, `tests/test_issue_222.py` | `_count_mqtt_status_query` used at both increment sites; offline and mixed tests | T-009 |
 | `custom_components/govee/const.py`, `tests/test_zone_light_toggles.py` | H5074 in `FAHRENHEIT_REPORTING_SKUS`; comment; parametrize | T-010 |
 | `docs/release-replies.md` | #315, #318, #298, #299, #288, #211; one #308 entry | T-011 |
+| `custom_components/govee/config_flow.py` | `_update_entry_reload_and_abort` helper; three call sites; docstring at `:416` | T-013 |
+| `tests/test_config_flow.py`, `tests/test_reconfigure_credentials.py` | stop patching the HA helper; assert update, scheduled reload and reason | T-013 |
+| `tests/test_config_flow_manager.py`, `tests/test_config_flow_manager_steps.py` | assert one scheduled reload per step and no warning in `caplog` | T-013 |
+| GitHub #316 | reopen | T-014 |
 
 ## Coverage
 
@@ -65,6 +76,8 @@ The plan has four independent work streams. They share files in only two places:
 | H5074 °F | ✓ T-010 | n/a | n/a | n/a | ✓ T-010 | n/a | automatic (#317 in the commit subject) |
 | New threads answered | n/a | n/a | n/a | n/a | n/a | n/a | ✓ T-011 |
 | Ships 2026-11-28 | n/a | n/a | n/a | n/a | ✓ T-012 | n/a | n/a |
+| No reload-with-listener warning (#322) | n/a | n/a | ✓ T-013 (config flow) | n/a | ✓ T-013 | n/a | automatic (#322 in the commit subject) |
+| #316 open until validated; 3.14 gate | n/a | n/a | n/a | n/a | ✓ T-014 | n/a | release bot (89237ab cites #316) |
 
 ## Risks
 
@@ -86,6 +99,11 @@ The plan has four independent work streams. They share files in only two places:
 - **T-010:** an account that really reports H5074 in °C would now be converted wrongly. There is no report of one, and the option overrides it.
 - **Ordering:** `tasks.sh next` picks by id, so it would offer T-002 before T-008. Build T-008 first by hand; T-002, T-003 and T-005 carry notes saying so.
 
+- **T-013:**
+  - The commit needs the maintainer (`! git commit -F`), because of the "credential" filename hook. If they aren't there before about 01:30Z, it slips a night.
+  - HA could later widen the check to `async_schedule_reload` with listeners. Then revisit `OptionsFlowWithReload` together with a `hacs.json` bump.
+- **Re-verifying old tasks:** T-001..T-012 verify commands name `.cc-sessions/venv312`, which was removed on 2026-11-27 (Arch system Python only). Re-running them fails on the missing path, not the code. `/blitz:check --scope plan` should use T-014's commands.
+
 ## Solutions consulted
 
 - `docs/solutions/`: none exists.
@@ -94,5 +112,6 @@ The plan has four independent work streams. They share files in only two places:
 
 ## Research
 
+- `docs/research/2026-11-27_issues-and-pr-merge-validation.md` (`--from-research`, 2026-11-27 extension: T-013, T-014).
 - `docs/research/2026-11-26_issues-and-pr-merge-validation.md` (`--from-research`, 2026-11-26 extension: T-008..T-012).
 - `docs/research/2026-11-25_open-issues-and-prs.md` (`--from-research`). Agent findings are in the session scratchpad under `research/`: `codebase-ptreal.md`, `codebase-diy.md`, `h6099.md`, `library-docs.md`, `web-researcher.md`.

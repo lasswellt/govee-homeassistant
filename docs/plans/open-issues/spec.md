@@ -15,6 +15,13 @@ Act on everything the 2026-11-25 triage found needing us. Merge the five green D
 - fix #316 (false `mqtt_silent` repair) and #317 (H5074 °F);
 - queue six more replies.
 
+**Extended 2026-11-27** (`docs/research/2026-11-27_issues-and-pr-merge-validation.md`). No PRs are open. Added:
+- fix #322: the reauth, reconfigure and verification-code steps stop calling `async_update_reload_and_abort` while an update listener is registered;
+- reopen #316, which a plan commit closed early;
+- a final gate on the Python 3.14 lane (`7ed0e10`).
+
+These ship in the same 2026-11-28T02:00Z release when CI is green by then.
+
 ## Outcomes
 
 - Dependabot #311, #312, #313, #292 and #291 are merged, and a `daily-release.yml` dry run on the merged `main` succeeds before 02:00Z → T-001
@@ -32,6 +39,8 @@ Act on everything the 2026-11-25 triage found needing us. Merge the five green D
 - An H5074 converts its °F-scale reading in auto mode → T-010
 - Replies for #315, #318 (close as a duplicate), #298, #299, #288 and #211 are queued. #308's entry also thanks the second owner → T-011
 - Final gates and green CI on `main` HEAD before 2026-11-28T02:00Z → T-012
+- Finishing Reconfigure (including the verification-code step) or reauth no longer logs "has an update listener and should use it for scheduling a reload". Each step still saves the entry, reloads it exactly once, and aborts with `reconfigure_successful` / `reauth_successful`. This works from HA 2024.11 up → T-013
+- #316 is open again until its reporter validates. Full gates pass on `.cc-sessions/venv314`, and CI is green on `main` HEAD before 2026-11-28T02:00Z → T-014
 
 ## Out of scope
 
@@ -43,6 +52,8 @@ Act on everything the 2026-11-25 triage found needing us. Merge the five green D
 - late-nov-sweep T-013 (release failure alert). It stays in that plan.
 - #288 Tap-to-Run. It waits until someone confirms that `exec-plat/home` accepts the app2 token.
 - Any H6022 (#315) code change. The model is already supported, and the reply asks for diagnostics.
+- #322 option 1: drop the update listener for `OptionsFlowWithReload`. It needs `hacs.json` above 2025.8, and `repairs.py:228` relies on the listener to reload after its options write.
+- `_abort_if_unique_id_configured()` (`config_flow.py:179`). It passes no `updates`, so HA's reload check never runs there.
 
 ## Assumptions
 
@@ -51,6 +62,8 @@ Act on everything the 2026-11-25 triage found needing us. Merge the five green D
 - The fork PRs keep their authors' code unchanged. The maintainer resolves only the adjacency conflicts on the fork branches (`maintainerCanModify` is true).
 - For #320, "the side light runs with either" rests on the author's hardware test (research §Dissent).
 - Every reporter-facing change is SKU-scoped, so it ships in the daily release without a test branch: HACS reporters can't test branches.
+- #322 is not a hotfix: HA 2026.12.0b2 still only logs the warning for custom integrations (`custom_integration_behavior=ReportBehavior.LOG`), so it rides the normal 2026-11-28T02:00Z release.
+- The maintainer commits T-013 by hand (`! git commit -F`), because it touches `tests/test_reconfigure_credentials.py` and the pre-commit hook blocks any filename containing "credential".
 
 ## Verification
 

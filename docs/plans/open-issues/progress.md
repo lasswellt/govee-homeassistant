@@ -23,3 +23,6 @@ Ruling: class=architectural tasks=12 (+5: T-008..T-012); from docs/research/2026
 ## 2026-11-27T03:56:18Z gates: 4810 passed, cov 99.73%, config_flow 100%, mypy/flake8/black clean
 ## 2026-11-27T04:01:13Z verify T-007 ok=true; verify T-012 ok=true (main 28c0df2: Tests, Type Checking, Style check, HACS/HASS green)
 ## 2026-11-27T04:01:13Z build open-issues 12/12 done
+
+## 2026-11-27T22:49:48Z plan extended (2026-11-27 research)
+Ruling: class=bounded tasks=2; #322 version-safe reload helper in config_flow.py (T-013), reopen #316 + 3.14-lane final gate (T-014); no open PRs
