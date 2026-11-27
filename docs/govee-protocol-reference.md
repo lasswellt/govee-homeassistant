@@ -1478,7 +1478,7 @@ Community notes describe `AA 01 00 … 00 AB` sent every 2 seconds as a keep-ali
 | Segment | `0x0B` | Segment control (community-reported; not used by the integration) |
 | Gradient | `0x14` | Gradient toggle |
 | Scene | `0x21` | Scene activation |
-| Light zone | `0x30` | `33 30 <zone> <on>`: zone 0 = main panel, 1 = ring; reported as `aa 30 <main> <ring>` (H1252, #223; `build_light_zone_ptreal` in `api/ble_packet.py`) |
+| Light zone | `0x30` | `33 30 <zone> <on>`: zone 0 = main panel, 1 = ring; reported as `aa 30 <main> <ring>` (H1252, #223; H60A6; `build_light_zone_ptreal` in `api/ble_packet.py`) |
 | Nightlight | `0x36` | Nightlight mode toggle (confirmed) |
 
 **Color/Mode sub-commands (byte 3 of 0x33 0x05 packets):**
@@ -1538,7 +1538,7 @@ firmware appears to only accept this mode change from local state transitions.
 | `0x13` | Current color | `[?, R, G, B]` |
 | `0x23` | Segment config | Segment enable flags |
 | `0x26` | Status flags | General status |
-| `0x30` | Light zones (H1252) | `[main, ring]` |
+| `0x30` | Light zones (H1252, H60A6) | `[main, ring]` |
 | `0xA5` | Segment colors | 4 RGB triplets per packet |
 
 ### 6.4.2 Multi-Packet Types (0xA3 prefix)
@@ -4737,6 +4737,7 @@ Model-specific behaviour is kept in named allow-lists, all in `custom_components
 | `PTREAL_SEGMENT_SKUS` | H1232, H1252, H1A42 | Segment colour and brightness go as masked `33 05 15` ptReal frames (3-byte little-endian mask), reaching segments the API cannot (H1232) or that the API accepts and ignores (H1A42) | #223, #261 |
 | `PTREAL_MAIN_PANEL_BIT` | H1232, H1252 (bit 16) | The 17th internal segment is the main panel, addressed by bit 16 of the same mask | #223 |
 | `PTREAL_LIGHT_ZONE_SKUS` | H1252 | `mainLightToggle` / `backgroundLightToggle` are accepted and ignored; zones switch with `33 30 <zone> <on>` and report as `aa 30 <main> <ring>` | #223 |
+| `LIGHT_ZONE_FRAME_SKUS` | H1252, H60A6 | The main/background light switches follow the `aa 30 <main> <ring>` frame of the AWS IoT push. The H60A6 keeps its REST toggles (they work) and reports `00 00` while powered off | #223 |
 | `DREAMVIEW_STATE_FROM_FRAMES_SKUS` | H66A0 | The DreamView switch follows the light's own `aa 05 <mode>` report instead of optimistic state | #213 |
 | `PTREAL_DREAMVIEW_SKUS` | H66A0 | REST `dreamViewToggle` is skipped; ON sends the video-mode frame over AWS IoT, OFF restores the last colour. Unverified on hardware | #213 |
 | `DREAMVIEW_OFF_VIA_COLOUR_SKUS` | H605B | DreamView OFF over REST is accepted but the light stays in video mode; OFF is rerouted to the colour-restore path, ON stays on REST | #220 |
@@ -4745,7 +4746,7 @@ Model-specific behaviour is kept in named allow-lists, all in `custom_components
 | `MOVIE_MODE_DREAMVIEW_SKUS` | H2A41 | Screen sync is advertised as `movie_setting` / `movieMode`; it is detected as DreamView and driven by the normal DreamView path | #199 |
 | `POWER_QUIRK_SKUS` (`api/mqtt_control.py`) | H5080, H5083 | Native MQTT `turn` uses `17` / `16` instead of `1` / `0`, and power is never sent over LAN (`api/lan_control.py`), so on/off goes via the cloud; see §3.8 | — |
 
-**Named light toggles.** `NAMED_LIGHT_TOGGLE_SPECS` in `switch.py` lists the `*LightToggle` instances that become their own switch: `mainLightToggle`, `backgroundLightToggle`, `nebulaLightToggle`, `rippleLightToggle`, `sideLightToggle`, `bottomLightToggle`, `ambientLightToggle`, `wallWashingLightToggle`, `deskLightToggle` (H2800), `leftLightToggle`, `rightLightToggle`, `backLightToggle` (H605A/H605B) and `pillarLightToggle`, `baseLightToggle` (H607C) (#241, #306). Any other light-toggle instance is logged at debug level and skipped. These toggles are write-only: Govee reads them back as `""`.
+**Named light toggles.** `NAMED_LIGHT_TOGGLE_SPECS` in `switch.py` lists the `*LightToggle` instances that become their own switch: `mainLightToggle`, `backgroundLightToggle`, `nebulaLightToggle`, `rippleLightToggle`, `sideLightToggle`, `bottomLightToggle`, `ambientLightToggle`, `wallWashingLightToggle`, `deskLightToggle` (H2800), `leftLightToggle`, `rightLightToggle`, `backLightToggle` (H605A/H605B) and `pillarLightToggle`, `baseLightToggle` (H607C) (#241, #306). Any other light-toggle instance is logged at debug level and skipped. These toggles are write-only: Govee reads them back as `""`. Ceiling-fan combos (`aa 42` / `aa 36`) and the `LIGHT_ZONE_FRAME_SKUS` ceiling lights (`aa 30`) report them in their AWS IoT push instead.
 
 **Ripple flow speed (H60B0).** The app sets the ripple lens speed with the ptReal frame `33 05 2c 01 03 <0-100>` (0 stops it). The Platform API has no capability for it and nothing reports it back. `RIPPLE_FLOW_SKUS` gates a "Ripple flow" number (`GoveeRippleFlowNumber`) that sends it through `async_set_ripple_flow`, over LAN when healthy, else the AWS IoT passthrough, and restores the last value set. The frame is from the H60B0 table posted on #211; verified on an H60B0 over LAN (2026-11): 10 slowed the ripple and 0 stopped it.
 

@@ -148,6 +148,7 @@ from .const import (
     REACHABLE_PUSH_WINDOW,
     PTREAL_DREAMVIEW_SKUS,
     DREAMVIEW_STATE_FROM_FRAMES_SKUS,
+    LIGHT_ZONE_FRAME_SKUS,
     PTREAL_LIGHT_ZONE_SKUS,
     PTREAL_MAIN_PANEL_BIT,
     PTREAL_RING_MASK,
@@ -4125,9 +4126,9 @@ class GoveeCoordinator(DataUpdateCoordinator[dict[str, GoveeDeviceState]]):
             state.brightness = normalize_reported_brightness(device.sku, state.brightness, device.brightness_range)
         if ceiling_fan:
             state.update_ceiling_fan_from_frames(self._op_frames_from(state_data))
-        # Ceiling Light Pro zones (H1252) report main panel / ring on-off only
-        # in an ``aa 30`` frame (issue #223).
-        if device is not None and device.sku.upper() in PTREAL_LIGHT_ZONE_SKUS:
+        # Ceiling lights (H1252 #223, H60A6) report main panel / ring on-off
+        # only in an ``aa 30`` frame.
+        if device is not None and device.sku.upper() in LIGHT_ZONE_FRAME_SKUS:
             state.update_light_zones_from_frames(self._op_frames_from(state_data))
         # The H66A0 reports its mode in an ``aa 05`` frame; that real report
         # replaces HA's optimistic DreamView flag (issue #213).

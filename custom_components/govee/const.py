@@ -279,6 +279,12 @@ PTREAL_RING_MASK: Final = 0xFFFF
 # reports both zones in an ``aa 30 <main> <ring>`` status frame. Verified on
 # an H1252 (#223); the H1232's REST toggles work.
 PTREAL_LIGHT_ZONE_SKUS: Final = frozenset({"H1252"})
+# SKUs whose ``aa 30 <main> <ring>`` zone frame in the AWS IoT push is read
+# back into the main/background light switches. A superset of
+# PTREAL_LIGHT_ZONE_SKUS: the H60A6 Ceiling Light's REST toggles work, so it
+# keeps the REST write path, but the poll returns "" for both toggles and the
+# push frame is the only live report of each zone.
+LIGHT_ZONE_FRAME_SKUS: Final = PTREAL_LIGHT_ZONE_SKUS | frozenset({"H60A6"})
 
 # SKUs whose ripple light's flow speed the app sets with ``33 05 2c 01 03
 # <0-100>`` over ptReal; the Platform API has no capability for it and reads

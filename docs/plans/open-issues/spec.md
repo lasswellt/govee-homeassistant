@@ -10,6 +10,11 @@ ship: manual
 
 Act on everything the 2026-11-25 triage found needing us. Merge the five green Dependabot PRs and prove the release workflow still works with them. Fix the two issues with hardware evidence: #310 (H7038 segments 16–30) and #241 (H6099 video mode). Make the DIY-scene reports (#314, #296, #298, #281) diagnosable. Document the #304 protocol findings. Queue the replies the release bot posts tonight. The fixes ship in tonight's 02:00Z release (v2026.11.2).
 
+**Extended 2026-11-26** (`docs/research/2026-11-26_issues-and-pr-merge-validation.md`). The 2026-11-27 run skipped because nothing had been built, so the release moves to 2026-11-28T02:00Z. Added:
+- merge three community PRs, validated locally: #319, #320, #321;
+- fix #316 (false `mqtt_silent` repair) and #317 (H5074 °F);
+- queue six more replies.
+
 ## Outcomes
 
 - Dependabot #311, #312, #313, #292 and #291 are merged, and a `daily-release.yml` dry run on the merged `main` succeeds before 02:00Z → T-001
@@ -22,6 +27,11 @@ Act on everything the 2026-11-25 triage found needing us. Merge the five green D
 - The protocol reference documents the 4-byte mask, H6099 video mode, and the H607C Music DreamView `33 60 02` frames → T-005
 - Replies for #310, #208, #241, #314, #308 and #304 are queued in `docs/release-replies.md` → T-006
 - Full gates pass locally and the four CI workflows are green on `main` HEAD before 02:00Z → T-007
+- PRs #319, #321 and #320 are merged in that order, each with CI green. On `main`, H60A6 zone switches follow the `aa 30` push, and the H60B0 has a Light mode select and a Ripple flow slider → T-008
+- With every MQTT device offline, no status query counts toward silence, so there is no reconnect and no `mqtt_silent` repair. Queries to online devices still count → T-009
+- An H5074 converts its °F-scale reading in auto mode → T-010
+- Replies for #315, #318 (close as a duplicate), #298, #299, #288 and #211 are queued. #308's entry also thanks the second owner → T-011
+- Final gates and green CI on `main` HEAD before 2026-11-28T02:00Z → T-012
 
 ## Out of scope
 
@@ -31,11 +41,15 @@ Act on everything the 2026-11-25 triage found needing us. Merge the five green D
 - Implementing #304 Music DreamView control.
 - The home-assistant/core#190454 proposal (#295).
 - late-nov-sweep T-013 (release failure alert). It stays in that plan.
+- #288 Tap-to-Run. It waits until someone confirms that `exec-plat/home` accepts the app2 token.
+- Any H6022 (#315) code change. The model is already supported, and the reply asks for diagnostics.
 
 ## Assumptions
 
 - The maintainer chose H6099 control (ON frame `33 05 00 01 00 64`) over read-only state, knowing the ON frame is unverified on that model (2026-11-25).
 - #313 replaces #302 in late-nov-sweep T-012, which is now blocked as superseded.
+- The fork PRs keep their authors' code unchanged. The maintainer resolves only the adjacency conflicts on the fork branches (`maintainerCanModify` is true).
+- For #320, "the side light runs with either" rests on the author's hardware test (research §Dissent).
 - Every reporter-facing change is SKU-scoped, so it ships in the daily release without a test branch: HACS reporters can't test branches.
 
 ## Verification
