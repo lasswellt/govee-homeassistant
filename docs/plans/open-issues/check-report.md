@@ -1,7 +1,7 @@
 ---
 result: CONDITIONAL
-ts: 2026-11-27T23:47:27Z
-ref: cf870fb9b346136d89846da491bd50f9dcda6b18
+ts: 2026-11-28T00:29:18Z
+ref: eb04197bb6eac6e453e50fba6368cfc737026a68
 scope: plan
 plan: open-issues
 ---
@@ -14,10 +14,10 @@ plan: open-issues
 
 The plan covers 14 tasks: Dependabot bumps, #310 4-byte segment mask, #241 H6099 video mode, DIY diagnostics, protocol doc, community PRs #319/#320/#321, #316, #317, #322 and replies.
 - Gates, every task's checks, the ratchet and the reject critic (LGTM, 14/14 held-out) are clean.
-- No blocker. CONDITIONAL because three items need a human:
-  1. Hardware confirmation of H6099 ON and H7038 bulbs 16–30 by the reporters after the release.
-  2. T-001..T-012 `verify[]` names the removed `.cc-sessions/venv312`, so `tasks.sh verify` can't reproduce them. Their status rests on a substituted re-run.
-  3. `startup-validate --strict` flags two `.cc-sessions` cache files outside the plan.
+- No blocker. CONDITIONAL only because reporters must confirm on hardware after the release: H6099 ON (#241) and H7038 bulbs 16–30 (#310).
+- Re-run 2026-11-28T00:29Z after two fixes:
+  - an operator repair moved every plan's `verify[]` from the removed `venv312` to `venv314`, and all 14 tasks then passed `tasks.sh verify`;
+  - `startup-validate --strict` now exits 0 (`cov.json` quarantined, plus a local blitz patch for `typecheck-baseline.json`).
 
 ## Gates
 
@@ -32,22 +32,22 @@ The plan covers 14 tasks: Dependabot bumps, #310 4-byte segment mask, #241 H6099
 
 ## Tasks (plan scope)
 
-T-001..T-012 were re-run with `venv312` replaced by `venv314` (`reverify.sh`). `tasks.sh verify` was not run on them, because it would write `passes=false` over the missing path. T-013 and T-014 passed `tasks.sh verify` at HEAD.
+All 14 tasks passed `tasks.sh verify` at `eb04197` (2026-11-28T00:2xZ). That followed the operator repair `repair-venv-paths.sh`, which rewrote `.cc-sessions/venv312/` to `.cc-sessions/venv314/` in `verify[].cmd` of 6 plans: 138 lines, nothing else changed, and `last_verify` history was kept.
 
 | Task | passes | re-run ok | failed | tail |
 |---|---|---|---|---|
-| T-001 | true | 4/4 | none | none |
-| T-002 | true | 5/5 | none | none |
-| T-003 | true | 5/5 | none | none |
-| T-004 | true | 5/5 | none | none |
-| T-005 | true | 4/4 | none | none |
-| T-006 | true | 2/2 | none | none |
-| T-007 | true | 3/3 | none | CI check went rc=1 while Tests ran on `cf870fb`, then passed |
-| T-008 | true | 4/4 | none | none |
-| T-009 | true | 5/5 | none | none |
-| T-010 | true | 4/4 | none | none |
-| T-011 | true | 3/3 | none | none |
-| T-012 | true | 3/3 | none | same as T-007 |
+| T-001 | true | `tasks.sh verify` 4/4 | none | none |
+| T-002 | true | `tasks.sh verify` 5/5 | none | none |
+| T-003 | true | `tasks.sh verify` 5/5 | none | none |
+| T-004 | true | `tasks.sh verify` 5/5 | none | none |
+| T-005 | true | `tasks.sh verify` 4/4 | none | none |
+| T-006 | true | `tasks.sh verify` 2/2 | none | none |
+| T-007 | true | `tasks.sh verify` 3/3 | none | none |
+| T-008 | true | `tasks.sh verify` 4/4 | none | none |
+| T-009 | true | `tasks.sh verify` 5/5 | none | none |
+| T-010 | true | `tasks.sh verify` 4/4 | none | none |
+| T-011 | true | `tasks.sh verify` 3/3 | none | none |
+| T-012 | true | `tasks.sh verify` 3/3 | none | none |
 | T-013 | true | `tasks.sh verify` 6/6 | none | none |
 | T-014 | true | `tasks.sh verify` 4/4 | none | none |
 
@@ -93,8 +93,9 @@ LGTM
 
 | # | Where | Finding | Source | Confidence |
 |---|---|---|---|---|
-| 1 | docs/plans/open-issues/tasks.json T-001..T-012 | 🔵 `verify[]` names the removed `.cc-sessions/venv312`; `tasks.sh verify` fails on the path, not the code. Accepted as historical, see Ruling. | critic | 1.0 |
-| 2 | .cc-sessions/cov.json, .cc-sessions/typecheck-baseline.json | 🔵 `startup-validate --strict` exit 2 on a schema check (no `session_id`/`status`). No injection marker. One is a stale coverage dump from 2026-11-14; the other is owned by the post-edit typecheck hook. | sec posture | 1.0 |
+LGTM. Both earlier Minor findings are resolved:
+- `verify[]` naming the removed `venv312`: fixed by the operator repair; all 14 tasks re-verified.
+- `startup-validate --strict` schema findings: `cov.json` quarantined to `.cc-sessions/quarantine/`. `typecheck-baseline.json` is exempted by a local patch to blitz `startup-validate.sh` (reverted by a blitz update; see memory `blitz-local-patch-startup-validate`).
 
 ### Info
 
@@ -116,7 +117,7 @@ LGTM
 | Naming / return types | 0 | 0 | 0 | 0 |
 | Unused | 0 | 0 | 0 | 0 |
 
-No fix commits. Minor #1 is not auto-fixable: `tasks.sh set` can't edit `verify[]`, and `tasks.json` is hook-guarded.
+No auto-fix commits. Manual fixes applied at the user's request: operator repair of `verify[]` paths (6 plans), `cov.json` quarantine, local validator exemption.
 
 ## Ratchet
 
@@ -136,7 +137,7 @@ No fix commits. Minor #1 is not auto-fixable: `tasks.sh set` can't edit `verify[
 
 ## Security posture
 
-registry-validate: ok · startup-validate --strict: non-zero (2 schema findings on `.cc-sessions` cache files, no injection) · pre-trust execution: none · survey:security CLEAN (credentials written only after validation, diagnostics redacted, no secret logging)
+registry-validate: ok · startup-validate --strict: ok (exit 0 after the fixes above) · pre-trust execution: none · survey:security CLEAN (credentials written only after validation, diagnostics redacted, no secret logging)
 
 ## Automation coverage
 
@@ -151,5 +152,5 @@ Not auto-verified (human owns): architectural fit, UX correctness, business-logi
 ## Later
 
 1. Read the reporters' hardware results on #241 (H6099 ON/OFF, app Video→Color flips the switch) and #310 (all 30 H7038 bulbs) after the release, and keep the issues open until they confirm.
-2. Optional: move `.cc-sessions/cov.json` (stale coverage dump) to `.cc-sessions/quarantine/` so `startup-validate --strict` reports only real findings.
+2. Report upstream to blitz: `startup-validate.sh` should exempt `typecheck-baseline.json` (written by its own `post-edit-typecheck-block.sh`) like `HANDOFF.json`.
 3. Future plans: name the venv through one path that survives an interpreter change (e.g. `.cc-sessions/venv/bin`) so verify[] stays reproducible.

@@ -1,7 +1,7 @@
 {
   "$schema": "blitz-tasks/1.0",
   "plan": "nov-sweep",
-  "updated": "2026-11-17T03:06:08Z",
+  "updated": "2026-11-28T00:27:20Z",
   "tasks": [
     {
       "id": "T-001",
@@ -27,7 +27,7 @@
           "timeout": 10
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_thermometer.py",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_thermometer.py",
           "timeout": 300
         }
       ],
@@ -99,7 +99,7 @@
           "timeout": 10
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= --cov=custom_components.govee.config_flow --cov-fail-under=100 tests/test_config_flow_bluetooth.py tests/test_config_flow.py tests/test_config_flow_manager.py tests/test_config_flow_manager_steps.py",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q -p no:cacheprovider -o addopts= --cov=custom_components.govee.config_flow --cov-fail-under=100 tests/test_config_flow_bluetooth.py tests/test_config_flow.py tests/test_config_flow_manager.py tests/test_config_flow_manager_steps.py",
           "timeout": 400
         }
       ],
@@ -176,11 +176,11 @@
           "timeout": 10
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_issue_251_relogin.py tests/test_account_mqtt_robustness.py tests/test_auth_robustness.py tests/test_cov_auth.py tests/test_setup_entry_account.py tests/test_reconfigure_credentials.py tests/test_issue_222.py tests/test_mqtt_connection.py",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_issue_251_relogin.py tests/test_account_mqtt_robustness.py tests/test_auth_robustness.py tests/test_cov_auth.py tests/test_setup_entry_account.py tests/test_reconfigure_credentials.py tests/test_issue_222.py tests/test_mqtt_connection.py",
           "timeout": 600
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/flake8 . && .cc-sessions/venv312/bin/mypy custom_components/govee && .cc-sessions/venv312/bin/black --check .",
+          "cmd": ".cc-sessions/venv314/bin/flake8 . && .cc-sessions/venv314/bin/mypy custom_components/govee && .cc-sessions/venv314/bin/black --check .",
           "timeout": 600
         }
       ],
@@ -267,11 +267,11 @@
           "timeout": 10
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_api_ble.py tests/test_ble_enrollment.py tests/test_ble_advertisement_notify.py tests/test_lan.py tests/test_lan_client.py tests/test_lan_integration.py tests/test_cov_coordinator_setup.py tests/test_coordinator.py",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_api_ble.py tests/test_ble_enrollment.py tests/test_ble_advertisement_notify.py tests/test_lan.py tests/test_lan_client.py tests/test_lan_integration.py tests/test_cov_coordinator_setup.py tests/test_coordinator.py",
           "timeout": 600
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/flake8 . && .cc-sessions/venv312/bin/mypy custom_components/govee && .cc-sessions/venv312/bin/black --check .",
+          "cmd": ".cc-sessions/venv314/bin/flake8 . && .cc-sessions/venv314/bin/mypy custom_components/govee && .cc-sessions/venv314/bin/black --check .",
           "timeout": 600
         }
       ],
@@ -346,7 +346,7 @@
           "timeout": 10
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_issue_246.py tests/test_api_ble.py tests/test_lan_control.py",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_issue_246.py tests/test_api_ble.py tests/test_lan_control.py",
           "timeout": 400
         }
       ],
@@ -403,7 +403,7 @@
           "timeout": 10
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_lan_scan_trust.py tests/test_lan.py tests/test_lan_client.py tests/test_lan_integration.py",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_lan_scan_trust.py tests/test_lan.py tests/test_lan_client.py tests/test_lan_integration.py",
           "timeout": 400
         }
       ],
@@ -466,11 +466,11 @@
           "timeout": 10
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_api_ble.py tests/test_h6104_readback.py tests/test_h6104_settings.py tests/test_transport_health.py tests/test_ble_enrollment.py tests/test_cov_coordinator_control.py tests/test_cov_switch.py",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_api_ble.py tests/test_h6104_readback.py tests/test_h6104_settings.py tests/test_transport_health.py tests/test_ble_enrollment.py tests/test_cov_coordinator_control.py tests/test_cov_switch.py",
           "timeout": 600
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/flake8 . && .cc-sessions/venv312/bin/mypy custom_components/govee && .cc-sessions/venv312/bin/black --check .",
+          "cmd": ".cc-sessions/venv314/bin/flake8 . && .cc-sessions/venv314/bin/mypy custom_components/govee && .cc-sessions/venv314/bin/black --check .",
           "timeout": 600
         }
       ],
@@ -547,7 +547,7 @@
           "timeout": 10
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_h6104_setup_entry.py",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_h6104_setup_entry.py",
           "timeout": 300
         }
       ],
@@ -601,7 +601,7 @@
           "timeout": 10
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_issue_261.py tests/test_cov_segments.py",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_issue_261.py tests/test_cov_segments.py",
           "timeout": 300
         }
       ],
@@ -663,7 +663,7 @@
           "timeout": 10
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_kettle_stale_temperature.py tests/test_kettle_water_heater.py tests/test_kettle.py",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_kettle_stale_temperature.py tests/test_kettle_water_heater.py tests/test_kettle.py",
           "timeout": 300
         }
       ],
@@ -729,7 +729,7 @@
           "timeout": 10
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_h7152_temperature_humidity.py tests/test_cov_models.py tests/test_cov_coordinator_events.py tests/test_pump_state.py",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_h7152_temperature_humidity.py tests/test_cov_models.py tests/test_cov_coordinator_events.py tests/test_pump_state.py",
           "timeout": 400
         }
       ],
@@ -797,7 +797,7 @@
           "timeout": 10
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_kettle_water_heater.py tests/test_kettle.py",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_kettle_water_heater.py tests/test_kettle.py",
           "timeout": 300
         }
       ],
@@ -862,7 +862,7 @@
           "timeout": 10
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_issue_222.py tests/test_repairs.py",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_issue_222.py tests/test_repairs.py",
           "timeout": 300
         }
       ],
@@ -935,7 +935,7 @@
           "timeout": 10
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_cov_switch.py tests/test_models.py",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_cov_switch.py tests/test_models.py",
           "timeout": 300
         }
       ],
@@ -1017,7 +1017,7 @@
           "timeout": 10
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_light.py tests/test_cov_select.py tests/test_models.py tests/test_cov_light.py tests/test_cov_switch.py",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_light.py tests/test_cov_select.py tests/test_models.py tests/test_cov_light.py tests/test_cov_switch.py",
           "timeout": 600
         }
       ],
@@ -1104,7 +1104,7 @@
           "timeout": 10
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_release_workflow.py",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q --no-cov -p no:cacheprovider -o addopts= tests/test_release_workflow.py",
           "timeout": 300
         }
       ],
@@ -1404,11 +1404,11 @@
       ],
       "verify": [
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q -n auto -p no:cacheprovider -o addopts= --cov=custom_components.govee --cov-report=json:.cc-sessions/cov.json --cov-fail-under=95 tests && .cc-sessions/venv312/bin/python -c \"import json; d=json.load(open('.cc-sessions/cov.json'))['files']; bad=[f for f,v in d.items() if v['summary']['percent_covered']<96]; cf=[v['summary']['percent_covered'] for f,v in d.items() if f.endswith('config_flow.py')][0]; assert not bad and cf==100, (bad, cf)\"",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q -n auto -p no:cacheprovider -o addopts= --cov=custom_components.govee --cov-report=json:.cc-sessions/cov.json --cov-fail-under=95 tests && .cc-sessions/venv314/bin/python -c \"import json; d=json.load(open('.cc-sessions/cov.json'))['files']; bad=[f for f,v in d.items() if v['summary']['percent_covered']<96]; cf=[v['summary']['percent_covered'] for f,v in d.items() if f.endswith('config_flow.py')][0]; assert not bad and cf==100, (bad, cf)\"",
           "timeout": 900
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/flake8 . && .cc-sessions/venv312/bin/mypy custom_components/govee && .cc-sessions/venv312/bin/black --check .",
+          "cmd": ".cc-sessions/venv314/bin/flake8 . && .cc-sessions/venv314/bin/mypy custom_components/govee && .cc-sessions/venv314/bin/black --check .",
           "timeout": 600
         },
         {
@@ -1493,11 +1493,11 @@
           "timeout": 10
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= --cov=custom_components.govee --cov-fail-under=95 tests",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q -p no:cacheprovider -o addopts= --cov=custom_components.govee --cov-fail-under=95 tests",
           "timeout": 900
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/flake8 . && .cc-sessions/venv312/bin/mypy custom_components/govee && .cc-sessions/venv312/bin/black --check .",
+          "cmd": ".cc-sessions/venv314/bin/flake8 . && .cc-sessions/venv314/bin/mypy custom_components/govee && .cc-sessions/venv314/bin/black --check .",
           "timeout": 600
         }
       ],
@@ -1534,7 +1534,7 @@
           "timeout": 10
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q -n auto -p no:cacheprovider -o addopts= --cov=custom_components.govee.config_flow --cov-fail-under=100 tests",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q -n auto -p no:cacheprovider -o addopts= --cov=custom_components.govee.config_flow --cov-fail-under=100 tests",
           "timeout": 900
         }
       ],

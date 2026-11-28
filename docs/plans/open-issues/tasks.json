@@ -1,7 +1,7 @@
 {
   "$schema": "blitz-tasks/1.0",
   "plan": "open-issues",
-  "updated": "2026-11-27T23:46:37Z",
+  "updated": "2026-11-28T00:29:09Z",
   "tasks": [
     {
       "id": "T-001",
@@ -35,7 +35,7 @@
       "blocked_reason": null,
       "attempts": 0,
       "last_verify": {
-        "ts": "2026-11-27T03:42:17Z",
+        "ts": "2026-11-28T00:27:36Z",
         "ok": true,
         "failed": "",
         "tail": "",
@@ -43,30 +43,30 @@
           {
             "cmd": "for n in 311 312 313 292 291; do test \"$(gh pr view $n --json state --jq .state)\" = MERGED || exit 1; done",
             "exit": 0,
-            "duration_ms": 1765,
+            "duration_ms": 1670,
             "tail": "",
-            "recorded_at": "2026-11-27T03:42:15Z"
+            "recorded_at": "2026-11-28T00:27:35Z"
           },
           {
             "cmd": "! grep -qE 'download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093|upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02' .github/workflows/daily-release.yml",
             "exit": 0,
-            "duration_ms": 14,
+            "duration_ms": 5,
             "tail": "",
-            "recorded_at": "2026-11-27T03:42:15Z"
+            "recorded_at": "2026-11-28T00:27:35Z"
           },
           {
             "cmd": "! grep -q 'hassfest@86d4564712fa02543c808e3a693dd04f9d3f8361' .github/workflows/hacs-hass.yaml",
             "exit": 0,
             "duration_ms": 5,
             "tail": "",
-            "recorded_at": "2026-11-27T03:42:15Z"
+            "recorded_at": "2026-11-28T00:27:35Z"
           },
           {
             "cmd": "git fetch -q origin && R=$(gh run list --workflow daily-release.yml --event workflow_dispatch --limit 1 --json conclusion,headSha --jq \".[0]\") && test \"$(jq -r .conclusion <<<\"$R\")\" = success && git merge-base --is-ancestor \"$(gh pr view 291 --json mergeCommit --jq .mergeCommit.oid)\" \"$(jq -r .headSha <<<\"$R\")\"",
             "exit": 0,
-            "duration_ms": 1483,
+            "duration_ms": 1128,
             "tail": "",
-            "recorded_at": "2026-11-27T03:42:17Z"
+            "recorded_at": "2026-11-28T00:27:36Z"
           }
         ]
       },
@@ -99,11 +99,11 @@
           "timeout": 10
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_ble_packet.py tests/test_cov_coordinator_control.py tests/test_ceiling_light_zones.py tests/test_issue_261.py",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_ble_packet.py tests/test_cov_coordinator_control.py tests/test_ceiling_light_zones.py tests/test_issue_261.py",
           "timeout": 300
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/mypy custom_components/govee",
+          "cmd": ".cc-sessions/venv314/bin/mypy custom_components/govee",
           "timeout": 300
         }
       ],
@@ -112,7 +112,7 @@
       "blocked_reason": null,
       "attempts": 0,
       "last_verify": {
-        "ts": "2026-11-27T03:44:56Z",
+        "ts": "2026-11-28T00:27:40Z",
         "ok": true,
         "failed": "",
         "tail": "",
@@ -122,35 +122,35 @@
             "exit": 0,
             "duration_ms": 4,
             "tail": "",
-            "recorded_at": "2026-11-27T03:44:53Z"
+            "recorded_at": "2026-11-28T00:27:36Z"
           },
           {
             "cmd": "test $(grep -c 'mask >> 24' custom_components/govee/api/ble_packet.py) -ge 2",
             "exit": 0,
             "duration_ms": 5,
             "tail": "",
-            "recorded_at": "2026-11-27T03:44:53Z"
+            "recorded_at": "2026-11-28T00:27:36Z"
           },
           {
             "cmd": "grep -q 'H7038' tests/test_cov_coordinator_control.py && grep -qiE '0x3fffffff|0x3f' tests/test_ble_packet.py",
             "exit": 0,
-            "duration_ms": 6,
+            "duration_ms": 5,
             "tail": "",
-            "recorded_at": "2026-11-27T03:44:53Z"
+            "recorded_at": "2026-11-28T00:27:36Z"
           },
           {
-            "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_ble_packet.py tests/test_cov_coordinator_control.py tests/test_ceiling_light_zones.py tests/test_issue_261.py",
+            "cmd": ".cc-sessions/venv314/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_ble_packet.py tests/test_cov_coordinator_control.py tests/test_ceiling_light_zones.py tests/test_issue_261.py",
             "exit": 0,
-            "duration_ms": 2729,
-            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 23%]\n........................................................................ [ 46%]\n........................................................................ [ 70%]\n........................................................................ [ 93%]\n...................                                                      [100%]\n307 passed in 1.47s",
-            "recorded_at": "2026-11-27T03:44:56Z"
+            "duration_ms": 3295,
+            "tail": "........................................................................ [ 23%]\n........................................................................ [ 46%]\n........................................................................ [ 70%]\n........................................................................ [ 93%]\n...................                                                      [100%]\n307 passed in 2.18s",
+            "recorded_at": "2026-11-28T00:27:39Z"
           },
           {
-            "cmd": ".cc-sessions/venv312/bin/mypy custom_components/govee",
+            "cmd": ".cc-sessions/venv314/bin/mypy custom_components/govee",
             "exit": 0,
-            "duration_ms": 127,
+            "duration_ms": 244,
             "tail": "Success: no issues found in 59 source files",
-            "recorded_at": "2026-11-27T03:44:56Z"
+            "recorded_at": "2026-11-28T00:27:40Z"
           }
         ]
       },
@@ -188,7 +188,7 @@
           "timeout": 10
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_dreamview_frames.py tests/test_cov_switch.py tests/test_models.py",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_dreamview_frames.py tests/test_cov_switch.py tests/test_models.py",
           "timeout": 300
         }
       ],
@@ -197,7 +197,7 @@
       "blocked_reason": null,
       "attempts": 0,
       "last_verify": {
-        "ts": "2026-11-27T03:46:58Z",
+        "ts": "2026-11-28T00:27:42Z",
         "ok": true,
         "failed": "",
         "tail": "",
@@ -205,37 +205,37 @@
           {
             "cmd": "grep -qE 'FRAME_DREAMVIEW_SKUS.*\"H6099\"' custom_components/govee/const.py",
             "exit": 0,
-            "duration_ms": 4,
+            "duration_ms": 5,
             "tail": "",
-            "recorded_at": "2026-11-27T03:46:57Z"
+            "recorded_at": "2026-11-28T00:27:40Z"
           },
           {
             "cmd": "grep -qE 'PTREAL_DREAMVIEW_SKUS.*\"H6099\"' custom_components/govee/const.py && grep -qE 'DREAMVIEW_STATE_FROM_FRAMES_SKUS.*\"H6099\"' custom_components/govee/const.py",
             "exit": 0,
             "duration_ms": 5,
             "tail": "",
-            "recorded_at": "2026-11-27T03:46:57Z"
+            "recorded_at": "2026-11-28T00:27:40Z"
           },
           {
             "cmd": "grep -q 'FRAME_DREAMVIEW_SKUS' custom_components/govee/models/device.py && grep -q 'H6099' tests/test_cov_switch.py",
             "exit": 0,
             "duration_ms": 5,
             "tail": "",
-            "recorded_at": "2026-11-27T03:46:57Z"
+            "recorded_at": "2026-11-28T00:27:40Z"
           },
           {
             "cmd": "grep -q 'aa050000083200023200000000000000000000a5' tests/test_dreamview_frames.py",
             "exit": 0,
             "duration_ms": 5,
             "tail": "",
-            "recorded_at": "2026-11-27T03:46:57Z"
+            "recorded_at": "2026-11-28T00:27:40Z"
           },
           {
-            "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_dreamview_frames.py tests/test_cov_switch.py tests/test_models.py",
+            "cmd": ".cc-sessions/venv314/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_dreamview_frames.py tests/test_cov_switch.py tests/test_models.py",
             "exit": 0,
-            "duration_ms": 1869,
-            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 25%]\n........................................................................ [ 51%]\n........................................................................ [ 76%]\n.................................................................        [100%]\n281 passed in 0.65s",
-            "recorded_at": "2026-11-27T03:46:58Z"
+            "duration_ms": 2406,
+            "tail": "........................................................................ [ 25%]\n........................................................................ [ 51%]\n........................................................................ [ 76%]\n.................................................................        [100%]\n281 passed in 1.32s",
+            "recorded_at": "2026-11-28T00:27:42Z"
           }
         ]
       },
@@ -268,11 +268,11 @@
           "timeout": 10
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_diagnostics.py tests/test_scene_cache.py tests/test_cov_select.py",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_diagnostics.py tests/test_scene_cache.py tests/test_cov_select.py",
           "timeout": 300
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/mypy custom_components/govee",
+          "cmd": ".cc-sessions/venv314/bin/mypy custom_components/govee",
           "timeout": 300
         }
       ],
@@ -281,7 +281,7 @@
       "blocked_reason": null,
       "attempts": 0,
       "last_verify": {
-        "ts": "2026-11-27T03:55:11Z",
+        "ts": "2026-11-28T00:27:45Z",
         "ok": true,
         "failed": "",
         "tail": "",
@@ -291,35 +291,35 @@
             "exit": 0,
             "duration_ms": 5,
             "tail": "",
-            "recorded_at": "2026-11-27T03:55:08Z"
+            "recorded_at": "2026-11-28T00:27:42Z"
           },
           {
             "cmd": "grep -q 'no DIY scenes' custom_components/govee/select.py",
             "exit": 0,
-            "duration_ms": 5,
+            "duration_ms": 4,
             "tail": "",
-            "recorded_at": "2026-11-27T03:55:08Z"
+            "recorded_at": "2026-11-28T00:27:42Z"
           },
           {
             "cmd": "grep -q 'diy_scenes' tests/test_diagnostics.py",
             "exit": 0,
             "duration_ms": 5,
             "tail": "",
-            "recorded_at": "2026-11-27T03:55:08Z"
+            "recorded_at": "2026-11-28T00:27:42Z"
           },
           {
-            "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_diagnostics.py tests/test_scene_cache.py tests/test_cov_select.py",
+            "cmd": ".cc-sessions/venv314/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_diagnostics.py tests/test_scene_cache.py tests/test_cov_select.py",
             "exit": 0,
-            "duration_ms": 2567,
-            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 51%]\n....................................................................     [100%]\n140 passed in 1.34s",
-            "recorded_at": "2026-11-27T03:55:10Z"
+            "duration_ms": 2491,
+            "tail": "........................................................................ [ 51%]\n....................................................................     [100%]\n140 passed in 1.41s",
+            "recorded_at": "2026-11-28T00:27:45Z"
           },
           {
-            "cmd": ".cc-sessions/venv312/bin/mypy custom_components/govee",
+            "cmd": ".cc-sessions/venv314/bin/mypy custom_components/govee",
             "exit": 0,
-            "duration_ms": 135,
+            "duration_ms": 215,
             "tail": "Success: no issues found in 59 source files",
-            "recorded_at": "2026-11-27T03:55:11Z"
+            "recorded_at": "2026-11-28T00:27:45Z"
           }
         ]
       },
@@ -360,7 +360,7 @@
       "blocked_reason": null,
       "attempts": 0,
       "last_verify": {
-        "ts": "2026-11-27T03:53:44Z",
+        "ts": "2026-11-28T00:27:45Z",
         "ok": true,
         "failed": "",
         "tail": "",
@@ -370,28 +370,28 @@
             "exit": 0,
             "duration_ms": 5,
             "tail": "",
-            "recorded_at": "2026-11-27T03:53:44Z"
+            "recorded_at": "2026-11-28T00:27:45Z"
           },
           {
             "cmd": "grep -qE '4-byte|4B LE' docs/govee-protocol-reference.md && grep -q '#310' docs/govee-protocol-reference.md",
             "exit": 0,
-            "duration_ms": 6,
+            "duration_ms": 5,
             "tail": "",
-            "recorded_at": "2026-11-27T03:53:44Z"
+            "recorded_at": "2026-11-28T00:27:45Z"
           },
           {
             "cmd": "grep -q 'FRAME_DREAMVIEW_SKUS' docs/govee-protocol-reference.md",
             "exit": 0,
             "duration_ms": 4,
             "tail": "",
-            "recorded_at": "2026-11-27T03:53:44Z"
+            "recorded_at": "2026-11-28T00:27:45Z"
           },
           {
             "cmd": "grep -q '33 60 02' docs/govee-protocol-reference.md && grep -q '#304' docs/govee-protocol-reference.md",
             "exit": 0,
             "duration_ms": 6,
             "tail": "",
-            "recorded_at": "2026-11-27T03:53:44Z"
+            "recorded_at": "2026-11-28T00:27:45Z"
           }
         ]
       },
@@ -425,7 +425,7 @@
       "blocked_reason": null,
       "attempts": 0,
       "last_verify": {
-        "ts": "2026-11-27T03:55:19Z",
+        "ts": "2026-11-28T00:27:45Z",
         "ok": true,
         "failed": "",
         "tail": "",
@@ -433,16 +433,16 @@
           {
             "cmd": "for n in 310 208 241 314 308 304; do grep -q \"^## #$n\\$\" docs/release-replies.md || exit 1; done",
             "exit": 0,
-            "duration_ms": 9,
+            "duration_ms": 8,
             "tail": "",
-            "recorded_at": "2026-11-27T03:55:19Z"
+            "recorded_at": "2026-11-28T00:27:45Z"
           },
           {
             "cmd": "test $(grep -c '^close: no' docs/release-replies.md) -ge 6",
             "exit": 0,
-            "duration_ms": 5,
+            "duration_ms": 4,
             "tail": "",
-            "recorded_at": "2026-11-27T03:55:19Z"
+            "recorded_at": "2026-11-28T00:27:45Z"
           }
         ]
       },
@@ -467,11 +467,11 @@
       ],
       "verify": [
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= --cov=custom_components.govee --cov-fail-under=95",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q -p no:cacheprovider -o addopts= --cov=custom_components.govee --cov-fail-under=95",
           "timeout": 600
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/mypy custom_components/govee && .cc-sessions/venv312/bin/flake8 . && .cc-sessions/venv312/bin/black --check .",
+          "cmd": ".cc-sessions/venv314/bin/mypy custom_components/govee && .cc-sessions/venv314/bin/flake8 . && .cc-sessions/venv314/bin/black --check .",
           "timeout": 400
         },
         {
@@ -484,31 +484,31 @@
       "blocked_reason": null,
       "attempts": 0,
       "last_verify": {
-        "ts": "2026-11-27T04:00:14Z",
+        "ts": "2026-11-28T00:28:23Z",
         "ok": true,
         "failed": "",
         "tail": "",
         "runs": [
           {
-            "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= --cov=custom_components.govee --cov-fail-under=95",
+            "cmd": ".cc-sessions/venv314/bin/pytest -q -p no:cacheprovider -o addopts= --cov=custom_components.govee --cov-fail-under=95",
             "exit": 0,
-            "duration_ms": 48580,
-            "tail": ".00%\ncustom_components/govee/kettle/entities.py               167      0 100.00%\ncustom_components/govee/kettle/frames.py                  94      0 100.00%\ncustom_components/govee/kettle/labels.py                  37      0 100.00%\ncustom_components/govee/kettle/manager.py                240      0 100.00%\ncustom_components/govee/kettle/modes.py                   45      0 100.00%\ncustom_components/govee/light.py                         507      0 100.00%\ncustom_components/govee/models/__init__.py                 5      0 100.00%\ncustom_components/govee/models/commands.py               216      0 100.00%\ncustom_components/govee/models/energy_counter.py          68      0 100.00%\ncustom_components/govee/models/state.py                  552      0 100.00%\ncustom_components/govee/models/transport.py               33      0 100.00%\ncustom_components/govee/number.py                        192      0 100.00%\ncustom_components/govee/platforms/__init__.py              0      0 100.00%\ncustom_components/govee/platforms/grouped_segment.py      81      0 100.00%\ncustom_components/govee/platforms/segment.py              83      0 100.00%\ncustom_components/govee/registry.py                       25      0 100.00%\ncustom_components/govee/repairs.py                        80      0 100.00%\ncustom_components/govee/request_budget.py                 40      0 100.00%\ncustom_components/govee/scene_cache.py                   109      0 100.00%\ncustom_components/govee/services.py                      141      0 100.00%\ncustom_components/govee/status_burst.py                   45      0 100.00%\ncustom_components/govee/switch.py                        401      0 100.00%\ncustom_components/govee/transport_health.py               78      0 100.00%\n-------------------------------------------------------------------------------------\nTOTAL                                                  13913     37  99.73%\n\nRequired test coverage of 95% reached. Total coverage: 99.73%\n4810 passed in 46.67s",
-            "recorded_at": "2026-11-27T04:00:13Z"
+            "duration_ms": 36330,
+            "tail": "m_components/govee/kettle/entities.py               167      0 100.00%\ncustom_components/govee/kettle/frames.py                  94      0 100.00%\ncustom_components/govee/kettle/labels.py                  37      0 100.00%\ncustom_components/govee/kettle/manager.py                240      0 100.00%\ncustom_components/govee/kettle/modes.py                   45      0 100.00%\ncustom_components/govee/light.py                         507      0 100.00%\ncustom_components/govee/models/__init__.py                 5      0 100.00%\ncustom_components/govee/models/commands.py               216      0 100.00%\ncustom_components/govee/models/energy_counter.py          68      0 100.00%\ncustom_components/govee/models/state.py                  552      0 100.00%\ncustom_components/govee/models/transport.py               33      0 100.00%\ncustom_components/govee/number.py                        192      0 100.00%\ncustom_components/govee/platforms/__init__.py              0      0 100.00%\ncustom_components/govee/platforms/grouped_segment.py      81      0 100.00%\ncustom_components/govee/platforms/segment.py              83      0 100.00%\ncustom_components/govee/registry.py                       25      0 100.00%\ncustom_components/govee/repairs.py                        79      0 100.00%\ncustom_components/govee/request_budget.py                 40      0 100.00%\ncustom_components/govee/scene_cache.py                   109      0 100.00%\ncustom_components/govee/services.py                      142      0 100.00%\ncustom_components/govee/status_burst.py                   45      0 100.00%\ncustom_components/govee/switch.py                        401      0 100.00%\ncustom_components/govee/transport_health.py               78      0 100.00%\n-------------------------------------------------------------------------------------\nTOTAL                                                  13917     43  99.69%\nRequired test coverage of 95% reached. Total coverage: 99.69%\n4809 passed, 1 skipped in 35.18s",
+            "recorded_at": "2026-11-28T00:28:22Z"
           },
           {
-            "cmd": ".cc-sessions/venv312/bin/mypy custom_components/govee && .cc-sessions/venv312/bin/flake8 . && .cc-sessions/venv312/bin/black --check .",
+            "cmd": ".cc-sessions/venv314/bin/mypy custom_components/govee && .cc-sessions/venv314/bin/flake8 . && .cc-sessions/venv314/bin/black --check .",
             "exit": 0,
-            "duration_ms": 935,
+            "duration_ms": 1181,
             "tail": "Success: no issues found in 59 source files\nAll done! ✨ 🍰 ✨\n211 files would be left unchanged.",
-            "recorded_at": "2026-11-27T04:00:14Z"
+            "recorded_at": "2026-11-28T00:28:23Z"
           },
           {
             "cmd": "S=$(git rev-parse HEAD); test \"$(git rev-parse origin/main)\" = \"$S\" && test \"$(gh run list --commit \"$S\" --json name,conclusion --jq \"[.[] | select(.name != \\\"Govee API Uptime\\\" and .name != \\\"Daily release\\\" and .conclusion == \\\"success\\\")] | length\")\" -ge 4",
             "exit": 0,
-            "duration_ms": 647,
+            "duration_ms": 610,
             "tail": "",
-            "recorded_at": "2026-11-27T04:00:14Z"
+            "recorded_at": "2026-11-28T00:28:23Z"
           }
         ]
       },
@@ -539,7 +539,7 @@
           "timeout": 10
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_h60a6_light_zones.py tests/test_h60b0_light_mode.py tests/test_h60b0_ripple_flow.py",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_h60a6_light_zones.py tests/test_h60b0_light_mode.py tests/test_h60b0_ripple_flow.py",
           "timeout": 300
         }
       ],
@@ -548,7 +548,7 @@
       "blocked_reason": null,
       "attempts": 0,
       "last_verify": {
-        "ts": "2026-11-27T03:49:27Z",
+        "ts": "2026-11-28T00:28:26Z",
         "ok": true,
         "failed": "",
         "tail": "",
@@ -556,30 +556,30 @@
           {
             "cmd": "for n in 319 321 320; do test \"$(gh pr view $n --json state --jq .state)\" = MERGED || exit 1; done",
             "exit": 0,
-            "duration_ms": 1013,
+            "duration_ms": 989,
             "tail": "",
-            "recorded_at": "2026-11-27T03:49:25Z"
+            "recorded_at": "2026-11-28T00:28:24Z"
           },
           {
             "cmd": "grep -q 'LIGHT_ZONE_FRAME_SKUS' custom_components/govee/const.py && grep -q 'RIPPLE_FLOW_SKUS' custom_components/govee/const.py && grep -q 'EXCLUSIVE_LIGHT_TOGGLE_MODES' custom_components/govee/const.py",
             "exit": 0,
             "duration_ms": 6,
             "tail": "",
-            "recorded_at": "2026-11-27T03:49:25Z"
+            "recorded_at": "2026-11-28T00:28:24Z"
           },
           {
             "cmd": "grep -q 'def supports_ripple_flow' custom_components/govee/models/device.py && grep -q 'def light_toggle_modes' custom_components/govee/models/device.py",
             "exit": 0,
             "duration_ms": 6,
             "tail": "",
-            "recorded_at": "2026-11-27T03:49:25Z"
+            "recorded_at": "2026-11-28T00:28:24Z"
           },
           {
-            "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_h60a6_light_zones.py tests/test_h60b0_light_mode.py tests/test_h60b0_ripple_flow.py",
+            "cmd": ".cc-sessions/venv314/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_h60a6_light_zones.py tests/test_h60b0_light_mode.py tests/test_h60b0_ripple_flow.py",
             "exit": 0,
-            "duration_ms": 1785,
-            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n................................................                         [100%]\n48 passed in 0.44s",
-            "recorded_at": "2026-11-27T03:49:27Z"
+            "duration_ms": 1660,
+            "tail": "................................................                         [100%]\n48 passed in 0.59s",
+            "recorded_at": "2026-11-28T00:28:26Z"
           }
         ]
       },
@@ -611,11 +611,11 @@
           "timeout": 10
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_issue_222.py tests/test_issue_195.py",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_issue_222.py tests/test_issue_195.py",
           "timeout": 300
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/mypy custom_components/govee",
+          "cmd": ".cc-sessions/venv314/bin/mypy custom_components/govee",
           "timeout": 300
         }
       ],
@@ -624,7 +624,7 @@
       "blocked_reason": null,
       "attempts": 0,
       "last_verify": {
-        "ts": "2026-11-27T03:51:17Z",
+        "ts": "2026-11-28T00:28:28Z",
         "ok": true,
         "failed": "",
         "tail": "",
@@ -634,35 +634,35 @@
             "exit": 0,
             "duration_ms": 5,
             "tail": "",
-            "recorded_at": "2026-11-27T03:51:15Z"
+            "recorded_at": "2026-11-28T00:28:26Z"
           },
           {
             "cmd": "test $(grep -c '_mqtt_queries_since_connect += 1' custom_components/govee/coordinator.py) -eq 1 && test $(grep -c '_count_mqtt_status_query(' custom_components/govee/coordinator.py) -ge 3",
             "exit": 0,
-            "duration_ms": 7,
+            "duration_ms": 6,
             "tail": "",
-            "recorded_at": "2026-11-27T03:51:15Z"
+            "recorded_at": "2026-11-28T00:28:26Z"
           },
           {
             "cmd": "grep -qE 'online ?= ?False' tests/test_issue_222.py",
             "exit": 0,
-            "duration_ms": 4,
+            "duration_ms": 5,
             "tail": "",
-            "recorded_at": "2026-11-27T03:51:15Z"
+            "recorded_at": "2026-11-28T00:28:26Z"
           },
           {
-            "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_issue_222.py tests/test_issue_195.py",
+            "cmd": ".cc-sessions/venv314/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_issue_222.py tests/test_issue_195.py",
             "exit": 0,
-            "duration_ms": 1554,
-            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n......................................................................   [100%]\n70 passed in 0.33s",
-            "recorded_at": "2026-11-27T03:51:17Z"
+            "duration_ms": 1605,
+            "tail": "......................................................................   [100%]\n70 passed in 0.49s",
+            "recorded_at": "2026-11-28T00:28:28Z"
           },
           {
-            "cmd": ".cc-sessions/venv312/bin/mypy custom_components/govee",
+            "cmd": ".cc-sessions/venv314/bin/mypy custom_components/govee",
             "exit": 0,
-            "duration_ms": 135,
+            "duration_ms": 205,
             "tail": "Success: no issues found in 59 source files",
-            "recorded_at": "2026-11-27T03:51:17Z"
+            "recorded_at": "2026-11-28T00:28:28Z"
           }
         ]
       },
@@ -682,7 +682,7 @@
       ],
       "verify": [
         {
-          "cmd": ".cc-sessions/venv312/bin/python -c \"from custom_components.govee.const import FAHRENHEIT_REPORTING_SKUS as S; assert 'H5074' in S\"",
+          "cmd": ".cc-sessions/venv314/bin/python -c \"from custom_components.govee.const import FAHRENHEIT_REPORTING_SKUS as S; assert 'H5074' in S\"",
           "timeout": 60
         },
         {
@@ -694,7 +694,7 @@
           "timeout": 10
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_zone_light_toggles.py tests/test_models.py",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_zone_light_toggles.py tests/test_models.py",
           "timeout": 300
         }
       ],
@@ -703,38 +703,38 @@
       "blocked_reason": null,
       "attempts": 0,
       "last_verify": {
-        "ts": "2026-11-27T03:49:29Z",
+        "ts": "2026-11-28T00:28:31Z",
         "ok": true,
         "failed": "",
         "tail": "",
         "runs": [
           {
-            "cmd": ".cc-sessions/venv312/bin/python -c \"from custom_components.govee.const import FAHRENHEIT_REPORTING_SKUS as S; assert 'H5074' in S\"",
+            "cmd": ".cc-sessions/venv314/bin/python -c \"from custom_components.govee.const import FAHRENHEIT_REPORTING_SKUS as S; assert 'H5074' in S\"",
             "exit": 0,
-            "duration_ms": 496,
+            "duration_ms": 645,
             "tail": "",
-            "recorded_at": "2026-11-27T03:49:27Z"
+            "recorded_at": "2026-11-28T00:28:29Z"
           },
           {
             "cmd": "! grep -q 'Not in FAHRENHEIT_REPORTING_SKUS: that list needs' custom_components/govee/const.py",
             "exit": 0,
             "duration_ms": 5,
             "tail": "",
-            "recorded_at": "2026-11-27T03:49:27Z"
+            "recorded_at": "2026-11-28T00:28:29Z"
           },
           {
             "cmd": "grep -q '\"H5074\"' tests/test_zone_light_toggles.py",
             "exit": 0,
-            "duration_ms": 4,
+            "duration_ms": 5,
             "tail": "",
-            "recorded_at": "2026-11-27T03:49:27Z"
+            "recorded_at": "2026-11-28T00:28:29Z"
           },
           {
-            "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_zone_light_toggles.py tests/test_models.py",
+            "cmd": ".cc-sessions/venv314/bin/pytest -q -p no:cacheprovider -o addopts= tests/test_zone_light_toggles.py tests/test_models.py",
             "exit": 0,
-            "duration_ms": 1842,
-            "tail": "/home/lasswellt/Projects/govee-homeassistant/.cc-sessions/venv312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:208: PytestDeprecationWarning: The configuration option \"asyncio_default_fixture_loop_scope\" is unset.\nThe event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: \"function\", \"class\", \"module\", \"package\", \"session\"\n\n  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))\n........................................................................ [ 40%]\n........................................................................ [ 80%]\n...................................                                      [100%]\n179 passed in 0.43s",
-            "recorded_at": "2026-11-27T03:49:29Z"
+            "duration_ms": 1881,
+            "tail": "........................................................................ [ 40%]\n........................................................................ [ 80%]\n...................................                                      [100%]\n179 passed in 0.80s",
+            "recorded_at": "2026-11-28T00:28:31Z"
           }
         ]
       },
@@ -771,7 +771,7 @@
       "blocked_reason": null,
       "attempts": 0,
       "last_verify": {
-        "ts": "2026-11-27T03:55:19Z",
+        "ts": "2026-11-28T00:28:31Z",
         "ok": true,
         "failed": "",
         "tail": "",
@@ -781,21 +781,21 @@
             "exit": 0,
             "duration_ms": 8,
             "tail": "",
-            "recorded_at": "2026-11-27T03:55:19Z"
+            "recorded_at": "2026-11-28T00:28:31Z"
           },
           {
             "cmd": "grep -A1 '^## #318$' docs/release-replies.md | grep -q 'close: duplicate'",
             "exit": 0,
-            "duration_ms": 5,
+            "duration_ms": 4,
             "tail": "",
-            "recorded_at": "2026-11-27T03:55:19Z"
+            "recorded_at": "2026-11-28T00:28:31Z"
           },
           {
             "cmd": "test $(grep -c '^## #308$' docs/release-replies.md) -eq 1",
             "exit": 0,
-            "duration_ms": 4,
+            "duration_ms": 5,
             "tail": "",
-            "recorded_at": "2026-11-27T03:55:19Z"
+            "recorded_at": "2026-11-28T00:28:31Z"
           }
         ]
       },
@@ -819,11 +819,11 @@
       ],
       "verify": [
         {
-          "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= --cov=custom_components.govee --cov-fail-under=95",
+          "cmd": ".cc-sessions/venv314/bin/pytest -q -p no:cacheprovider -o addopts= --cov=custom_components.govee --cov-fail-under=95",
           "timeout": 600
         },
         {
-          "cmd": ".cc-sessions/venv312/bin/mypy custom_components/govee && .cc-sessions/venv312/bin/flake8 . && .cc-sessions/venv312/bin/black --check .",
+          "cmd": ".cc-sessions/venv314/bin/mypy custom_components/govee && .cc-sessions/venv314/bin/flake8 . && .cc-sessions/venv314/bin/black --check .",
           "timeout": 400
         },
         {
@@ -836,31 +836,31 @@
       "blocked_reason": null,
       "attempts": 0,
       "last_verify": {
-        "ts": "2026-11-27T04:01:04Z",
+        "ts": "2026-11-28T00:29:09Z",
         "ok": true,
         "failed": "",
         "tail": "",
         "runs": [
           {
-            "cmd": ".cc-sessions/venv312/bin/pytest -q -p no:cacheprovider -o addopts= --cov=custom_components.govee --cov-fail-under=95",
+            "cmd": ".cc-sessions/venv314/bin/pytest -q -p no:cacheprovider -o addopts= --cov=custom_components.govee --cov-fail-under=95",
             "exit": 0,
-            "duration_ms": 48306,
-            "tail": ".00%\ncustom_components/govee/kettle/entities.py               167      0 100.00%\ncustom_components/govee/kettle/frames.py                  94      0 100.00%\ncustom_components/govee/kettle/labels.py                  37      0 100.00%\ncustom_components/govee/kettle/manager.py                240      0 100.00%\ncustom_components/govee/kettle/modes.py                   45      0 100.00%\ncustom_components/govee/light.py                         507      0 100.00%\ncustom_components/govee/models/__init__.py                 5      0 100.00%\ncustom_components/govee/models/commands.py               216      0 100.00%\ncustom_components/govee/models/energy_counter.py          68      0 100.00%\ncustom_components/govee/models/state.py                  552      0 100.00%\ncustom_components/govee/models/transport.py               33      0 100.00%\ncustom_components/govee/number.py                        192      0 100.00%\ncustom_components/govee/platforms/__init__.py              0      0 100.00%\ncustom_components/govee/platforms/grouped_segment.py      81      0 100.00%\ncustom_components/govee/platforms/segment.py              83      0 100.00%\ncustom_components/govee/registry.py                       25      0 100.00%\ncustom_components/govee/repairs.py                        80      0 100.00%\ncustom_components/govee/request_budget.py                 40      0 100.00%\ncustom_components/govee/scene_cache.py                   109      0 100.00%\ncustom_components/govee/services.py                      141      0 100.00%\ncustom_components/govee/status_burst.py                   45      0 100.00%\ncustom_components/govee/switch.py                        401      0 100.00%\ncustom_components/govee/transport_health.py               78      0 100.00%\n-------------------------------------------------------------------------------------\nTOTAL                                                  13913     37  99.73%\n\nRequired test coverage of 95% reached. Total coverage: 99.73%\n4810 passed in 46.45s",
-            "recorded_at": "2026-11-27T04:01:03Z"
+            "duration_ms": 36637,
+            "tail": "m_components/govee/kettle/entities.py               167      0 100.00%\ncustom_components/govee/kettle/frames.py                  94      0 100.00%\ncustom_components/govee/kettle/labels.py                  37      0 100.00%\ncustom_components/govee/kettle/manager.py                240      0 100.00%\ncustom_components/govee/kettle/modes.py                   45      0 100.00%\ncustom_components/govee/light.py                         507      0 100.00%\ncustom_components/govee/models/__init__.py                 5      0 100.00%\ncustom_components/govee/models/commands.py               216      0 100.00%\ncustom_components/govee/models/energy_counter.py          68      0 100.00%\ncustom_components/govee/models/state.py                  552      0 100.00%\ncustom_components/govee/models/transport.py               33      0 100.00%\ncustom_components/govee/number.py                        192      0 100.00%\ncustom_components/govee/platforms/__init__.py              0      0 100.00%\ncustom_components/govee/platforms/grouped_segment.py      81      0 100.00%\ncustom_components/govee/platforms/segment.py              83      0 100.00%\ncustom_components/govee/registry.py                       25      0 100.00%\ncustom_components/govee/repairs.py                        79      0 100.00%\ncustom_components/govee/request_budget.py                 40      0 100.00%\ncustom_components/govee/scene_cache.py                   109      0 100.00%\ncustom_components/govee/services.py                      142      0 100.00%\ncustom_components/govee/status_burst.py                   45      0 100.00%\ncustom_components/govee/switch.py                        401      0 100.00%\ncustom_components/govee/transport_health.py               78      0 100.00%\n-------------------------------------------------------------------------------------\nTOTAL                                                  13917     43  99.69%\nRequired test coverage of 95% reached. Total coverage: 99.69%\n4809 passed, 1 skipped in 35.44s",
+            "recorded_at": "2026-11-28T00:29:07Z"
           },
           {
-            "cmd": ".cc-sessions/venv312/bin/mypy custom_components/govee && .cc-sessions/venv312/bin/flake8 . && .cc-sessions/venv312/bin/black --check .",
+            "cmd": ".cc-sessions/venv314/bin/mypy custom_components/govee && .cc-sessions/venv314/bin/flake8 . && .cc-sessions/venv314/bin/black --check .",
             "exit": 0,
-            "duration_ms": 914,
+            "duration_ms": 1210,
             "tail": "Success: no issues found in 59 source files\nAll done! ✨ 🍰 ✨\n211 files would be left unchanged.",
-            "recorded_at": "2026-11-27T04:01:04Z"
+            "recorded_at": "2026-11-28T00:29:09Z"
           },
           {
             "cmd": "S=$(git rev-parse HEAD); test \"$(git rev-parse origin/main)\" = \"$S\" && test \"$(gh run list --commit \"$S\" --json name,conclusion --jq \"[.[] | select(.name != \\\"Govee API Uptime\\\" and .name != \\\"Daily release\\\" and .conclusion == \\\"success\\\")] | length\")\" -ge 4",
             "exit": 0,
-            "duration_ms": 633,
+            "duration_ms": 640,
             "tail": "",
-            "recorded_at": "2026-11-27T04:01:04Z"
+            "recorded_at": "2026-11-28T00:29:09Z"
           }
         ]
       },
